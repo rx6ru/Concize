@@ -13,7 +13,7 @@ const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 // Configure Multer to store files directly in memory as a Buffer
 const upload = multer({
     storage: multer.memoryStorage(), // <--- KEY CHANGE: Store in memory
-    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
 
 router.post('/', upload.single('audio'), (req, res) => {
@@ -57,7 +57,7 @@ router.post('/', upload.single('audio'), (req, res) => {
             console.log("3: ffprobe succeeded. Metadata:", metadata.format.format_name, "Size:", metadata.format.size, "Duration:", metadata.format.duration);
 
             // Check format
-            const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm', 'mp4', 'mpeg', 'mpga']; // Common audio formats Groq supports
+            const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm','mpeg', 'mpga']; // Common audio formats Groq supports
             if (!metadata.format || !supportedFormats.includes(metadata.format.format_name)) {
                 console.log("4: Unsupported format detected.");
                 return res.status(400).send(`Unsupported audio format. Only ${supportedFormats.join(', ')} are supported.`);
@@ -65,9 +65,9 @@ router.post('/', upload.single('audio'), (req, res) => {
             console.log("5: Format check passed.");
 
             // Check size (Multer already handles this, but an extra check from ffprobe metadata is fine)
-            if (metadata.format.size > 100 * 1024 * 1024) { // 100MB
+            if (metadata.format.size > 25 * 1024 * 1024) { // 25MB
                 console.log("6: File size too large.");
-                return res.status(400).send('Audio file is too large (max 100MB).');
+                return res.status(400).send('Audio file is too large (max 25MB).');
             }
             console.log("7: Size check passed.");
 
