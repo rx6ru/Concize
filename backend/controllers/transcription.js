@@ -1,8 +1,7 @@
-// transcription.js
 const Groq = require('groq-sdk');
 const config = require('../utils/config');
-const fs = require('fs');
-const path = require('path');
+const { Readable } = require('stream'); // Import Readable stream
+const path = require('path'); // Still useful for file extension logic
 
 // Initialize the Groq client with the API key from config
 const groq = new Groq({
@@ -14,8 +13,6 @@ const transcribe = async (audioBuffer, metadata = {}) => {
     console.log('TRANSCRIPTION_LOG: Received audioBuffer type:', typeof audioBuffer);
     console.log('TRANSCRIPTION_LOG: Received metadata:', metadata);
 
-    let tempFilePath = null;
-
     try {
         if (!audioBuffer || !(audioBuffer instanceof Buffer)) {
             console.error('TRANSCRIPTION_ERROR: Audio data is not a Buffer or is missing.');
@@ -23,27 +20,25 @@ const transcribe = async (audioBuffer, metadata = {}) => {
         }
         console.log('TRANSCRIPTION_LOG: Audio buffer validation passed. Buffer size:', audioBuffer.length, 'bytes.');
 
-        // Create a temporary file because Groq SDK expects a file path or readable stream
-        const tempDir = './temp_audio';
-        if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-        }
+        // Create a readable stream directly from the audioBuffer
+        // This avoids writing the buffer to a temporary file on the server.
+        const audioStream = Readable.from(audioBuffer);
 
+        // Groq SDK expects the 'file' parameter to have a 'name' property
+        // This name is used by the API to infer the file type.
+        // We'll construct a dummy filename for the stream.
         const fileExtension = getFileExtension(metadata);
-        const tempFileName = `temp_audio_${Date.now()}.${fileExtension}`;
-        tempFilePath = path.join(tempDir, tempFileName);
+        const fileName = `audio_upload.${fileExtension}`; // Dummy filename for the stream
+        Object.defineProperty(audioStream, 'name', { value: fileName, writable: false });
 
-        console.log('TRANSCRIPTION_LOG: Writing buffer to temporary file:', tempFilePath);
-        fs.writeFileSync(tempFilePath, audioBuffer);
-
-        console.log('TRANSCRIPTION_LOG: Temporary file created successfully.');
+        console.log(`TRANSCRIPTION_LOG: Created in-memory stream with dummy filename: "${fileName}"`);
 
         const modelToUse = "whisper-large-v3"; // Use the correct model name
         console.log(`TRANSCRIPTION_LOG: Calling Groq API for transcription with model: "${modelToUse}"...`);
         
-        // Create the transcription request with proper file handling
+        // Pass the in-memory readable stream directly to the Groq API
         const transcription = await groq.audio.transcriptions.create({
-            file: fs.createReadStream(tempFilePath),
+            file: audioStream, // Pass the stream here
             model: modelToUse,
             response_format: "json",
             // language: "en", // Uncomment if you want to specify language
@@ -114,15 +109,7 @@ const transcribe = async (audioBuffer, metadata = {}) => {
         };
 
     } finally {
-        // Clean up temporary file
-        if (tempFilePath && fs.existsSync(tempFilePath)) {
-            try {
-                fs.unlinkSync(tempFilePath);
-                console.log('TRANSCRIPTION_LOG: Temporary file deleted successfully.');
-            } catch (unlinkError) {
-                console.error('TRANSCRIPTION_ERROR: Failed to delete temporary file:', unlinkError.message);
-            }
-        }
+        // No temporary file to clean up anymore!
         console.log('TRANSCRIPTION_LOG: Exiting transcribe function.');
     }
 };
@@ -137,10 +124,7 @@ function getFileExtension(metadata) {
             'flac': 'flac',
             'm4a': 'm4a',
             'ogg': 'ogg',
-            'webm': 'webm',
-            'mp4': 'mp4',
-            'mpeg': 'mp3',
-            'mpga': 'mp3'
+            'webm': 'webm'
         };
         return formatMap[metadata.formatName.toLowerCase()] || 'mp3';
     }

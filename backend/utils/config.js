@@ -8,6 +8,9 @@ const config = {
 
     PORT: process.env.PORT || 3000,
     NODE_ENV: process.env.NODE_ENV || 'development',
+    QDRANT_URL: process.env.QDRANT_URL,
+    QDRANT_API_KEY:process.env.QDRANT_API_KEY,
+    COLLECTION:process.env.COLLECTION
 };
 
 // Basic validation to ensure essential variables are set
@@ -28,6 +31,21 @@ if (!config.PORT) {
 
 if (!config.NODE_ENV) {
     console.error('ERROR: NODE_ENV environment variable is not set.');
+    process.exit(1); // Exit if critical config is missing
+}
+
+if (!config.QDRANT_URL) {
+    console.error('ERROR: QDRANT_URL environment variable is not set.');
+    process.exit(1); // Exit if critical config is missing
+}
+
+if (!config.QDRANT_API_KEY) {
+    console.error('ERROR: QDRANT_API_KEY environment variable is not set.');
+    process.exit(1); // Exit if critical config is missing
+}
+
+if (!config.COLLECTION) {
+    console.error('ERROR: COLLECTION environment variable is not set.');
     process.exit(1); // Exit if critical config is missing
 }
 
