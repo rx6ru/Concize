@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 // Import the worker control functions from your worker.js file
-const { startWorker, stopWorker, getWorkerStatus } = require('../worker'); 
+const { startWorker, stopWorker, getWorkerStatus } = require('../controllers/worker'); 
 
 // POST /api/worker/start
 // Initiates the RabbitMQ consumer worker.

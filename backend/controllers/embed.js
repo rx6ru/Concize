@@ -2,7 +2,7 @@
 
 // Using require to be consistent with the rest of your files
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('./utils/config');
+const config = require('../utils/config');
 const { getEmbedding } = require('./embeddingService'); // We will use this to get the vector from text
 
 const client = new QdrantClient({
@@ -22,7 +22,7 @@ const createCollection = async () => {
         if (!collectionExists) {
             await client.createCollection(COLLECTION_NAME, {
                 vectors: {
-                    size: 1024,//This must match the size of your embedding model's output vector
+                    size: 768, // THIS MUST MATCH THE GEMINI EMBEDDING MODEL'S OUTPUT VECTOR SIZE
                     distance: 'Cosine',
                 },
             });
