@@ -3,7 +3,7 @@ const amqp = require('amqplib');
 const { v4: uuidv4 } = require('uuid'); // Import UUID generator
 const { transcribe } = require('./transcription');
 const { clean } = require('./clean');
-const { upsertTranscriptionChunk, createCollection } = require('./embed');
+const { upsertTranscriptionChunks, createCollection } = require('./embed'); // Updated import
 const fs = require('fs');
 const path = require('path');
 const config = require('../utils/config');
@@ -81,7 +81,7 @@ const startWorker = async () => {
             
                 transcriptionBaseName = metadata.uploadTimestamp ? metadata.uploadTimestamp.replace(/[:.]/g, '-') : `transcription_${Date.now()}`;
                 const rawTranscriptionFileName = path.join(TRANSCRIPTION_DIR, `raw-${transcriptionBaseName}.txt`);
-                const refinedTranscriptionFileName = path.join(TRANSCRIPTION_DIR, `refined-${transcriptionBaseName}.txt`);
+                const refinedTranscriptionFileName = path.join(TRANSCRIPTION_DIR, `refined-${transcriptionBaseName}.json`);
                 
                 console.log(`Worker: Processing transcription for: ${metadata.originalname || 'unknown file'}`);
 
@@ -91,18 +91,19 @@ const startWorker = async () => {
                 }
                 const transcribedText = transcribeResult.transcription;
 
-                const refinedText = await clean(transcribedText);
+                // --- CHANGE: Clean function now returns a JSON array of chunks ---
+                const cleanedChunks = await clean(transcribedText);
+                console.log(`Worker: Cleaned transcript into ${cleanedChunks.length} structured chunks.`);
+                // ------------------------------------------------------------------
                 
-                // --- FIX: Use a UUID for the point ID to satisfy Qdrant's format requirements ---
-                const pointId = uuidv4();
-                // ----------------------------------------------------------------------------------
-
-                const embedResult = await upsertTranscriptionChunk(pointId, refinedText, metadata);
+                // --- CHANGE: The embedding function now expects an array of chunks and metadata ---
+                const embedResult = await upsertTranscriptionChunks(cleanedChunks, metadata);
                 if (!embedResult.success) {
                     throw new Error(`Embedding and upsert failed: ${embedResult.error}`);
                 }
-                
-                console.log(`Worker: Transcription processed and embedded successfully for "${metadata.originalname || 'unknown'}": ${refinedText.substring(0, 50)}...`);
+                // ----------------------------------------------------------------------------------
+
+                console.log(`Worker: Transcription processed and embedded successfully for "${metadata.originalname || 'unknown'}"`);
 
                 const rawTextToAppend = `[${new Date().toISOString()}] (Original: ${metadata.originalname || 'N/A'}) \n${transcribedText}\n---\n`;
                 fs.appendFile(rawTranscriptionFileName, rawTextToAppend, (err) => {
@@ -113,14 +114,16 @@ const startWorker = async () => {
                     }
                 });
 
-                const refinedTextToAppend = `[${new Date().toISOString()}] (Original: ${metadata.originalname || 'N/A'}) \n${refinedText}\n---\n`;
-                fs.appendFile(refinedTranscriptionFileName, refinedTextToAppend, (err) => {
+                // --- CHANGE: Append the JSON array directly to the refined file ---
+                const refinedTextToAppend = JSON.stringify(cleanedChunks, null, 2);
+                fs.writeFile(refinedTranscriptionFileName, refinedTextToAppend, (err) => {
                     if (err) {
-                        console.error(`Worker: Error appending refined transcription to file ${refinedTranscriptionFileName}:`, err);
+                        console.error(`Worker: Error writing refined transcription to file ${refinedTranscriptionFileName}:`, err);
                     } else {
-                        console.log(`Worker: Refined transcription appended to ${refinedTranscriptionFileName}`);
+                        console.log(`Worker: Refined transcription saved to ${refinedTranscriptionFileName}`);
                     }
                 });
+                // --------------------------------------------------------------------
 
                 fs.unlink(audioFilePath, (unlinkErr) => {
                     if (unlinkErr) console.error(`Worker: Error deleting processed audio file ${audioFilePath}:`, unlinkErr);
@@ -141,10 +144,8 @@ const startWorker = async () => {
                     });
                 }
                 
-                // --- FIX: Do not re-queue on non-transient errors ---
                 globalChannel.nack(msg, false, false); 
                 console.error(`Worker: Nacked message for "${metadata.originalname || 'unknown'}" (requeued: false)`);
-                // -----------------------------------------------------
             }
         }, {
             noAck: false

@@ -1,9 +1,10 @@
-// embed.js
+//embed.js
 
 // Using require to be consistent with the rest of your files
 const { QdrantClient } = require('@qdrant/js-client-rest');
 const config = require('../utils/config');
 const { getEmbedding } = require('./embeddingService'); // We will use this to get the vector from text
+const { v4: uuidv4 } = require('uuid');
 
 const client = new QdrantClient({
     url: config.QDRANT_URL,
@@ -13,16 +14,21 @@ const client = new QdrantClient({
 // Name of your collection in Qdrant
 const COLLECTION_NAME = config.COLLECTION;
 
-// This function will create the collection if it doesn't exist
+/**
+ * Creates the Qdrant collection if it doesn't already exist.
+ * This function uses the `embedding-001` model's vector size of 768.
+ */
 const createCollection = async () => {
     try {
         const collections = await client.getCollections();
         const collectionExists = collections.collections.some(c => c.name === COLLECTION_NAME);
-        
+       
         if (!collectionExists) {
+            // Note: The size of 768 must match the embedding-001 model's output.
+            // If you change the embedding model, this size must be updated.
             await client.createCollection(COLLECTION_NAME, {
                 vectors: {
-                    size: 768, // THIS MUST MATCH THE GEMINI EMBEDDING MODEL'S OUTPUT VECTOR SIZE
+                    size: 768,
                     distance: 'Cosine',
                 },
             });
@@ -32,34 +38,58 @@ const createCollection = async () => {
         }
     } catch (err) {
         console.error('Error creating or checking collection:', err);
-        // Depending on the error, you might want to throw it to stop the process
         throw err;
     }
 };
 
-// Main function to embed the text and upsert the point into Qdrant
-const upsertTranscriptionChunk = async (pointId, text, metadata) => {
+/**
+ * Generates embeddings for an array of text chunks and upserts them into Qdrant.
+ * @param {Array<Object>} chunks An array of objects, where each object has a 'summary' and 'refined_text' property.
+ * @param {Object} metadata The metadata to be associated with each point.
+ * @returns {Promise<Object>} A promise that resolves to the result of the upsert operation.
+ */
+const upsertTranscriptionChunks = async (chunks, metadata) => {
     try {
-        // Step 1: Generate the embedding vector for the text
-        const vector = await getEmbedding(text);
-        
-        if (!vector || vector.length === 0) {
-            throw new Error("Embedding vector could not be generated.");
+        if (!chunks || chunks.length === 0) {
+            console.warn("No chunks to upsert.");
+            return { success: true, result: null };
         }
 
-        // Step 2: Upsert the point into the collection
-        const result = await client.upsert(COLLECTION_NAME, {
-            wait: true, // Wait for the operation to be finished
-            points: [
-                {
-                    id: pointId,
-                    vector: vector,
-                    payload: {
-                        ...metadata,
-                        text: text // Store the original text in the payload for RAG
-                    },
+        // Filter and transform metadata to only include required fields
+        const filteredMetadata = {
+            filename: metadata.originalname,
+            uploadTimestamp: metadata.uploadTimestamp
+        };
+
+        const points = [];
+        for (const chunk of chunks) {
+            // Tweak: Use chunk.refined_text instead of chunk.text
+            const vector = await getEmbedding(chunk.refined_text);
+           
+            if (!vector || vector.length === 0) {
+                console.error(`Skipping chunk due to failed embedding: ${chunk.refined_text}`);
+                continue;
+            }
+
+            points.push({
+                id: uuidv4(),
+                vector: vector,
+                payload: {
+                    ...filteredMetadata,
+                    text: chunk.refined_text, // Tweak: Store the refined text in the payload
+                    summary: chunk.summary, // Add the summary to the payload
                 },
-            ],
+            });
+        }
+
+        if (points.length === 0) {
+            console.warn("No points were successfully prepared for upsert.");
+            return { success: false, error: "No valid points to upsert." };
+        }
+
+        const result = await client.upsert(COLLECTION_NAME, {
+            wait: true,
+            points: points,
         });
 
         return { success: true, result: result };
@@ -72,6 +102,6 @@ const upsertTranscriptionChunk = async (pointId, text, metadata) => {
 
 // Export the functions to be used by other modules
 module.exports = {
-    upsertTranscriptionChunk,
+    upsertTranscriptionChunks,
     createCollection,
 };
