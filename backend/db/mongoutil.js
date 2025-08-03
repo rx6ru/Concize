@@ -73,7 +73,7 @@ async function appendTranscription(jobId, newText) {
  */
 async function getTranscription(jobId) {
   try {
-    const document = await Meeting.findOne({ jobId: jobId });
+    const document = await Meeting.findOne({ jobId: jobId }, { _id: 0, jobId: 0, __v: 0 });
     if (document) {
       console.log(`Found transcription document for jobId: ${jobId}`);
     } else {
