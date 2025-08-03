@@ -1,106 +1,207 @@
 // worker.js
 const amqp = require('amqplib');
+const { v4: uuidv4 } = require('uuid'); // Import UUID generator
 const { transcribe } = require('./transcription');
-const fs = require('fs'); // Import Node.js file system module
-const path = require('path'); // Import path module for file paths
-const config = require('../utils/config'); // Import the centralized config
+const { clean } = require('./clean');
+const { upsertTranscriptionChunks, createCollection } = require('./embed'); // Updated import
+const fs = require('fs');
+const path = require('path');
+const config = require('../utils/config');
 
 const audioQueue = 'audio_queue';
-// Retrieve CloudAMQP URL from the centralized config
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
-// Define a directory for transcriptions
 const TRANSCRIPTION_DIR = './transcriptions';
 
-// Ensure the transcription directory exists
 if (!fs.existsSync(TRANSCRIPTION_DIR)) {
     fs.mkdirSync(TRANSCRIPTION_DIR, { recursive: true });
 }
 
+let globalConnection = null;
+let globalChannel = null;
+let isWorkerRunning = false;
+
 const startWorker = async () => {
-    let conn;
-    let ch;
+    if (isWorkerRunning) {
+        console.log('Worker: Attempted to start, but worker is already running.');
+        return { success: true, message: 'Worker is already active.' };
+    }
+
     try {
-        // Connect to RabbitMQ using the CloudAMQP URL from config
-        conn = await amqp.connect(CLOUDAMQP_URL);
-        ch = await conn.createChannel();
+        console.log('Worker: Attempting to connect to RabbitMQ...');
+        globalConnection = await amqp.connect(CLOUDAMQP_URL);
+        globalChannel = await globalConnection.createChannel();
 
-        await ch.assertQueue(audioQueue, { durable: true });
-        console.log('Worker is running and waiting for audio transcription jobs...');
+        globalConnection.on('close', (err) => {
+            console.error('Worker: RabbitMQ connection closed unexpectedly:', err);
+            isWorkerRunning = false;
+            globalConnection = null;
+            globalChannel = null;
+        });
+        globalChannel.on('close', (err) => {
+            console.error('Worker: RabbitMQ channel closed unexpectedly:', err);
+            isWorkerRunning = false;
+            globalConnection = null;
+            globalChannel = null;
+        });
 
-        // Set prefetch to limit the number of unacknowledged messages a consumer can process at once.
-        // This prevents the worker from crashing if it receives too many large messages simultaneously.
-        ch.prefetch(1); // Process one message at a time
+        await globalChannel.assertQueue(audioQueue, { durable: true });
+        
+        console.log('Worker: Initializing Qdrant collection...');
+        await createCollection();
 
-        ch.consume(audioQueue, async (msg) => {
-            if (msg !== null) {
-                let messageContent;
-                let audioBuffer;
-                let metadata;
+        console.log('Worker: Connected to RabbitMQ and waiting for audio transcription jobs...');
 
-                try {
-                    // Reconstruct the message content and Buffer
-                    messageContent = JSON.parse(msg.content.toString());
+        globalChannel.prefetch(1);
 
-                    // Check if messageContent.audioBufferData.data exists before creating Buffer
-                    if (messageContent.audioBufferData && messageContent.audioBufferData.type === 'Buffer' && Array.isArray(messageContent.audioBufferData.data)) {
-                        audioBuffer = Buffer.from(messageContent.audioBufferData.data);
-                    } else {
-                        throw new Error('Invalid audio buffer data received from queue.');
-                    }
+        globalChannel.consume(audioQueue, async (msg) => {
+            console.log('Worker: Received a message from the queue.');
+            if (msg === null) {
+                console.log('Worker: Consumer cancelled. No message received.');
+                return;
+            }
 
-                    metadata = messageContent.metadata || {}; // Ensure metadata is an object
+            let messageContent;
+            let audioBuffer;
+            let metadata;
+            let transcriptionBaseName;
+            let audioFilePath;
 
-                    // Construct a filename for the transcription.
-                    // For now, let's use a simple timestamp or original filename to identify sessions.
-                    // In your future system, this would be tied to a session ID or user ID.
-                    const transcriptionFileName = path.join(
-                        TRANSCRIPTION_DIR,
-                        `${metadata.uploadTimestamp ? metadata.uploadTimestamp.replace(/[:.]/g, '-') : 'transcription'}.txt`
-                    );
-                    
-                    console.log(`Processing transcription for: ${metadata.originalname || 'unknown file'}`);
+            try {
+                const messageString = msg.content.toString();
+                messageContent = JSON.parse(messageString);
+                console.log('Worker: Message content parsed successfully.');
 
-                    const result = await transcribe(audioBuffer, metadata);
+                audioFilePath = messageContent.filePath;
+                metadata = messageContent.metadata || {};
+                console.log(`Worker: Received job for audio file at path: ${audioFilePath}`);
 
-                    if (result.success) {
-                        const transcribedText = result.transcription;
-                        console.log(`Transcription successful for "${metadata.originalname || 'unknown'}": ${transcribedText.substring(0, 50)}...`);
+                audioBuffer = fs.readFileSync(audioFilePath);
+                console.log(`Worker: Audio buffer read from disk. Original file: ${metadata.originalname}`);
+            
+                transcriptionBaseName = metadata.uploadTimestamp ? metadata.uploadTimestamp.replace(/[:.]/g, '-') : `transcription_${Date.now()}`;
+                const rawTranscriptionFileName = path.join(TRANSCRIPTION_DIR, `raw-${transcriptionBaseName}.txt`);
+                const refinedTranscriptionFileName = path.join(TRANSCRIPTION_DIR, `refined-${transcriptionBaseName}.json`);
+                
+                console.log(`Worker: Processing transcription for: ${metadata.originalname || 'unknown file'}`);
 
-                        // Append the transcription to the designated file
-                        // Add a newline for each chunk to keep them distinct
-                        const textToAppend = `[${new Date().toISOString()}] (Chunk: ${metadata.originalname || 'N/A'}) \n${transcribedText}\n---\n`;
-                        fs.appendFile(transcriptionFileName, textToAppend, (err) => {
-                            if (err) {
-                                console.error(`Error appending transcription to file ${transcriptionFileName}:`, err);
-                            } else {
-                                console.log(`Transcription appended to ${transcriptionFileName}`);
-                            }
-                        });
-
-                    } else {
-                        console.error(`Transcription failed for "${metadata.originalname || 'unknown'}":`, result.error);
-                    }
-
-                    ch.ack(msg); // Acknowledge the message
-                    console.log(`Acknowledged message for "${metadata.originalname || 'unknown'}"`);
-
-                } catch (error) {
-                    console.error('Error processing message from queue:', error);
-                    ch.nack(msg, false, true); // Requeue the message
-                    console.error(`Nacked message for "${metadata.originalname || 'unknown'}" (requeued: true)`);
+                const transcribeResult = await transcribe(audioBuffer, metadata);
+                if (!transcribeResult.success) {
+                    throw new Error(`Transcription failed: ${transcribeResult.error}`);
                 }
+                const transcribedText = transcribeResult.transcription;
+
+                // --- CHANGE: Clean function now returns a JSON array of chunks ---
+                const cleanedChunks = await clean(transcribedText);
+                console.log(`Worker: Cleaned transcript into ${cleanedChunks.length} structured chunks.`);
+                // ------------------------------------------------------------------
+                
+                // --- CHANGE: The embedding function now expects an array of chunks and metadata ---
+                const embedResult = await upsertTranscriptionChunks(cleanedChunks, metadata);
+                if (!embedResult.success) {
+                    throw new Error(`Embedding and upsert failed: ${embedResult.error}`);
+                }
+                // ----------------------------------------------------------------------------------
+
+                console.log(`Worker: Transcription processed and embedded successfully for "${metadata.originalname || 'unknown'}"`);
+
+                const rawTextToAppend = `[${new Date().toISOString()}] (Original: ${metadata.originalname || 'N/A'}) \n${transcribedText}\n---\n`;
+                fs.appendFile(rawTranscriptionFileName, rawTextToAppend, (err) => {
+                    if (err) {
+                        console.error(`Worker: Error appending raw transcription to file ${rawTranscriptionFileName}:`, err);
+                    } else {
+                        console.log(`Worker: Raw transcription appended to ${rawTranscriptionFileName}`);
+                    }
+                });
+
+                // --- CHANGE: Append the JSON array directly to the refined file ---
+                const refinedTextToAppend = JSON.stringify(cleanedChunks, null, 2);
+                fs.writeFile(refinedTranscriptionFileName, refinedTextToAppend, (err) => {
+                    if (err) {
+                        console.error(`Worker: Error writing refined transcription to file ${refinedTranscriptionFileName}:`, err);
+                    } else {
+                        console.log(`Worker: Refined transcription saved to ${refinedTranscriptionFileName}`);
+                    }
+                });
+                // --------------------------------------------------------------------
+
+                fs.unlink(audioFilePath, (unlinkErr) => {
+                    if (unlinkErr) console.error(`Worker: Error deleting processed audio file ${audioFilePath}:`, unlinkErr);
+                    else console.log(`Worker: Deleted processed audio file: ${audioFilePath}`);
+                });
+
+                globalChannel.ack(msg); 
+                console.log(`Worker: Acknowledged message for "${metadata.originalname || 'unknown'}"`);
+
+            } catch (error) {
+                console.error(`Worker: An error occurred during message processing for "${metadata.originalname || 'unknown'}"`);
+                console.error('Worker: Error details:', error);
+                
+                if (audioFilePath && fs.existsSync(audioFilePath)) {
+                    fs.unlink(audioFilePath, (unlinkErr) => {
+                        if (unlinkErr) console.error(`Worker: Error deleting failed audio file ${audioFilePath}:`, unlinkErr);
+                        else console.log(`Worker: Deleted failed audio file: ${audioFilePath}`);
+                    });
+                }
+                
+                globalChannel.nack(msg, false, false); 
+                console.error(`Worker: Nacked message for "${metadata.originalname || 'unknown'}" (requeued: false)`);
             }
         }, {
-            noAck: false // Crucial: Enable manual acknowledgments
+            noAck: false
         });
+
+        isWorkerRunning = true;
+        return { success: true, message: 'Worker started successfully.' };
+
     } catch (error) {
-        console.error('Worker initialization error:', error);
-        if (conn) {
-            try { await conn.close(); } catch (e) { console.error('Error closing connection:', e); }
+        console.error('Worker: Initialization or connection error:', error);
+        if (globalConnection) {
+            try { await globalConnection.close(); } catch (e) { console.error('Worker: Error closing connection during error:', e); }
         }
-        process.exit(1);
+        globalConnection = null;
+        globalChannel = null;
+        isWorkerRunning = false;
+        return { success: false, message: `Failed to start worker: ${error.message}` };
     }
 };
 
-startWorker();
+const stopWorker = async () => {
+    if (!isWorkerRunning) {
+        console.log('Worker: Attempted to stop, but worker is not running.');
+        return { success: true, message: 'Worker is already inactive.' };
+    }
+    
+    try {
+        if (globalChannel) {
+            await globalChannel.close();
+            console.log('Worker: RabbitMQ channel closed.');
+        }
+        if (globalConnection) {
+            await globalConnection.close();
+            console.log('Worker: RabbitMQ connection closed.');
+        }
+        isWorkerRunning = false;
+        globalChannel = null;
+        globalConnection = null;
+        return { success: true, message: 'Worker stopped successfully.' };
+    } catch (error) {
+        console.error('Worker: Error while stopping the worker:', error);
+        isWorkerRunning = false;
+        globalChannel = null;
+        globalConnection = null;
+        return { success: false, message: `Failed to stop worker: ${error.message}` };
+    }
+};
+
+const getWorkerStatus = () => {
+    return {
+        isRunning: isWorkerRunning
+    };
+};
+
+module.exports = {
+    startWorker,
+    stopWorker,
+    getWorkerStatus,
+};

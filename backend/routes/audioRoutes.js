@@ -1,139 +1,127 @@
-// audioRouter.js
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const ffmpeg = require('fluent-ffmpeg');
-const amqp = require('amqplib');
-const fs = require('fs');
-const config = require('../utils/config'); // Corrected path to config
+const multer = require('multer'); // Multer for handling multipart/form-data
+const ffmpeg = require('fluent-ffmpeg'); // For audio metadata (ffprobe)
+const amqp = require('amqplib'); // For RabbitMQ
+const fs = require('fs'); // Still needed for ffprobe, but not for reading the main audio buffer
+const path = require('path');
+const config = require('../utils/config'); // Import the centralized config
 
 const audioQueue = 'audio_queue';
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
+// Configure Multer to save files to disk
 const upload = multer({
-    dest: './uploads/',
-    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+    dest: 'uploads/', // <-- KEY CHANGE: Multer now saves files to the 'uploads' directory
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
 
-router.post('/', upload.single('audio'), (req, res) => {
+router.post('/', upload.single('audio'), async (req, res) => {
     const audioFile = req.file;
 
+    // --- Input Validation ---
     if (!audioFile) {
         return res.status(400).send('No audio file provided.');
     }
-    console.log("1: File received and Multer processed.");
+    // Now logging that Multer has saved the file to disk, not in memory
+    console.log("1: File received and saved to disk by Multer.");
 
-    ffmpeg.ffprobe(audioFile.path, (err, metadata) => {
+    // Multer with dest provides the file path
+    const filePath = path.join(__dirname, '..', audioFile.path);
+
+    try {
         console.log("2: ffprobe initiated.");
-        if (err) {
-            console.error('FFmpeg ffprobe error:', err);
-            fs.unlink(audioFile.path, (unlinkErr) => {
-                if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
+        const metadata = await new Promise((resolve, reject) => {
+            ffmpeg.ffprobe(filePath, (err, meta) => {
+                if (err) reject(err);
+                resolve(meta);
             });
-            return res.status(400).send('Invalid or corrupt audio file.');
-        }
+        });
+        
         console.log("3: ffprobe succeeded. Metadata:", metadata.format.format_name, "Size:", metadata.format.size, "Duration:", metadata.format.duration);
 
-        const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm', 'mp4', 'mpeg', 'mpga'];
+        // Check format
+        const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm','mpeg', 'mpga'];
         if (!metadata.format || !supportedFormats.includes(metadata.format.format_name)) {
             console.log("4: Unsupported format detected.");
-            fs.unlink(audioFile.path, (unlinkErr) => {
-                if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
-            });
+            fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
             return res.status(400).send(`Unsupported audio format. Only ${supportedFormats.join(', ')} are supported.`);
         }
         console.log("5: Format check passed.");
 
-        if (metadata.format.size > 100 * 1024 * 1024) {
+        // Check size
+        if (metadata.format.size > 25 * 1024 * 1024) {
             console.log("6: File size too large.");
-            fs.unlink(audioFile.path, (unlinkErr) => {
-                if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
-            });
-            return res.status(400).send('Audio file is too large (max 100MB).');
+            fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
+            return res.status(400).send('Audio file is too large (max 25MB).');
         }
         console.log("7: Size check passed.");
 
+        // Check duration
         if (metadata.format.duration > 15 * 60) {
             console.log("8: File duration too long.");
-            fs.unlink(audioFile.path, (unlinkErr) => {
-                if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
-            });
+            fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
             return res.status(400).send('Audio file is too long (max 15 minutes).');
         }
         console.log("9: Duration check passed. All validations complete.");
 
+        // --- Push to queue ---
+        console.log("10: Preparing message with file path. Attempting RabbitMQ connection...");
+        
+        let conn;
+        let ch;
 
+        try {
+            conn = await amqp.connect(CLOUDAMQP_URL);
+            console.log("11: RabbitMQ connection established successfully!");
+            
+            ch = await conn.createConfirmChannel();
+            console.log("12: Confirm channel created successfully!");
+            
+            await ch.assertQueue(audioQueue, { durable: true });
+            
+            const message = {
+                // KEY CHANGE: Sending only the file path instead of the large buffer
+                filePath: filePath,
+                metadata: {
+                    originalname: audioFile.originalname,
+                    mimetype: audioFile.mimetype,
+                    formatName: metadata.format.format_name,
+                    size: metadata.format.size,
+                    duration: metadata.format.duration,
+                    uploadTimestamp: new Date().toISOString(),
+                },
+            };
+            
+            console.log("13: Message prepared and sending to queue.");
+            
+            ch.sendToQueue(audioQueue, Buffer.from(JSON.stringify(message)), { persistent: true });
+            
+            await ch.waitForConfirms();
+            
+            console.log(`Audio file path "${audioFile.originalname}" confirmed by RabbitMQ and pushed to queue.`);
+            
+            res.status(202).send('Audio file received and pushed to queue for transcription.');
 
-
-
-
-
-
-        fs.readFile(audioFile.path, async (readErr, audioBuffer) => {
-            fs.unlink(audioFile.path, (unlinkErr) => {
-                if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
-            });
-            console.log("10: File read into buffer.");
-
-            if (readErr) {
-                console.error('Error reading audio file from disk:', readErr);
-                return res.status(500).send('Failed to read audio file for processing.');
+        } catch (queueErr) {
+            console.error('Error with RabbitMQ or message confirmation:', queueErr);
+            if (!res.headersSent) {
+                res.status(500).send('Failed to push audio to queue.');
             }
-            console.log("11: Buffer created. Attempting RabbitMQ connection...");
-
-            let conn, ch;
-            try {
-                // Set connection timeout
-                const connectPromise = amqp.connect(CLOUDAMQP_URL);
-                const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('Connection timeout')), 10000);
-                });
-                
-                conn = await Promise.race([connectPromise, timeoutPromise]);
-                console.log("12: RabbitMQ connection established successfully!");
-
-                ch = await conn.createChannel();
-                console.log("13: Channel created.");
-
-                await ch.assertQueue(audioQueue, { durable: true });
-
-                const message = {
-                    audioBufferData: audioBuffer,
-                    metadata: {
-                        originalname: audioFile.originalname,
-                        mimetype: audioFile.mimetype,
-                        formatName: metadata.format.format_name,
-                        size: metadata.format.size,
-                        duration: metadata.format.duration,
-                        uploadTimestamp: new Date().toISOString(),
-                    },
-                };
-                console.log("14: Message prepared and sending to queue.");
-
-                await ch.sendToQueue(audioQueue, Buffer.from(JSON.stringify(message)), { persistent: true });
-                console.log(`Audio chunk "${audioFile.originalname}" pushed to queue.`);
-                res.status(202).send('Audio chunk received and pushed to queue for transcription.');
-
-            } catch (error) {
-                console.error('RabbitMQ error:', error.message);
-                console.error('Full error:', error);
-                res.status(500).send('Error with RabbitMQ: ' + error.message);
-            } finally {
-                try {
-                    if (ch) await ch.close();
-                    if (conn) await conn.close();
-                } catch (closeErr) {
-                    console.error('Error closing RabbitMQ connection:', closeErr);
-                }
+        } finally {
+            if (ch) {
+                await ch.close().catch(e => console.error("Error closing channel:", e));
             }
-        });
-
-
-
-
-
-
-    });
+            if (conn) {
+                await conn.close().catch(e => console.error("Error closing connection:", e));
+            }
+        }
+    } catch (err) {
+        console.error('An error occurred during audio processing or validation:', err);
+        // Clean up the file on disk if an error occurred
+        fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
+        return res.status(500).send('Failed to process audio file.');
+    }
 });
 
 module.exports = router;
