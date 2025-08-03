@@ -1,3 +1,4 @@
+// audioRoutes.js
 const express = require('express');
 const router = express.Router();
 const multer = require('multer'); // Multer for handling multipart/form-data
@@ -18,13 +19,18 @@ const upload = multer({
 
 router.post('/', upload.single('audio'), async (req, res) => {
     const audioFile = req.file;
+    const { jobId } = req.cookies; // Get jobId from the cookies
 
-    // --- Input Validation ---
+    // --- Input and Session Validation ---
     if (!audioFile) {
         return res.status(400).send('No audio file provided.');
     }
-    // Now logging that Multer has saved the file to disk, not in memory
-    console.log("1: File received and saved to disk by Multer.");
+    if (!jobId) {
+        // If there's no jobId, the meeting session hasn't been initiated.
+        return res.status(400).send('No meeting session found. Please start a meeting first.');
+    }
+
+    console.log(`1: File received for jobId ${jobId}.`);
 
     // Multer with dest provides the file path
     const filePath = path.join(__dirname, '..', audioFile.path);
@@ -37,11 +43,11 @@ router.post('/', upload.single('audio'), async (req, res) => {
                 resolve(meta);
             });
         });
-        
+
         console.log("3: ffprobe succeeded. Metadata:", metadata.format.format_name, "Size:", metadata.format.size, "Duration:", metadata.format.duration);
 
         // Check format
-        const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm','mpeg', 'mpga'];
+        const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm', 'mpeg', 'mpga'];
         if (!metadata.format || !supportedFormats.includes(metadata.format.format_name)) {
             console.log("4: Unsupported format detected.");
             fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
@@ -66,22 +72,23 @@ router.post('/', upload.single('audio'), async (req, res) => {
         console.log("9: Duration check passed. All validations complete.");
 
         // --- Push to queue ---
-        console.log("10: Preparing message with file path. Attempting RabbitMQ connection...");
-        
+        console.log("10: Preparing message with file path and jobId. Attempting RabbitMQ connection...");
+
         let conn;
         let ch;
 
         try {
             conn = await amqp.connect(CLOUDAMQP_URL);
             console.log("11: RabbitMQ connection established successfully!");
-            
+
             ch = await conn.createConfirmChannel();
             console.log("12: Confirm channel created successfully!");
-            
+
             await ch.assertQueue(audioQueue, { durable: true });
-            
+
             const message = {
-                // KEY CHANGE: Sending only the file path instead of the large buffer
+                // KEY CHANGE: Now including the jobId
+                jobId: jobId,
                 filePath: filePath,
                 metadata: {
                     originalname: audioFile.originalname,
@@ -92,15 +99,15 @@ router.post('/', upload.single('audio'), async (req, res) => {
                     uploadTimestamp: new Date().toISOString(),
                 },
             };
-            
+
             console.log("13: Message prepared and sending to queue.");
-            
+
             ch.sendToQueue(audioQueue, Buffer.from(JSON.stringify(message)), { persistent: true });
-            
+
             await ch.waitForConfirms();
-            
-            console.log(`Audio file path "${audioFile.originalname}" confirmed by RabbitMQ and pushed to queue.`);
-            
+
+            console.log(`Audio file path "${audioFile.originalname}" for jobId ${jobId} confirmed by RabbitMQ and pushed to queue.`);
+
             res.status(202).send('Audio file received and pushed to queue for transcription.');
 
         } catch (queueErr) {

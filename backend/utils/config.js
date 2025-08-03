@@ -2,6 +2,8 @@
 require('dotenv').config(); // Load environment variables once at the very beginning
 
 const config = {
+    // MongoDB URL
+    MONGODB_URL: process.env.MONGODB_URL,
     // RabbitMQ / CloudAMQP URL
     CLOUDAMQP_URL: process.env.CLOUDAMQP_URL,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
@@ -54,6 +56,12 @@ if (!config.QDRANT_API_KEY) {
 
 if (!config.COLLECTION) {
     console.error('ERROR: COLLECTION environment variable is not set.');
+    process.exit(1); // Exit if critical config is missing
+}
+
+// Validation for the MongoDB connection string
+if (!config.MONGODB_URL) {
+    console.error('ERROR: MONGODB_URL environment variable is not set.');
     process.exit(1); // Exit if critical config is missing
 }
 
