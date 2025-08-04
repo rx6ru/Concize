@@ -7,6 +7,7 @@ const GET_TRANSCRIPTION_API_URL = 'http://localhost:3000/api/transcription';
 let isRecording = false; // Tracks if recording is active.
 let isStopping = false; // Tracks if a stop request has been initiated.
 let activeTabId = null; // Store the ID of the active tab for locking.
+let workerStatus = 'stopped'; // 'stopped', 'starting', 'running'
 
 // A simple exponential backoff retry function for API calls.
 const fetchWithRetry = async (url, options, retries = 3) => {
@@ -33,25 +34,41 @@ const fetchWithRetry = async (url, options, retries = 3) => {
     }
 };
 
+// Function to poll for the jobId cookie.
+const waitForJobIdCookie = async (maxAttempts = 10, delayMs = 500) => {
+    for (let i = 0; i < maxAttempts; i++) {
+        try {
+            const cookie = await chrome.cookies.get({ url: 'http://localhost:3000', name: 'jobId' });
+            if (cookie && cookie.value) {
+                console.log(`JobId cookie found after ${i + 1} attempts.`);
+                return cookie.value;
+            }
+        } catch (e) {
+            console.warn('Error checking for jobId cookie:', e);
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    throw new Error('JobId cookie not found after multiple attempts.');
+};
+
 // Function to ensure the offscreen document is open and ready.
 async function getOffscreenDocument() {
-    const offscreenUrl = chrome.runtime.getURL('offscreen.html');
-    const existingOffscreen = await chrome.tabs.query({ url: offscreenUrl });
-    if (!existingOffscreen.length) {
+    if (!(await chrome.offscreen.hasDocument())) { // Check if document already exists
         await chrome.offscreen.createDocument({
             url: 'offscreen.html',
-            reasons: ['USER_MEDIA'],
-            justification: 'To handle audio recording from the microphone.',
+            reasons: ['USER_MEDIA'], // We use USER_MEDIA because tabCapture stream is treated similarly
+            justification: 'To handle audio recording from the active tab.',
         });
     }
 }
 
 // Function to close the offscreen document.
 async function closeOffscreenDocument() {
-    const offscreenUrl = chrome.runtime.getURL('offscreen.html');
-    const existingOffscreen = await chrome.tabs.query({ url: offscreenUrl });
-    if (existingOffscreen.length) {
+    if (await chrome.offscreen.hasDocument()) { // Check if document exists before closing
         await chrome.offscreen.closeDocument();
+        console.log('Offscreen document closed.');
+    } else {
+        console.log('No offscreen document to close.');
     }
 }
 
@@ -63,6 +80,8 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                 console.log('Recording is already in progress.');
                 return;
             }
+            // Set workerStatus to 'starting' immediately to prevent re-entry.
+            workerStatus = 'starting';
             isRecording = true;
             isStopping = false;
 
@@ -70,6 +89,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                 if (tabs.length === 0) {
                     console.error('No active tab found.');
                     isRecording = false; // Reset state if no active tab.
+                    workerStatus = 'stopped';
                     return;
                 }
                 activeTabId = tabs[0].id; // Lock recording to this tab.
@@ -83,12 +103,22 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                     const responseData = await response.json(); // Assuming backend returns JSON with jobId
                     console.log('Meeting session initiated:', responseData.message, 'JobId:', responseData.jobId);
 
+                    // Wait for the jobId cookie to be set
+                    await waitForJobIdCookie();
+                    await new Promise(resolve => setTimeout(resolve, 200)); // Added small delay
+
                     console.log('Service worker received start recording request. Initializing offscreen document...');
                     await getOffscreenDocument();
-                    // Forward the message to the offscreen document to start actual recording.
-                    chrome.runtime.sendMessage({ action: 'startRecordingOffscreen' });
+
+                    // --- CRITICAL CHANGE: Send tabId to offscreen document for capture ---
+                    console.log(`Service worker: Instructing offscreen document to capture audio from tabId: ${activeTabId}...`);
+                    // Send the tabId to the offscreen document
+                    chrome.runtime.sendMessage({ action: 'startRecordingOffscreen', tabId: activeTabId });
+                    // --- END CRITICAL CHANGE ---
+
                     // Inform the popup that recording has started
                     chrome.runtime.sendMessage({ type: 'recordingStatus', isRecording: true, workerStatus: 'running' });
+                    workerStatus = 'running'; // Update worker status after successful start.
 
                 } catch (error) {
                     console.error('Failed to start meeting session or offscreen document:', error);
@@ -98,6 +128,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                     });
                     isRecording = false;
                     activeTabId = null;
+                    workerStatus = 'stopped'; // Ensure status is reset on failure.
                     // Ensure offscreen document is closed if start fails.
                     await closeOffscreenDocument();
                 }
@@ -125,7 +156,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                 const audioChunkBlob = new Blob([message.audioData.buffer], { type: message.audioData.mimeType });
                 await handleAudioUpload(audioChunkBlob);
                 
-                // If we are in the stopping phase, and this is the last chunk, perform final cleanup.
+                // If we are stopping, this is the last chunk, so perform final cleanup.
                 if (isStopping) {
                     console.log('Last chunk received after stop request. Marking session complete and fetching transcription...');
                     try {
@@ -156,6 +187,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                         await closeOffscreenDocument();
                         activeTabId = null;
                         isStopping = false;
+                        workerStatus = 'stopped'; // Final state after stopping.
                         console.log('Recording session fully terminated and cleaned up.');
                     }
                 }
@@ -167,7 +199,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             chrome.runtime.sendMessage({
                 type: 'recordingStatus',
                 isRecording: isRecording,
-                workerStatus: isRecording ? 'running' : 'stopped' // Reflect worker status based on recording state
+                workerStatus: workerStatus
             });
             break;
     }
@@ -202,7 +234,5 @@ async function handleAudioUpload(audioBlob) {
             type: 'error',
             message: 'Failed to send audio chunk: ' + error.message
         });
-        // Do not stop the entire meeting session on a single chunk failure.
-        // The stop logic is now handled by the 'stopRecording' action.
     }
 }

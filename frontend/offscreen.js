@@ -1,6 +1,5 @@
 // offscreen.js
 let mediaRecorder;
-let audioChunks = [];
 let audioStream = null;
 const MAX_RECORDING_DURATION_MS = 15 * 60 * 1000;
 const CHUNK_DURATION_MS = 15000; // Send an audio chunk every 15 seconds for testing.
@@ -14,39 +13,77 @@ const getFileName = () => {
     return `recording_${date}_${time}.webm`;
 };
 
-async function startRecording() {
+// --- FUNCTION TO DOWNLOAD AUDIO BLOB (for verification) ---
+const downloadAudioBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+    console.log(`Downloaded: ${filename}`);
+};
+// --- END FUNCTION ---
+
+// Modified startRecording function to accept tabId
+async function startRecording(tabId) {
     try {
-        if (!audioStream) {
-            console.log('Offscreen document requesting microphone access...');
-            audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log('Offscreen document: Microphone access granted.');
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            console.log('Offscreen document: MediaRecorder already active.');
+            return;
         }
 
-        mediaRecorder = new MediaRecorder(audioStream);
-        audioChunks = [];
+        console.log(`Offscreen document: Requesting tab audio capture for tabId: ${tabId}...`);
+        // --- CRITICAL CHANGE: Use chrome.tabCapture.capture directly in offscreen.js ---
+        audioStream = await new Promise((resolve, reject) => {
+            chrome.tabCapture.capture({
+                audio: true,
+                video: false,
+                tabId: tabId // Specify the tab to capture from
+            }, (stream) => {
+                if (stream) {
+                    resolve(stream);
+                } else {
+                    reject(new Error(chrome.runtime.lastError.message || 'Failed to capture tab audio.'));
+                }
+            });
+        });
+        console.log('Offscreen document: Tab audio stream granted.');
+        // --- END CRITICAL CHANGE ---
 
-        // This event now fires every CHUNK_DURATION_MS with a chunk of data.
+        mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+
         mediaRecorder.ondataavailable = async (event) => {
             if (event.data.size > 0) {
                 console.log('Offscreen document: Sending audio chunk to service worker...');
                 const arrayBuffer = await event.data.arrayBuffer();
+                const filename = getFileName();
+                const audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
+
+                // Download the audio chunk for verification
+                downloadAudioBlob(audioBlob, filename);
+
                 chrome.runtime.sendMessage({
-                    action: 'onAudioChunkReady', // Use a new action for chunks.
+                    action: 'onAudioChunkReady',
                     audioData: {
                         buffer: arrayBuffer,
                         mimeType: 'audio/webm',
-                        fileName: getFileName()
+                        fileName: filename
                     }
                 });
             }
         };
 
-        // The onstop event will now only handle the cleanup.
         mediaRecorder.onstop = () => {
             console.log('Offscreen document: Recording stopped.');
-            // Stop the stream to release the microphone.
-            audioStream.getTracks().forEach(track => track.stop());
-            audioStream = null;
+            // Stop the stream to release the audio capture.
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
             
             // Let the popup know we've stopped recording.
             chrome.runtime.sendMessage({
@@ -56,7 +93,6 @@ async function startRecording() {
             });
         };
 
-        // Start recording and get a chunk every CHUNK_DURATION_MS.
         mediaRecorder.start(CHUNK_DURATION_MS);
         console.log('Offscreen document: Recording started, sending chunks every ' + CHUNK_DURATION_MS / 1000 + ' seconds.');
         
@@ -80,6 +116,11 @@ async function startRecording() {
             type: 'error',
             message: `Recording error: ${error.message}`
         });
+        // Ensure stream is stopped and nullified if an error occurs during start
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
     }
 }
 
@@ -90,10 +131,10 @@ function stopRecording() {
     }
 }
 
-// Listen for messages from the service worker.
+// Listen for direct messages from service worker
 chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'startRecordingOffscreen') {
-        startRecording();
+    if (message.action === 'startRecordingOffscreen' && message.tabId) {
+        startRecording(message.tabId); // Pass the tabId to start capture
     } else if (message.action === 'stopRecordingOffscreen') {
         stopRecording();
     }
