@@ -4,6 +4,8 @@
   "version": "1.0",
   "description": "An extension to record audio and send it to the Concize RAG pipeline.",
   "permissions": [
+    "offscreen",
+    "activeTab",
     "storage",
     "activeTab",
     "scripting",
@@ -19,5 +21,11 @@
   },
   "background": {
     "service_worker": "service-worker.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen.html", "offscreen.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
