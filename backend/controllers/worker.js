@@ -72,6 +72,15 @@ const startWorker = async () => {
                 const messageString = msg.content.toString();
                 messageContent = JSON.parse(messageString);
                 console.log('Worker: Message content parsed successfully.');
+
+                // KEY CHANGE: Check for a termination signal
+                if (messageContent.terminate === true) {
+                    console.log(`Worker: Received termination signal for jobId: ${messageContent.jobId}. Shutting down gracefully.`);
+                    // Acknowledge the termination message so it's removed from the queue
+                    globalChannel.ack(msg);
+                    await stopWorker(); // Gracefully close connections
+                    return; // Stop processing further
+                }
                 
                 // Get the jobId from the message
                 jobId = messageContent.jobId;
@@ -100,18 +109,18 @@ const startWorker = async () => {
                 } else {
                     console.warn(`Worker: No text to append for jobId: ${jobId}. Skipping database update.`);
                 }
-                
+
                 // --- Embedding and clean logic can remain as it's separate from transcription storage ---
                 const cleanedChunks = await clean(transcribedText);
                 console.log(`Worker: Cleaned transcript into ${cleanedChunks.length} structured chunks.`);
-                
+
                 const embedResult = await upsertTranscriptionChunks(cleanedChunks, metadata);
                 if (!embedResult.success) {
                     throw new Error(`Embedding and upsert failed: ${embedResult.error}`);
                 }
                 console.log(`Worker: Transcription processed and embedded successfully for "${metadata.originalname || 'unknown'}"`);
                 // ----------------------------------------------------------------------------------
-                
+
                 // Clean up the processed audio file
                 fs.unlink(audioFilePath, (unlinkErr) => {
                     if (unlinkErr) console.error(`Worker: Error deleting processed audio file ${audioFilePath}:`, unlinkErr);
