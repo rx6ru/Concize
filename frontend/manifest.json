@@ -1,36 +1,37 @@
+
 {
-  "manifest_version": 3,
-  "name": "Concize RAG",
-  "version": "1.0",
-  "description": "An extension to record audio and send it to the Concize RAG pipeline.",
-  "permissions": [
-    "tabCapture",
-    "activeTab",
-    "scripting",
-    "storage",
-    "cookies",
-    "offscreen"
-  ],
-  "host_permissions": [
-    "http://localhost:3000/*",
-    "https://meet.google.com/*",
-    "<all_urls>"
-  ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "/icons/icon16.png",
-      "48": "/icons/icon48.png",
-      "128": "/icons/icon128.png"
-    }
-  },
-  "background": {
-    "service_worker": "service-worker.js"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["offscreen.html", "offscreen.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+    "manifest_version": 3,
+    "name": "Concize RAG",
+    "version": "1.0",
+    "description": "An extension to record audio and send it to the Concize RAG pipeline.",
+    "permissions": [
+        "tabCapture",
+        "activeTab",
+        "scripting",
+        "storage",
+        "cookies",
+        "offscreen"
+    ],
+    "host_permissions": [
+        "http://localhost:3000/*",
+        "https://meet.google.com/*",
+        "<all_urls>"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "/icons/icon16.png",
+            "48": "/icons/icon48.png",
+            "128": "/icons/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "service-worker.js"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": ["offscreen.html", "offscreen.js"],
+            "matches": ["<all_urls>"]
+        }
+    ]
 }
