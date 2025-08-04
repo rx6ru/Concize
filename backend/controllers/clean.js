@@ -71,13 +71,17 @@ const clean = async (text) => {
         // This is robust to any leading/trailing commentary from the model.
         const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
+            console.error('CLEANING_LOG: No valid JSON array found in the response.');
             throw new Error('No valid JSON array found in response');
         }
 
         const jsonString = jsonMatch[0];
+        console.log('CLEANING_LOG: Extracted JSON string:', jsonString);
 
         // Parse the extracted JSON string to validate it and convert it to an object
         const parsedJson = JSON.parse(jsonString);
+
+        console.log(`CLEANING_LOG: Parsed ${parsedJson.length} structured chunks successfully.`);
 
         // Return the parsed JSON object directly, as the LLM is now instructed
         // to provide the desired format without the 'chunk_index'.
