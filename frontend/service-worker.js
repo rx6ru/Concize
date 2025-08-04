@@ -58,26 +58,23 @@ async function closeOffscreenDocument() {
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     switch (message.action) {
         case 'startRecording':
+            // Check if we are on a Google Meet page before starting.
             chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
                 if (tabs[0] && tabs[0].url.startsWith('https://meet.google.com/')) {
                     if (isRecording) {
                         console.log('Recording is already in progress.');
                         return;
                     }
+                    isRecording = true;
+                    isStopping = false;
+                    activeMeetTabId = tabs[0].id; // Lock recording to this tab.
 
+                    console.log('Starting backend worker...');
                     try {
-                        console.log('Starting backend worker...');
                         await fetchWithRetry(START_MEETING_API_URL, {
                             method: 'POST'
                         });
                         workerStatus = 'running';
-                        isRecording = true;
-                        isStopping = false;
-                        activeMeetTabId = tabs[0].id;
-                        
-                        console.log('Service worker received start recording request. Initializing offscreen document...');
-                        await getOffscreenDocument();
-                        chrome.runtime.sendMessage({ action: 'startRecordingOffscreen' });
                     } catch (error) {
                         console.error('Failed to start backend worker:', error);
                         chrome.runtime.sendMessage({
@@ -86,7 +83,13 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                         });
                         isRecording = false;
                         workerStatus = 'stopped';
+                        return;
                     }
+
+                    console.log('Service worker received start recording request. Initializing offscreen document...');
+                    await getOffscreenDocument();
+                    // Forward the message to the offscreen document.
+                    chrome.runtime.sendMessage({ action: 'startRecordingOffscreen' });
                 } else {
                     console.log('Recording can only be started on a Google Meet page.');
                     chrome.runtime.sendMessage({
@@ -148,23 +151,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 async function handleAudioUpload(audioBlob) {
-    if (workerStatus !== 'running') {
-        console.error('No active meeting session. Starting one...');
-        try {
-            await fetchWithRetry(START_MEETING_API_URL, {
-                method: 'POST'
-            });
-            workerStatus = 'running';
-        } catch (error) {
-            console.error('Failed to start meeting session:', error);
-            chrome.runtime.sendMessage({
-                type: 'error',
-                message: 'Failed to start meeting session. Please try again.'
-            });
-            return;
-        }
-    }
-
     try {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'audio_chunk.webm');
@@ -176,6 +162,7 @@ async function handleAudioUpload(audioBlob) {
         });
         const transcription = await response.json();
         console.log('Backend response:', transcription);
+        // Send the transcription result back to the popup.
         chrome.runtime.sendMessage({
             type: 'transcriptionResult',
             transcription
@@ -186,9 +173,5 @@ async function handleAudioUpload(audioBlob) {
             type: 'error',
             message: error.message
         });
-        // If we get a 400 error about no meeting session, reset the worker status
-        if (error.message.includes('400')) {
-            workerStatus = 'stopped';
-        }
     }
 }
