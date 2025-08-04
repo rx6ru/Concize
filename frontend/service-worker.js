@@ -1,18 +1,19 @@
 // service-worker.js
-const BACKEND_API_URL = 'http://localhost:3000/api/audios/';
+const BACKEND_AUDIO_API_URL = 'http://localhost:3000/api/audios/';
 const START_MEETING_API_URL = 'http://localhost:3000/api/meeting/start';
 const STOP_MEETING_API_URL = 'http://localhost:3000/api/meeting/stop';
-let workerStatus = 'stopped'; // 'stopped', 'starting', 'running'
-let activeMeetTabId = null; // Store the ID of the active tab.
+const GET_TRANSCRIPTION_API_URL = 'http://localhost:3000/api/transcription';
+
 let isRecording = false; // Tracks if recording is active.
 let isStopping = false; // Tracks if a stop request has been initiated.
+let activeTabId = null; // Store the ID of the active tab for locking.
 
 // A simple exponential backoff retry function for API calls.
 const fetchWithRetry = async (url, options, retries = 3) => {
     let delay = 1000;
     for (let i = 0; i < retries; i++) {
         try {
-            // Add credentials to ensure cookies are sent with the request.
+            // Include credentials (cookies) with the request.
             const response = await fetch(url, { ...options, credentials: 'include' });
             if (!response.ok) {
                 const errorBody = await response.text();
@@ -58,84 +59,115 @@ async function closeOffscreenDocument() {
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     switch (message.action) {
         case 'startRecording':
-            if (workerStatus !== 'stopped') {
-                console.log('Worker is not in a stopped state. Cannot start recording.');
+            if (isRecording) {
+                console.log('Recording is already in progress.');
                 return;
             }
-            workerStatus = 'starting';
             isRecording = true;
             isStopping = false;
 
             chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
                 if (tabs.length === 0) {
                     console.error('No active tab found.');
-                    workerStatus = 'stopped';
-                    isRecording = false;
+                    isRecording = false; // Reset state if no active tab.
                     return;
                 }
-                activeMeetTabId = tabs[0].id; // Lock recording to this tab.
+                activeTabId = tabs[0].id; // Lock recording to this tab.
 
-                console.log('Starting backend worker...');
+                console.log('Initiating new meeting session on backend...');
                 try {
-                    // Send the start meeting request.
-                    await fetchWithRetry(START_MEETING_API_URL, {
+                    // Send the start meeting request. Browser handles Set-Cookie.
+                    const response = await fetchWithRetry(START_MEETING_API_URL, {
                         method: 'POST'
                     });
-                    workerStatus = 'running';
-                    console.log('Meeting session started successfully. Initializing offscreen document...');
+                    const responseData = await response.json(); // Assuming backend returns JSON with jobId
+                    console.log('Meeting session initiated:', responseData.message, 'JobId:', responseData.jobId);
+
+                    console.log('Service worker received start recording request. Initializing offscreen document...');
                     await getOffscreenDocument();
-                    // Forward the message to the offscreen document.
+                    // Forward the message to the offscreen document to start actual recording.
                     chrome.runtime.sendMessage({ action: 'startRecordingOffscreen' });
+                    // Inform the popup that recording has started
+                    chrome.runtime.sendMessage({ type: 'recordingStatus', isRecording: true, workerStatus: 'running' });
+
                 } catch (error) {
-                    console.error('Failed to start meeting session:', error);
+                    console.error('Failed to start meeting session or offscreen document:', error);
                     chrome.runtime.sendMessage({
                         type: 'error',
-                        message: 'Failed to start meeting session.'
+                        message: 'Failed to start recording session: ' + error.message
                     });
                     isRecording = false;
-                    workerStatus = 'stopped';
-                    activeMeetTabId = null;
+                    activeTabId = null;
+                    // Ensure offscreen document is closed if start fails.
+                    await closeOffscreenDocument();
                 }
             });
             break;
+
         case 'stopRecording':
-            if (!isRecording) {
-                console.log('No recording to stop.');
+            if (!isRecording && !isStopping) { // Prevent multiple stop calls or stopping when not recording
+                console.log('No active recording to stop.');
                 return;
             }
             isStopping = true;
-            isRecording = false;
+            isRecording = false; // Immediately set to false for UI update
             console.log('Service worker received stop recording request. Forwarding to offscreen document...');
-            // Forward the message to the offscreen document.
+            // Inform the popup that recording is stopping for immediate UI update
+            chrome.runtime.sendMessage({ type: 'recordingStatus', isRecording: false, workerStatus: 'stopped' });
+            // Forward the message to the offscreen document to stop actual recording.
             chrome.runtime.sendMessage({ action: 'stopRecordingOffscreen' });
             break;
+
         case 'onAudioChunkReady':
-            // Only process audio chunks if we are locked to a tab.
-            if (activeMeetTabId) {
+            // Only process audio chunks if we are locked to the active tab.
+            if (activeTabId) {
                 console.log('Service worker received audio chunk. Handling upload...');
-                // Create a Blob from the ArrayBuffer directly.
                 const audioChunkBlob = new Blob([message.audioData.buffer], { type: message.audioData.mimeType });
                 await handleAudioUpload(audioChunkBlob);
                 
-                // If we are stopping, this is the last chunk, so perform cleanup.
+                // If we are in the stopping phase, and this is the last chunk, perform final cleanup.
                 if (isStopping) {
-                    console.log('Last chunk received. Stopping backend worker and cleaning up...');
-                    await fetchWithRetry(STOP_MEETING_API_URL, {
-                        method: 'POST'
-                    });
-                    await closeOffscreenDocument();
-                    workerStatus = 'stopped';
-                    activeMeetTabId = null;
-                    isStopping = false;
+                    console.log('Last chunk received after stop request. Marking session complete and fetching transcription...');
+                    try {
+                        // Mark session completion on backend.
+                        await fetchWithRetry(STOP_MEETING_API_URL, {
+                            method: 'POST'
+                        });
+                        console.log('Meeting session marked as completed.');
+
+                        // Fetch final transcription.
+                        const transcriptionResponse = await fetchWithRetry(GET_TRANSCRIPTION_API_URL, {
+                            method: 'GET'
+                        });
+                        const transcriptionData = await transcriptionResponse.json();
+                        console.log('Final transcription received:', transcriptionData);
+                        chrome.runtime.sendMessage({
+                            type: 'transcriptionResult',
+                            transcription: { text: transcriptionData.transcriptionChunks.join('\n') } // Join chunks for display
+                        });
+                    } catch (error) {
+                        console.error('Error during stop cleanup or fetching transcription:', error);
+                        chrome.runtime.sendMessage({
+                            type: 'error',
+                            message: 'Error during stop or transcription fetch: ' + error.message
+                        });
+                    } finally {
+                        // Always perform cleanup regardless of transcription fetch success.
+                        await closeOffscreenDocument();
+                        activeTabId = null;
+                        isStopping = false;
+                        console.log('Recording session fully terminated and cleaned up.');
+                    }
                 }
             }
             break;
+
         case 'getRecordingStatus':
-            // Send the current worker status to the popup.
+            // Send the current recording status to the popup.
             chrome.runtime.sendMessage({
                 type: 'recordingStatus',
                 isRecording: isRecording,
-                workerStatus: workerStatus
+                workerStatus: isRecording ? 'running' : 'stopped' // Reflect worker status based on recording state
             });
             break;
     }
@@ -143,8 +175,9 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 
 // Listener for tab updates to stop recording if the active tab is closed.
 chrome.tabs.onRemoved.addListener((tabId) => {
-    if (tabId === activeMeetTabId) {
+    if (tabId === activeTabId) {
         console.log('Active tab was closed. Stopping recording.');
+        // Trigger the stop recording flow, which handles backend stop and cleanup.
         chrome.runtime.sendMessage({ action: 'stopRecording' });
     }
 });
@@ -154,24 +187,22 @@ async function handleAudioUpload(audioBlob) {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'audio_chunk.webm');
         
-        console.log('Sending audio file to backend...');
-        const response = await fetchWithRetry(BACKEND_API_URL, {
+        console.log('Sending audio file chunk to backend...');
+        const response = await fetchWithRetry(BACKEND_AUDIO_API_URL, {
             method: 'POST',
             body: formData,
         });
-        // Assuming the backend returns a JSON object.
         const transcription = await response.json();
-        console.log('Backend response:', transcription);
-        // Send the transcription result back to the popup.
-        chrome.runtime.sendMessage({
-            type: 'transcriptionResult',
-            transcription
-        });
+        console.log('Backend chunk response:', transcription);
+        // You might want to update the UI with partial transcriptions here if your backend supports it.
+        // For now, we'll wait for the final transcription.
     } catch (error) {
-        console.error('Failed to send audio to backend:', error);
+        console.error('Failed to send audio chunk to backend:', error);
         chrome.runtime.sendMessage({
             type: 'error',
-            message: error.message
+            message: 'Failed to send audio chunk: ' + error.message
         });
+        // Do not stop the entire meeting session on a single chunk failure.
+        // The stop logic is now handled by the 'stopRecording' action.
     }
 }
