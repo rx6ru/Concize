@@ -44,8 +44,7 @@ router.post('/stop', async (req, res) => {
     try {
         const result = await stopWorker(); // Call the function from worker.js
         if (result.success) {
-            // Clear the jobId cookie on session end
-            res.clearCookie('jobId');
+
             res.status(200).json({ ...result, message: 'Worker stopped and meeting session ended.' });
         } else {
             res.status(500).json(result);
