@@ -1,4 +1,7 @@
 // popup.js
+let isRecording = false;
+let workerStatus = 'stopped';
+
 document.addEventListener('DOMContentLoaded', () => {
     const toggleButton = document.getElementById('toggleButton');
     const startIcon = document.getElementById('startIcon');
@@ -8,8 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMessage = document.getElementById('statusMessage');
     const workerStatusBadge = document.getElementById('workerStatus');
     const transcriptionText = document.getElementById('transcriptionText');
-
-    let isRecording = false;
 
     // Function to update UI based on recording state
     const updateUI = (newIsRecording, newWorkerStatus) => {
