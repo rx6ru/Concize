@@ -1,43 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "Meet Audio Transcriber",
+  "name": "Concize RAG",
   "version": "1.0",
-  "description": "Records audio from Google Meet calls in chunks and prepares it for transcription.",
+  "description": "An extension to record audio and send it to the Concize RAG pipeline.",
   "permissions": [
-    "tabCapture",
+    "storage",
     "activeTab",
     "scripting",
-    "offscreen",
-    "downloads"
+    "tabCapture"
   ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "/icons/icon16.png",
+      "48": "/icons/icon48.png",
+      "128": "/icons/icon128.png"
     }
-  },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js"
-  },
-  "content_scripts": [
-    {
-      "matches": ["*://meet.google.com/*"],
-      "js": ["content.js"]
-    }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com;"
-  },
-  "offscreen": {
-    "reasons": ["USER_MEDIA"],
-    "justification": "Required to record tab audio and process it.",
-    "document_path": "offscreen.html"
+    "service_worker": "service-worker.js"
   }
 }

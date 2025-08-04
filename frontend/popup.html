@@ -3,88 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meet Recorder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Concize RAG</title>
     <style>
-        /* Minimal Tailwind-like styles included directly */
-        :root { --blue-600: #2563eb; --blue-700: #1d4ed8; --red-600: #dc2626; --red-700: #b91c1c; --gray-100: #f3f4f6; --gray-400: #9ca3af; --gray-500: #6b7280; --gray-600: #4b5563; --gray-700: #374151; --gray-800: #1f2937; --gray-900: #111827; --green-100: #dcfce7; --green-800: #166534; --red-500: #ef4444; --white: #ffffff; }
-        body { font-family: 'Inter', sans-serif; width: 320px; background-color: #f7fafc; color: var(--gray-800); margin: 0; }
-        .m-2 { margin: 0.5rem; }
-        .mt-0 { margin-top: 0; }
-        .p-4 { padding: 1rem; }
-        .mb-4 { margin-bottom: 1rem; }
-        .mb-2 { margin-bottom: 0.5rem; }
-        .mr-3 { margin-right: 0.75rem; }
+        /* Tailwind CSS CDN is now embedded directly to comply with CSP */
+        /*
+         * This is a minimal set of Tailwind styles to make the design work.
+         * For a full set of styles, you would typically build the CSS
+         * with a bundler.
+         */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .container {
+            width: 300px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+        .button-wrapper {
+            position: relative;
+            display: inline-block;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border-radius: 9999px;
+            overflow: hidden;
+            background: linear-gradient(to right, #3b82f6, #2563eb);
+            width: 100%;
+        }
+        .button-wrapper.stop {
+            background: linear-gradient(to right, #ef4444, #dc2626);
+        }
+        .button-wrapper:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+        }
+        button {
+            background-color: transparent;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            outline: none;
+            width: 100%;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-badge.running {
+            background-color: #10B981;
+            color: #1F2937;
+        }
+        .status-badge.stopped {
+            background-color: #EF4444;
+            color: #1F2937;
+        }
+        .status-badge.recording {
+            background-color: #FBBF24;
+            color: #1F2937;
+        }
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+        .hidden {
+            display: none;
+        }
+        .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+        .font-bold { font-weight: 700; }
         .flex { display: flex; }
         .items-center { align-items: center; }
-        .justify-between { justify-content: space-between; }
-        .text-lg { font-size: 1.125rem; }
-        .font-bold { font-weight: 700; }
-        .text-gray-900 { color: var(--gray-900); }
-        .w-8 { width: 2rem; }
-        .h-8 { height: 2rem; }
+        .justify-center { justify-content: center; }
+        .space-x-2 > :not([hidden]) ~ :not([hidden]) { margin-left: 0.5rem; }
         .w-3 { width: 0.75rem; }
         .h-3 { height: 0.75rem; }
-        .bg-gray-400 { background-color: var(--gray-400); }
         .rounded-full { border-radius: 9999px; }
-        .text-center { text-align: center; }
-        .text-sm { font-size: 0.875rem; }
-        .text-gray-600 { color: var(--gray-600); }
-        .bg-gray-100 { background-color: var(--gray-100); }
-        .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
-        .py-1-5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
-        .rounded-lg { border-radius: 0.5rem; }
-        .inline-block { display: inline-block; }
-        .w-full { width: 100%; }
-        .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
-        .btn { transition: all 0.2s ease-in-out; border: none; cursor: pointer; }
-        .btn:active { transform: scale(0.97); }
-        .bg-blue-600 { background-color: var(--blue-600); }
-        .hover\:bg-blue-700:hover { background-color: var(--blue-700); }
-        .text-white { color: var(--white); }
+        .bg-red-500 { background-color: #ef4444; }
+        .mr-2 { margin-right: 0.5rem; }
+        .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
         .font-semibold { font-weight: 600; }
-        .py-2-5 { padding-top: 0.625rem; padding-bottom: 0.625rem; }
-        .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
-        .focus\:outline-none:focus { outline: 2px solid transparent; outline-offset: 2px; }
-        .disabled\:bg-gray-400:disabled { background-color: var(--gray-400); }
-        .disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
-        .bg-red-600 { background-color: var(--red-600); }
-        .hover\:bg-red-700:hover { background-color: var(--red-700); }
-        .bg-white { background-color: var(--white); }
-        .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-        .text-gray-700 { color: var(--gray-700); }
-        .h-32 { height: 8rem; }
+        .text-center { text-align: center; }
+        .p-2 { padding: 0.5rem; }
+        .w-full { width: 100%; }
+        .rounded-lg { border-radius: 0.5rem; }
+        .bg-yellow-600 { background-color: #d97706; }
+        .bg-gray-600 { background-color: #4b5563; }
+        .bg-red-600 { background-color: #dc2626; }
+        .mt-4 { margin-top: 1rem; }
+        .p-4 { padding: 1rem; }
+        .bg-gray-800 { background-color: #1f2937; }
+        .rounded-xl { border-radius: 0.75rem; }
+        .leading-relaxed { line-height: 1.625; }
         .overflow-y-auto { overflow-y: auto; }
-        .border { border: 1px solid #e5e7eb; }
-        .bg-gray-50 { background-color: #f9fafb; }
-        .text-xs { font-size: 0.75rem; }
-        .text-green-800 { color: var(--green-800); }
-        .bg-green-100 { background-color: var(--green-100); }
-        .bg-red-500 { background-color: var(--red-500); }
-        .pulse { animation: pulse-animation 1.5s infinite; }
-        @keyframes pulse-animation { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        .max-h-48 { max-height: 12rem; }
+        .text-gray-400 { color: #9ca3af; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .text-gray-300 { color: #d1d5db; }
     </style>
 </head>
-<body>
-    <div class="bg-white shadow-md rounded-lg m-2 p-4">
-        <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center">
-                <img src="icons/icon48.png" alt="icon" class="w-8 h-8 mr-3">
-                <h1 class="text-lg font-bold text-gray-900">Meet Recorder</h1>
+<body class="bg-gray-900 text-white">
+    <div class="container">
+        <h1 class="text-2xl font-bold">Concize RAG</h1>
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-semibold">Worker Status:</span>
+            <span id="workerStatus" class="status-badge stopped">Stopped</span>
+        </div>
+        <div class="flex space-x-2 items-center">
+            <span id="recordingIndicator" class="hidden w-3 h-3 rounded-full bg-red-500 blink"></span>
+            <div id="toggleButtonWrapper" class="button-wrapper">
+                <button id="toggleButton">
+                    <div class="flex items-center justify-center">
+                        <svg id="startIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play mr-2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <svg id="stopIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square mr-2 hidden"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+                        <span id="buttonText">Start Recording</span>
+                    </div>
+                </button>
             </div>
-            <div id="status-indicator" class="w-3 h-3 bg-gray-400 rounded-full"></div>
         </div>
-        <div id="status-container" class="mb-4 text-center">
-            <p id="status" class="text-sm text-gray-600 bg-gray-100 px-3 py-1-5 rounded-lg inline-block">Status: Idle</p>
+        <div id="statusMessage" class="mt-4 p-2 w-full text-center text-sm font-medium rounded-lg"></div>
+        <div id="transcriptionOutput" class="mt-4 p-4 w-full bg-gray-800 rounded-xl text-sm leading-relaxed overflow-y-auto max-h-48">
+            <h3 class="font-semibold text-gray-400 mb-2">Transcription:</h3>
+            <p id="transcriptionText" class="text-gray-300">Start recording to see the transcription appear here.</p>
         </div>
-        <div class="w-full space-y-3">
-            <button id="start-btn" class="w-full btn bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2-5 px-4 rounded-lg shadow-sm focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed">Start Recording</button>
-            <button id="stop-btn" class="w-full btn bg-red-600 hover:bg-red-700 text-white font-semibold py-2-5 px-4 rounded-lg shadow-sm focus:outline-none" style="display: none;">Stop Recording</button>
-        </div>
-    </div>
-    <div class="bg-white shadow-md rounded-lg m-2 mt-0 p-4">
-        <h2 class="text-md font-semibold mb-2 text-gray-700">Recording Log</h2>
-        <div id="transcription-output" class="text-xs text-gray-700 h-32 overflow-y-auto border rounded-md p-2 bg-gray-50"></div>
     </div>
     <script src="popup.js"></script>
 </body>
