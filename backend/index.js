@@ -10,7 +10,31 @@ const transcRoutes = require("./routes/transcRoutes");
 
 const app = express();
 
-app.use(cors());
+// --- START OF CORS FIX ---
+// Define a whitelist of allowed origins.
+// This is necessary because requests with 'credentials: true' cannot use a wildcard '*'.
+const allowedOrigins = [
+    'chrome-extension://ehgklfhpooihffchjkmlfenndjnjkejp', // Your Chrome Extension ID
+    'http://localhost:3000' // For local development/testing if needed
+];
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true, // This is crucial. It allows the browser to send/receive cookies.
+    optionsSuccessStatus: 200 // Some legacy browsers (IE11) choke on 204
+};
+
+app.use(cors(corsOptions));
+// --- END OF CORS FIX ---
+
 app.use(express.json());
 app.use(cookieParser()); // Use the cookie-parser middleware
 
