@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser"); // Import cookie-parser
 const { connectToMongo } = require("./db/mongoutil");
+const { startWorker } = require("./controllers/worker"); // Import the worker startup function
 
 const audioRoutes = require("./routes/audioRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
@@ -46,6 +47,15 @@ app.use("/api/meeting/", meetingRoutes)
 app.use("/api/transcription",transcRoutes);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
+    // KEY CHANGE: Start the worker once when the server boots up.
+    // The worker will now run as a persistent background process.
+    try {
+        await startWorker();
+        console.log('Worker: Persistent worker started successfully.');
+    } catch (error) {
+        console.error('Worker: Failed to start persistent worker:', error);
+        // Depending on the severity, you might want to exit the process here
+    }
 });
