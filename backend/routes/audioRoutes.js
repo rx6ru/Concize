@@ -108,7 +108,10 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
             console.log(`Audio file path "${audioFile.originalname}" for jobId ${jobId} confirmed by RabbitMQ and pushed to queue.`);
 
-            res.status(202).send('Audio file received and pushed to queue for transcription.');
+            res.status(202).json({
+                message: 'Audio file received and pushed to queue for transcription.'
+            });
+
 
         } catch (queueErr) {
             console.error('Error with RabbitMQ or message confirmation:', queueErr);
