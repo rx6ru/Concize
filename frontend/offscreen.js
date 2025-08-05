@@ -1,109 +1,144 @@
+let recorder;
+let data = [];
+let activeStreams = [];
 
-// offscreen.js
-// This file is now responsible for getting the stream and recording audio.
-let mediaRecorder;
-let audioStream = null;
-const MAX_RECORDING_DURATION_MS = 15 * 60 * 1000;
-const CHUNK_DURATION_MS = 15000;
-
-// Utility function to generate a filename.
-const getFileName = () => {
-    const now = new Date();
-    const pad = (num) => num.toString().padStart(2, '0');
-    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-    return `recording_${date}_${time}.webm`;
-};
-
-// Starts the recording process by getting the stream using its ID.
-async function startRecordingFromStreamId(streamId) {
-    try {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            console.log('Offscreen document: MediaRecorder already active.');
-            return;
-        }
-
-        console.log(`Offscreen document: Requesting stream with ID ${streamId}...`);
-        
-        // CRITICAL FIX: The offscreen document gets the stream using the ID.
-        // This is possible here but not in the service worker.
-        audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                mandatory: {
-                    chromeMediaSource: 'tab',
-                    chromeMediaSourceId: streamId
-                }
-            },
-            video: false
-        });
-        
-        console.log('Offscreen document: Received audio stream from service worker.');
-
-        mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
-
-        mediaRecorder.ondataavailable = async (event) => {
-            if (event.data.size > 0) {
-                console.log('Offscreen document: Sending audio chunk to service worker...');
-                const arrayBuffer = await event.data.arrayBuffer();
-                const filename = getFileName();
-
-                // Send the audio data to the service worker for upload.
-                chrome.runtime.sendMessage({
-                    action: 'onAudioChunkReady',
-                    audioData: {
-                        buffer: arrayBuffer,
-                        mimeType: 'audio/webm',
-                        fileName: filename
-                    }
-                });
-            }
-        };
-
-        mediaRecorder.onstop = () => {
-            console.log('Offscreen document: Recording stopped. Cleaning up.');
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
-                audioStream = null;
-            }
-        };
-
-        mediaRecorder.start(CHUNK_DURATION_MS);
-        console.log('Offscreen document: Recording started, sending chunks every ' + CHUNK_DURATION_MS / 1000 + ' seconds.');
-        
-        // Stop recording after a max duration to prevent infinite recording.
-        setTimeout(() => {
-            if (mediaRecorder.state === 'recording') {
-                console.log('Offscreen document: Max recording duration reached. Stopping...');
-                stopRecording();
-            }
-        }, MAX_RECORDING_DURATION_MS);
-
-    } catch (error) {
-        console.error('Offscreen document: Error starting recording:', error);
-        chrome.runtime.sendMessage({
-            type: 'error',
-            message: `Recording error: ${error.message}`
-        });
-        if (audioStream) {
-            audioStream.getTracks().forEach(track => track.stop());
-            audioStream = null;
-        }
-    }
-}
-
-// Stops the media recorder.
-function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        console.log('Offscreen document: Stopping media recorder.');
-        mediaRecorder.stop();
-    }
-}
-
-// Main message listener for the offscreen document.
-chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'startRecordingOffscreenWithStreamId' && message.streamId) {
-        startRecordingFromStreamId(message.streamId);
-    } else if (message.action === 'stopRecordingOffscreen') {
+chrome.runtime.onMessage.addListener(async (message) => {
+  if (message.target === "offscreen") {
+    switch (message.type) {
+      case "start-recording":
+        startRecording(message.data);
+        break;
+      case "stop-recording":
         stopRecording();
+        break;
+      default:
+        throw new Error("Unrecognized message:", message.type);
     }
+  }
 });
+
+async function startRecording(streamId) {
+  if (recorder?.state === "recording") {
+    throw new Error("Called startRecording while recording is in progress.");
+  }
+
+  await stopAllStreams();
+
+  try {
+    // Get tab audio stream
+    const tabStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId,
+        },
+      },
+      video: false,
+    });
+
+    // Get microphone stream with noise cancellation
+    const micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+
+    activeStreams.push(tabStream, micStream);
+
+    // Create audio context
+    const audioContext = new AudioContext();
+
+    // Create sources and destination
+    const tabSource = audioContext.createMediaStreamSource(tabStream);
+    const micSource = audioContext.createMediaStreamSource(micStream);
+    const destination = audioContext.createMediaStreamDestination();
+
+    // Create gain nodes
+    const tabGain = audioContext.createGain();
+    const micGain = audioContext.createGain();
+
+    // Set gain values
+    tabGain.gain.value = 1.0; // Normal tab volume
+    micGain.gain.value = 1.5; // Slightly boosted mic volume
+
+    // Connect tab audio to both speakers and recorder
+    tabSource.connect(tabGain);
+    tabGain.connect(audioContext.destination);
+    tabGain.connect(destination);
+
+    // Connect mic to recorder only (prevents echo)
+    micSource.connect(micGain);
+    micGain.connect(destination);
+
+    // Start recording
+    recorder = new MediaRecorder(destination.stream, {
+      mimeType: "audio/webm",
+    });
+    recorder.ondataavailable = (event) => data.push(event.data);
+    recorder.onstop = () => {
+      const blob = new Blob(data, { type: "audio/webm" });
+      const url = URL.createObjectURL(blob);
+
+      // Create temporary link element to trigger download
+      const downloadLink = document.createElement("a");
+      downloadLink.href = url;
+      downloadLink.download = `recording-${new Date().toISOString()}.webm`;
+      downloadLink.click();
+
+      // Cleanup
+      URL.revokeObjectURL(url);
+      recorder = undefined;
+      data = [];
+
+      chrome.runtime.sendMessage({
+        type: "recording-stopped",
+        target: "service-worker",
+      });
+    };
+
+    recorder.start();
+    window.location.hash = "recording";
+
+    chrome.runtime.sendMessage({
+      type: "update-icon",
+      target: "service-worker",
+      recording: true,
+    });
+  } catch (error) {
+    console.error("Error starting recording:", error);
+    chrome.runtime.sendMessage({
+      type: "recording-error",
+      target: "popup",
+      error: error.message,
+    });
+  }
+}
+
+async function stopRecording() {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+
+  await stopAllStreams();
+  window.location.hash = "";
+
+  chrome.runtime.sendMessage({
+    type: "update-icon",
+    target: "service-worker",
+    recording: false,
+  });
+}
+
+async function stopAllStreams() {
+  activeStreams.forEach((stream) => {
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+  });
+
+  activeStreams = [];
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
