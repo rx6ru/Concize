@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const amqp = require('amqplib');
 const config = require('../utils/config');
-const { createTranscription, updateMeetingStatus } = require('../db/mongoutil'); // Import the new function
+const { createTranscription, updateMeetingStatus } = require('../db/mongoutils/transcription.db'); // Import the new function
 const crypto = require('crypto'); // Use Node.js built-in crypto module for UUID
 
 // POST /api/meeting/start

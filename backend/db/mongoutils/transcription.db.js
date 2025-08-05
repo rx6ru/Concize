@@ -1,6 +1,8 @@
+// transcription.db.js
+
 const mongoose = require('mongoose');
-const Meeting = require('./models/meeting.model'); // Import the Mongoose model
-const config = require('../utils/config'); // Import the config file
+const Meeting = require('../models/meeting.model'); // Import the Mongoose model
+const config = require('../../utils/config'); // Import the config file
 
 /**
  * Connects to the MongoDB database using the URI from the config.

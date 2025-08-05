@@ -3,7 +3,7 @@
 const amqp = require('amqplib');
 const { transcribe } = require('./transcription');
 const { clean } = require('./clean');
-const { upsertTranscriptionChunks, createCollection } = require('./embed');
+const { upsertTranscriptionChunks, createCollection } = require('./embedTranscriptions');
 const fs = require('fs');
 const config = require('../utils/config');
 const { appendTranscription, getMeetingStatus } = require('../db/mongoutil'); // Import getMeetingStatus

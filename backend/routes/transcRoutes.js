@@ -1,7 +1,7 @@
 // transcRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getTranscription } = require('../db/mongoutil');
+const { getTranscription } = require('../db/mongoutils/transcription.db');
 
 // Route to get a full transcription by the jobId in the cookie
 // GET /api/transcription

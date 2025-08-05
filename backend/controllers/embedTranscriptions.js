@@ -1,4 +1,4 @@
-//embed.js
+//embedTranscriptions.js
 
 // Using require to be consistent with the rest of your files
 const { QdrantClient } = require('@qdrant/js-client-rest');
