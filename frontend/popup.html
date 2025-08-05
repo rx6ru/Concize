@@ -1,11 +1,16 @@
-<!-- popup.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Concize RAG</title>
+    <title>Concize</title>
     <style>
+        /* Tailwind CSS CDN is now embedded directly to comply with CSP */
+        /*
+         * This is a minimal set of Tailwind styles to make the design work.
+         * For a full set of styles, you would typically build the CSS
+         * with a bundler.
+         */
         body {
             font-family: 'Inter', sans-serif;
             background-color: #1a1a1a;
@@ -16,10 +21,23 @@
             padding: 1rem;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: center; /* Centers items horizontally in a column flex container */
             justify-content: center;
             gap: 1rem;
         }
+        
+        /* --- CSS for the Logo Image --- */
+        .container img {
+            width: 128px; /* Corresponds to w-16 */
+            height: 128px; /* Corresponds to h-16 */
+            margin-bottom: 16px; /* Corresponds to mb-4 */
+            display: block; /* Ensures it takes up its own line for margin: auto to work */
+            object-fit: contain; /* Ensures the image scales without distortion */
+            /* If the parent .container already centers items, margin-left/right: auto might not be strictly needed,
+               but it's good practice for block-level elements to ensure centering. */
+        }
+        /* --- End CSS for the Logo Image --- */
+
         .button-wrapper {
             position: relative;
             display: inline-block;
@@ -79,6 +97,7 @@
         .hidden {
             display: none;
         }
+        /* Tailwind-like utility classes for reference/consistency */
         .text-2xl { font-size: 1.5rem; line-height: 2rem; }
         .font-bold { font-weight: 700; }
         .flex { display: flex; }
@@ -113,7 +132,7 @@
 </head>
 <body class="bg-gray-900 text-white">
     <div class="container">
-        <h1 class="text-2xl font-bold">Concize RAG</h1>
+        <img src="/images/Logo.png" alt="Concize Logo" class="w-16 h-16 mb-4">
         <div class="flex items-center space-x-2">
             <span class="text-sm font-semibold">Worker Status:</span>
             <span id="workerStatus" class="status-badge stopped">Stopped</span>
