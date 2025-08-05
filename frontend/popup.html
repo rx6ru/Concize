@@ -6,71 +6,164 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Concize</title>
     <style>
-        /* Tailwind CSS CDN is now embedded directly to comply with CSP */
-        /*
-         * This is a minimal set of Tailwind styles to make the design work.
-         * For a full set of styles, you would typically build the CSS
-         * with a bundler.
-         */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #1a1a1a;
-            color: #e0e0e0;
+        /* Import Inter font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        /* Define CSS variables for consistent theming */
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --container-bg: #2d2d2d;
+            --primary-blue: #3b82f6;
+            --primary-blue-dark: #2563eb;
+            --primary-red: #ef4444;
+            --primary-red-dark: #dc2626;
+            --running-bg: #10B981;
+            --stopped-bg: #EF4444;
+            --recording-bg: #FBBF24;
+            --button-text-color: white;
+            --border-radius: 9999px;
+            --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --box-shadow-hover: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
         }
 
+        /* Basic body styling for full-page centering and font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensures the container is vertically centered */
+        }
+
+        /* Main container styling */
         .container {
-            width: 300px;
-            padding: 1rem;
+            width: 320px; /* Fixed width for the popup */
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
             align-items: center;
-            /* Centers items horizontally in a column flex container */
-            justify-content: center;
-            gap: 1rem;
+            gap: 1rem; /* Space between child elements */
+            background-color: var(--container-bg);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2); /* Subtle shadow for depth */
         }
 
-        /* --- CSS for the Logo Image --- */
-        .container img {
-            width: 128px;
-            /* Corresponds to w-16 */
-            height: 128px;
-            /* Corresponds to h-16 */
-            margin-bottom: 16px;
-            /* Corresponds to mb-4 */
-            display: block;
-            /* Ensures it takes up its own line for margin: auto to work */
+        /* Logo image styling */
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 0.5rem;
             object-fit: contain;
-            /* Ensures the image scales without distortion */
-            /* If the parent .container already centers items, margin-left/right: auto might not be strictly needed,
-               but it's good practice for block-level elements to ensure centering. */
+            border-radius: 12px; /* Rounded corners for the logo */
         }
 
-        /* --- End CSS for the Logo Image --- */
+        /* Worker status display */
+        .status-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
 
-        /* .button-wrapper {
-            position: relative;
+        /* Individual status badge styling */
+        .status-badge {
             display: inline-block;
-            transition: all 0.2s ease-in-out;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            border-radius: 9999px;
-            overflow: hidden;
-            background: linear-gradient(to right, #3b82f6, #2563eb);
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--border-radius);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #1f2937; /* Dark text for contrast on colored badges */
+        }
+
+        .status-badge.running {
+            background-color: var(--running-bg);
+        }
+
+        .status-badge.stopped {
+            background-color: var(--stopped-bg);
+        }
+
+        .status-badge.recording {
+            background-color: var(--recording-bg);
+        }
+
+        /* Container for recording indicator and buttons */
+        .recording-controls {
             width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem; /* Space between recording indicator and button */
         }
 
+        /* Recording indicator text and glyph */
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--primary-red); /* Color for "Recording..." text */
+        }
+
+        /* Blinking recording glyph */
+        .recording-glyph {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--primary-red);
+        }
+
+        /* Blink animation definition */
+        @keyframes blinker {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        /* Button wrapper for styling and positioning */
+        .button-wrapper {
+            position: relative;
+            width: 100%;
+            height: 48px; /* Fixed height to prevent layout shift when buttons swap */
+            transition: all 0.2s ease-in-out;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            overflow: hidden;
+            background: linear-gradient(to right, var(--primary-blue), var(--primary-blue-dark)); /* Default blue gradient */
+        }
+
+        /* Red gradient when in "stop" state */
         .button-wrapper.stop {
-            background: linear-gradient(to right, #ef4444, #dc2626);
+            background: linear-gradient(to right, var(--primary-red), var(--primary-red-dark));
         }
 
-        .button-wrapper:hover {
+        /* Hover effects for buttons */
+        .button-wrapper:hover:not(.stop) { /* Only apply hover effect if not in stop state */
             transform: translateY(-2px);
-            box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
-        } */
+            box-shadow: var(--box-shadow-hover);
+        }
+        .button-wrapper.stop:hover { /* Hover for stop button */
+            transform: translateY(-2px);
+            box-shadow: var(--box-shadow-hover);
+        }
 
-        button {
-            background-color: transparent;
-            color: white;
-            font-weight: bold;
+        /* Base styling for action buttons */
+        .action-button {
+            background: transparent;
+            color: var(--button-text-color);
+            font-weight: 700;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -79,242 +172,138 @@
             border: none;
             outline: none;
             width: 100%;
+            height: 100%;
+            font-size: 1rem;
+            position: absolute; /* Position buttons absolutely within the wrapper */
+            top: 0;
+            left: 0;
+            opacity: 0; /* Start hidden */
+            transition: opacity 0.3s ease-in-out; /* Smooth fade in/out */
         }
 
-        .status-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: bold;
-            text-transform: uppercase;
+        /* Make button visible */
+        .action-button.visible {
+            opacity: 1;
+            z-index: 1; /* Ensure visible button is on top */
         }
 
-        .status-badge.running {
-            background-color: #10B981;
-            color: #1F2937;
+        /* Disabled button state */
+        .action-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
-        .status-badge.stopped {
-            background-color: #EF4444;
-            color: #1F2937;
-        }
-
-        .status-badge.recording {
-            background-color: #FBBF24;
-            color: #1F2937;
-        }
-
-        .blink {
-            animation: blinker 1s linear infinite;
-        }
-
-        @keyframes blinker {
-            50% {
-                opacity: 0;
-            }
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        /* Tailwind-like utility classes for reference/consistency */
-        .text-2xl {
-            font-size: 1.5rem;
-            line-height: 2rem;
-        }
-
-        .font-bold {
-            font-weight: 700;
-        }
-
-        .flex {
-            display: flex;
-        }
-
-        .items-center {
-            align-items: center;
-        }
-
-        .justify-center {
-            justify-content: center;
-        }
-
-        .space-x-2> :not([hidden])~ :not([hidden]) {
-            margin-left: 0.5rem;
-        }
-
-        .w-3 {
-            width: 0.75rem;
-        }
-
-        .h-3 {
-            height: 0.75rem;
-        }
-
-        .rounded-full {
-            border-radius: 9999px;
-        }
-
-        .bg-red-500 {
-            background-color: #ef4444;
-        }
-
-        .mr-2 {
+        /* SVG icon spacing within buttons */
+        .action-button svg {
             margin-right: 0.5rem;
         }
 
-        .text-sm {
-            font-size: 0.875rem;
-            line-height: 1.25rem;
-        }
-
-        .font-semibold {
-            font-weight: 600;
-        }
-
-        .text-center {
-            text-align: center;
-        }
-
-        .p-2 {
-            padding: 0.5rem;
-        }
-
-        .w-full {
-            width: 100%;
-        }
-
-        .rounded-lg {
-            border-radius: 0.5rem;
-        }
-
-        .bg-yellow-600 {
-            background-color: #d97706;
-        }
-
-        .bg-gray-600 {
-            background-color: #4b5563;
-        }
-
-        .bg-red-600 {
-            background-color: #dc2626;
-        }
-
-        .mt-4 {
+        /* Styles for message boxes (status and permission) */
+        .message-box {
             margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 8px;
+            text-align: center;
+            width: 100%;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: none; /* Hidden by default */
         }
 
-        .p-4 {
-            padding: 1rem;
-        }
-
-        .bg-gray-800 {
-            background-color: #1f2937;
-        }
-
-        .rounded-xl {
-            border-radius: 0.75rem;
-        }
-
-        .leading-relaxed {
-            line-height: 1.625;
-        }
-
-        .overflow-y-auto {
-            overflow-y: auto;
-        }
-
-        .max-h-48 {
-            max-height: 12rem;
-        }
-
-        .text-gray-400 {
-            color: #9ca3af;
-        }
-
-        .mb-2 {
-            margin-bottom: 0.5rem;
-        }
-
-        .text-gray-300 {
-            color: #d1d5db;
-        }
-
-        #startRecord {
-            background: #4caf50;
+        #statusMessage {
+            background-color: #3f51b5; /* A subtle blue for general messages */
             color: white;
-            display: none;
-        }
-
-        #stopRecord {
-            background: #f44336;
-            color: white;
-            display: none;
-        }
-
-        /* New class for visible buttons */
-        button.visible {
-            opacity: 1;
-        }
-
-        /* Add a container for the buttons to maintain layout */
-        .button-container {
-            position: relative;
-            height: 38px;
-            /* Height of your buttons */
-            margin: 10px 0;
-        }
-
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
         }
 
         #permissionStatus {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 4px;
+            background-color: #fff3e0; /* Light orange background */
+            color: #ef6c00; /* Dark orange text */
+        }
+
+        /* Transcription output box */
+        .transcription-box {
+            width: 100%;
+            padding: 1rem;
+            background-color: #1f2937;
+            border-radius: 12px;
+            max-height: 200px; /* Limit height and enable scrolling */
+            overflow-y: auto;
+            font-size: 0.875rem;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1); /* Inner shadow for depth */
+        }
+
+        .transcription-box h3 {
+            font-weight: 600;
+            color: #9ca3af;
+            margin-bottom: 0.5rem;
+        }
+
+        .transcription-box p {
+            color: #d1d5db;
+            line-height: 1.6;
+        }
+        
+        /* Utility class to hide elements */
+        .hidden {
             display: none;
-            background-color: #fff3e0;
-            color: #ef6c00;
         }
     </style>
 </head>
 
-<body class="bg-gray-900 text-white">
+<body>
     <div class="container">
-        <img src="/images/Logo.png" alt="Concize Logo" class="w-16 h-16 mb-4">
-        <div class="flex items-center space-x-2">
-            <span class="text-sm font-semibold">Worker Status:</span>
+        <!-- Logo for the application -->
+        <img src="images/Logo.png" alt="Concize Logo" class="logo">
+
+        <!-- Worker status display -->
+        <div class="status-wrapper">
+            <span>Recording Status:</span>
             <span id="workerStatus" class="status-badge stopped">Stopped</span>
         </div>
-        <div class="flex space-x-2 items-center">
-            <span id="recordingIndicator" class="hidden w-3 h-3 rounded-full bg-red-500 blink"></span>
+
+        <!-- Recording controls section -->
+        <div class="recording-controls">
+            <!-- Recording indicator with blinking glyph -->
+            <div id="recordingIndicator" class="recording-indicator hidden">
+                <div id="recordingGlyph" class="recording-glyph blink"></div>
+                <span>Recording...</span>
+            </div>
+            <!-- Button wrapper for start/stop buttons -->
             <div id="toggleButtonWrapper" class="button-wrapper">
-                <div class="button-container flex items-center justify-center">
-                    <button id="startRecord"><svg id="startIcon" xmlns="http://www.w3.org/2000/svg" width="24"
-                            height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play mr-2">
-                            <polygon points="5 3 19 12 5 21 5 3" />
-                        </svg>Start Recording</button>
-                    <button id="stopRecord"><svg id="stopIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square mr-2 hidden">
-                            <rect width="18" height="18" x="3" y="3" rx="2" />
-                        </svg>Stop Recording</button>
-                </div>
+                <!-- Start Recording Button -->
+                <button id="startRecord" class="action-button visible">
+                    <svg id="startIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start Recording
+                </button>
+                <!-- Stop Recording Button -->
+                <button id="stopRecord" class="action-button">
+                    <svg id="stopIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                    </svg>
+                    Stop Recording
+                </button>
             </div>
         </div>
-        <div id="statusMessage" class="mt-4 p-2 w-full text-center text-sm font-medium rounded-lg"></div>
-        <div id="transcriptionOutput"
-            class="mt-4 p-4 w-full bg-gray-800 rounded-xl text-sm leading-relaxed overflow-y-auto max-h-48">
-            <h3 class="font-semibold text-gray-400 mb-2">Transcription:</h3>
-            <p id="transcriptionText" class="text-gray-300">Start recording to see the transcription appear here.</p>
-        </div>
-        <div id="permissionStatus"></div>
+
+        <!-- Message boxes for status and permissions -->
+        <div id="statusMessage" class="message-box"></div>
+        <div id="permissionStatus" class="message-box"></div>
+
+        <!-- Transcription output area -->
+        <!-- <div id="transcriptionOutput" class="transcription-box">
+            <h3>Transcription:</h3>
+            <p id="transcriptionText">Start recording to see the transcription appear here.</p>
+        </div> -->
     </div>
+    <!-- Link to the JavaScript file -->
     <script src="popup.js"></script>
 </body>
 
