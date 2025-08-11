@@ -14,7 +14,8 @@ const config = {
     NODE_ENV: process.env.NODE_ENV || 'development',
     QDRANT_URL: process.env.QDRANT_URL,
     QDRANT_API_KEY: process.env.QDRANT_API_KEY,
-    COLLECTION: process.env.COLLECTION
+    TRANSCRIPTION_COLLECTION: process.env.TRANSCRIPTION_COLLECTION,
+    CHAT_COLLECTION: process.env.CHAT_COLLECTION
 };
 
 // Basic validation to ensure essential variables are set
@@ -54,8 +55,12 @@ if (!config.QDRANT_API_KEY) {
     process.exit(1); // Exit if critical config is missing
 }
 
-if (!config.COLLECTION) {
-    console.error('ERROR: COLLECTION environment variable is not set.');
+if (!config.TRANSCRIPTION_COLLECTION) {
+    console.error('ERROR: TRANSCRIPTION_COLLECTION environment variable is not set.');
+    process.exit(1); // Exit if critical config is missing
+}
+if (!config.CHAT_COLLECTION) {
+    console.error('ERROR: CHAT_COLLECTION environment variable is not set.');
     process.exit(1); // Exit if critical config is missing
 }
 

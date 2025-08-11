@@ -35,7 +35,8 @@ CLOUDAMQP_URL=<your_cloudamqp_url>
 # Qdrant for the vector database
 QDRANT_URL=<your_qdrant_url>
 QDRANT_API_KEY=<your_qdrant_api_key>
-COLLECTION=<your_qdrant_collection_name>
+TRANSCRIPTION_COLLECTION=<your_qdrant_collection_name_for_transcription>
+CHAT_COLLECTION=<your_qdrant_collection_name_for_chat>
 
 # Google Gemini API for embeddings
 GEMINI_API_KEY=<your_gemini_api_key>

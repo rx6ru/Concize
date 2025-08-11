@@ -8,6 +8,7 @@ const { startWorker } = require("./controllers/worker"); // Import the worker st
 const audioRoutes = require("./routes/audioRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
 const transcRoutes = require("./routes/transcRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 
 const app = express();
 
@@ -45,6 +46,7 @@ connectToMongo();
 app.use("/api/audios", audioRoutes);
 app.use("/api/meeting/", meetingRoutes)
 app.use("/api/transcription",transcRoutes);
+app.use("/api/chat/",chatRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {

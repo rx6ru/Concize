@@ -1,6 +1,6 @@
 // embeddingService.js
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const config = require('../utils/config');
+const config = require('../../utils/config');
 
 // Initialize the Google Generative AI client with the API key
 const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);

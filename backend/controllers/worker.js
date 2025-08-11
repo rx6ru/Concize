@@ -1,9 +1,9 @@
-// worker.js
+// controllers/worker.js
 
 const amqp = require('amqplib');
 const { transcribe } = require('./transcription');
 const { clean } = require('./clean');
-const { upsertTranscriptionChunks, createCollection } = require('./embedTranscriptions');
+const { upsertTranscriptionChunks, createTranCollection } = require('../db/mongoutils/embedTranscriptions'); // Corrected import for createTranCollection
 const fs = require('fs');
 const config = require('../utils/config');
 const { appendTranscription, getMeetingStatus } = require('../db/mongoutil'); // Import getMeetingStatus
@@ -30,7 +30,7 @@ const startWorker = async () => {
         await globalChannel.assertQueue(audioQueue, { durable: true });
 
         console.log('Worker: Initializing Qdrant collection...');
-        await createCollection();
+        await createTranCollection(); // Call the specific collection creation function
 
         console.log('Worker: Connected to RabbitMQ and waiting for audio transcription jobs...');
 
@@ -58,7 +58,7 @@ const startWorker = async () => {
                 audioFilePath = messageContent.filePath;
                 metadata = messageContent.metadata || {};
 
-                // KEY CHANGE: Check if the meeting for this jobId is still active before processing.
+                // Check if the meeting for this jobId is still active before processing.
                 const meetingStatus = await getMeetingStatus(jobId);
                 if (meetingStatus === 'completed') {
                     console.log(`Worker: Skipping job for jobId ${jobId}. Meeting is already completed.`);
@@ -95,7 +95,8 @@ const startWorker = async () => {
                 const cleanedChunks = await clean(transcribedText);
                 console.log(`Worker: Cleaned transcript into ${cleanedChunks.length} structured chunks.`);
 
-                const embedResult = await upsertTranscriptionChunks(cleanedChunks, metadata);
+                // CRITICAL FIX: Pass jobId as the first argument to upsertTranscriptionChunks
+                const embedResult = await upsertTranscriptionChunks(jobId, cleanedChunks, metadata); 
                 if (!embedResult.success) {
                     throw new Error(`Embedding and upsert failed: ${embedResult.error}`);
                 }
