@@ -1,8 +1,8 @@
 // db/mongoutils/chatLLM.js
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const config = require('../../utils/config');
-const { queryTranscriptions, queryChats } = require('./queryVector');
+const config = require('../utils/config');
+const { queryTranscriptions, queryChats } = require('./queryVectordb');
 // Import the new two-step chat database functions
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('./embedding/embedChat'); 
