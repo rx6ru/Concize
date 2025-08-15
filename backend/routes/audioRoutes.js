@@ -48,8 +48,11 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
         // Check format
         const supportedFormats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'webm', 'mpeg', 'mpga'];
-        if (!metadata.format || !supportedFormats.includes(metadata.format.format_name)) {
-            console.log("4: Unsupported format detected.");
+        const actualFormats = metadata.format ? metadata.format.format_name?.split(',') : [];
+        const isSupported = actualFormats.some(format => supportedFormats.includes(format.trim()));
+        
+        if (!metadata.format || !isSupported) {
+            console.log("4: Unsupported format detected.", metadata.format?.format_name);
             fs.unlink(filePath, (unlinkErr) => { if (unlinkErr) console.error('Error deleting file:', unlinkErr); });
             return res.status(400).send(`Unsupported audio format. Only ${supportedFormats.join(', ')} are supported.`);
         }
