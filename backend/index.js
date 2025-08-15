@@ -2,7 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser"); // Import cookie-parser
-const { connectToMongo } = require("./db/mongoutil");
+const { connectToMongo } = require("./db/mongoutils/transcription.db");
 const { startWorker } = require("./controllers/worker"); // Import the worker startup function
 
 const audioRoutes = require("./routes/audioRoutes");

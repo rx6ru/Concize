@@ -3,10 +3,11 @@
 const amqp = require('amqplib');
 const { transcribe } = require('./transcription');
 const { clean } = require('./clean');
-const { upsertTranscriptionChunks, createTranCollection } = require('../db/mongoutils/embedTranscriptions'); // Corrected import for createTranCollection
+const { upsertTranscriptionChunks, createTranCollection } = require('./embedding/embedTranscriptions'); // Corrected import for createTranCollection
+const { createChatCollection } = require('./embedding/embedChat'); // Import chat collection creation
 const fs = require('fs');
 const config = require('../utils/config');
-const { appendTranscription, getMeetingStatus } = require('../db/mongoutil'); // Import getMeetingStatus
+const { appendTranscription, getMeetingStatus } = require('../db/mongoutils/transcription.db'); // Import getMeetingStatus
 
 const audioQueue = 'audio_queue';
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
@@ -29,8 +30,9 @@ const startWorker = async () => {
 
         await globalChannel.assertQueue(audioQueue, { durable: true });
 
-        console.log('Worker: Initializing Qdrant collection...');
+        console.log('Worker: Initializing Qdrant collections...');
         await createTranCollection(); // Call the specific collection creation function
+        await createChatCollection(); // Initialize chat collection for RAG
 
         console.log('Worker: Connected to RabbitMQ and waiting for audio transcription jobs...');
 
