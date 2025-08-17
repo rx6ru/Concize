@@ -1,4 +1,3 @@
-//index.js
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser"); // Import cookie-parser
@@ -16,8 +15,9 @@ const app = express();
 // Define a whitelist of allowed origins.
 // This is necessary because requests with 'credentials: true' cannot use a wildcard '*'.
 const allowedOrigins = [
-    'chrome-extension://ehgklfhpooihffchjkmlfenndjnjkejp', // Your Chrome Extension ID
-    'http://localhost:3000' // For local development/testing if needed
+    'chrome-extension://pegbbggcoakpcaijblildpajooeadcjk', // Your Chrome Extension ID
+    'http://localhost:3000', // For local development/testing
+    'http://127.0.0.1:5500' // NEW: Added this origin from the error message
 ];
 
 const corsOptions = {

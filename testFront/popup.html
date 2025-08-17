@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concize</title>
+    <style>
+        /* Import Inter font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        /* Define CSS variables for consistent theming */
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --container-bg: #2d2d2d;
+            --primary-blue: #3b82f6;
+            --primary-blue-dark: #2563eb;
+            --primary-red: #ef4444;
+            --primary-red-dark: #dc2626;
+            --running-bg: #10B981;
+            --stopped-bg: #EF4444;
+            --recording-bg: #FBBF24;
+            --button-text-color: white;
+            --border-radius: 9999px;
+            --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --box-shadow-hover: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Basic body styling for full-page centering and font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensures the container is vertically centered */
+        }
+
+        /* Main container styling */
+        .container {
+            width: 320px; /* Fixed width for the popup */
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem; /* Space between child elements */
+            background-color: var(--container-bg);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2); /* Subtle shadow for depth */
+        }
+
+        /* Logo image styling */
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 0.5rem;
+            object-fit: contain;
+            border-radius: 12px; /* Rounded corners for the logo */
+        }
+
+        /* Worker status display */
+        .status-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        /* Individual status badge styling */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--border-radius);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #1f2937; /* Dark text for contrast on colored badges */
+        }
+
+        .status-badge.running {
+            background-color: var(--running-bg);
+        }
+
+        .status-badge.stopped {
+            background-color: var(--stopped-bg);
+        }
+
+        .status-badge.recording {
+            background-color: var(--recording-bg);
+        }
+
+        /* Container for recording indicator and buttons */
+        .recording-controls {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem; /* Space between recording indicator and button */
+        }
+
+        /* Recording indicator text and glyph */
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--primary-red); /* Color for "Recording..." text */
+        }
+
+        /* Blinking recording glyph */
+        .recording-glyph {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--primary-red);
+        }
+
+        /* Blink animation definition */
+        @keyframes blinker {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        /* Button wrapper for styling and positioning */
+        .button-wrapper {
+            position: relative;
+            width: 100%;
+            height: 48px; /* Fixed height to prevent layout shift when buttons swap */
+            transition: all 0.2s ease-in-out;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            overflow: hidden;
+            background: linear-gradient(to right, var(--primary-blue), var(--primary-blue-dark)); /* Default blue gradient */
+        }
+
+        /* Red gradient when in "stop" state */
+        .button-wrapper.stop {
+            background: linear-gradient(to right, var(--primary-red), var(--primary-red-dark));
+        }
+
+        /* Hover effects for buttons */
+        .button-wrapper:hover:not(.stop) { /* Only apply hover effect if not in stop state */
+            transform: translateY(-2px);
+            box-shadow: var(--box-shadow-hover);
+        }
+        .button-wrapper.stop:hover { /* Hover for stop button */
+            transform: translateY(-2px);
+            box-shadow: var(--box-shadow-hover);
+        }
+
+        /* Base styling for action buttons */
+        .action-button {
+            background: transparent;
+            color: var(--button-text-color);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            outline: none;
+            width: 100%;
+            height: 100%;
+            font-size: 1rem;
+            position: absolute; /* Position buttons absolutely within the wrapper */
+            top: 0;
+            left: 0;
+            opacity: 0; /* Start hidden */
+            transition: opacity 0.3s ease-in-out; /* Smooth fade in/out */
+        }
+
+        /* Make button visible */
+        .action-button.visible {
+            opacity: 1;
+            z-index: 1; /* Ensure visible button is on top */
+        }
+
+        /* Disabled button state */
+        .action-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* SVG icon spacing within buttons */
+        .action-button svg {
+            margin-right: 0.5rem;
+        }
+
+        /* Styles for message boxes (status and permission) */
+        .message-box {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 8px;
+            text-align: center;
+            width: 100%;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: none; /* Hidden by default */
+        }
+
+        #statusMessage {
+            background-color: #3f51b5; /* A subtle blue for general messages */
+            color: white;
+        }
+
+        #permissionStatus {
+            background-color: #fff3e0; /* Light orange background */
+            color: #ef6c00; /* Dark orange text */
+        }
+
+        /* Transcription output box */
+        .transcription-box {
+            width: 100%;
+            padding: 1rem;
+            background-color: #1f2937;
+            border-radius: 12px;
+            max-height: 200px; /* Limit height and enable scrolling */
+            overflow-y: auto;
+            font-size: 0.875rem;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1); /* Inner shadow for depth */
+        }
+
+        .transcription-box h3 {
+            font-weight: 600;
+            color: #9ca3af;
+            margin-bottom: 0.5rem;
+        }
+
+        .transcription-box p {
+            color: #d1d5db;
+            line-height: 1.6;
+        }
+        
+        /* Utility class to hide elements */
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Logo for the application -->
+        <img src="images/Logo.png" alt="Concize Logo" class="logo">
+
+        <!-- Worker status display -->
+        <div class="status-wrapper">
+            <span>Recording Status:</span>
+            <span id="workerStatus" class="status-badge stopped">Stopped</span>
+        </div>
+
+        <!-- Recording controls section -->
+        <div class="recording-controls">
+            <!-- Recording indicator with blinking glyph -->
+            <div id="recordingIndicator" class="recording-indicator hidden">
+                <div id="recordingGlyph" class="recording-glyph blink"></div>
+                <span>Recording...</span>
+            </div>
+            <!-- Button wrapper for start/stop buttons -->
+            <div id="toggleButtonWrapper" class="button-wrapper">
+                <!-- Start Recording Button -->
+                <button id="startRecord" class="action-button visible">
+                    <svg id="startIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start Recording
+                </button>
+                <!-- Stop Recording Button -->
+                <button id="stopRecord" class="action-button">
+                    <svg id="stopIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                    </svg>
+                    Stop Recording
+                </button>
+            </div>
+        </div>
+
+        <!-- Message boxes for status and permissions -->
+        <div id="statusMessage" class="message-box"></div>
+        <div id="permissionStatus" class="message-box"></div>
+
+        <!-- Chat button -->
+        <div class="button-wrapper" style="margin-top: 1rem; background: linear-gradient(to right, #6366f1, #8b5cf6);">
+            <button id="openChat" class="action-button visible">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Open Chat
+            </button>
+        </div>
+
+        <!-- Transcription output area -->
+        <!-- <div id="transcriptionOutput" class="transcription-box">
+            <h3>Transcription:</h3>
+            <p id="transcriptionText">Start recording to see the transcription appear here.</p>
+        </div> -->
+    </div>
+    <!-- Link to the JavaScript file -->
+    <script src="recordingService.js"></script>
+    <script src="popup.js"></script>
+</body>
+
+</html>

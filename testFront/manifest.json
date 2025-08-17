@@ -1,0 +1,40 @@
+{
+  "name": "Concize",
+  "description": "An extension to record audio and send it to the Concize Pipeline.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabCapture",
+    "activeTab",
+    "offscreen",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://meet.google.com/*",
+    "*://*/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "/icons/icon16.png",
+      "32": "/icons/icon32.png",
+      "48": "/icons/icon48.png",
+      "128": "/icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["permission.html", "offscreen.html", "chat-popup.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
