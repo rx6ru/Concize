@@ -5,7 +5,7 @@ const config = require('../utils/config');
 const { queryTranscriptions, queryChats } = require('./queryVectordb');
 // Import the new two-step chat database functions
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
-const { upsertChatPair } = require('./embedding/embedChat'); 
+const { upsertChatPair } = require('./embedding/embedChat');
 
 // Initialize the Google Generative AI client with the API key
 const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
@@ -30,11 +30,15 @@ const llmModel = genAI.getGenerativeModel({
  */
 const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     let chatId = null; // Variable to hold the ID of the new chat entry
-    
+
     try {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
         res.flushHeaders(); // Flush the headers to start the SSE stream
 
         // Step 1: Query relevant context from both collections
@@ -43,32 +47,30 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
             queryChats(userPrompt, jobId, 3) // Get top 3 relevant chat pairs from Qdrant
         ]);
 
+        console.log("LLM: Transcription Context:", transcriptionContext);
+        console.log("LLM: Chat History:", chatHistory);
+
         // Step 2: Combine all contexts into a single string for the LLM
         const transcriptionText = transcriptionContext.length > 0
-            ? transcriptionContext.map(chunk => `Transcription Snippet: "${chunk.text}"`).join('\n')
-            : "No relevant meeting transcriptions were found for this query.";
+            ? transcriptionContext.map(chunk => `Transcription Snippet: ${chunk.text}`).join('\n')
+            : "No relevant meeting transcriptions were found for this query.  Respond to user accordingly";
 
         const chatHistoryText = chatHistory.length > 0
-            ? chatHistory.map(chat => `User: ${chat.userChat}\nAI: ${chat.aiChat}`).join('\n')
-            : "No relevant chat history was found for this query.";
+            ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
+            : "No relevant chat history was found for this query.  Respond to user accordingly";
 
-        // Construct the full prompt for the LLM
-        const fullPrompt = `You are a helpful AI assistant for a meeting management application. Your primary goal is to answer user questions based on the provided context from a meeting transcription and the current chat history.
+        console.log("LLM: Transcription Text:", transcriptionText);
+        console.log("LLM: Chat Text:", chatHistoryText);
 
-***Instructions:***
-- Answer the user's question concisely and accurately.
-- Use only the provided context to form your answer.
-- Do not make up information. If the answer cannot be found in the context, state that clearly and politely.
-- Maintain a helpful and professional tone.
-- Do not mention that you are an AI or refer to the provided context.
-
-***Meeting Transcription Context:***
+        // This is the combined dynamic context and the user's question
+        const contentsPrompt =
+            `# Meeting Transcription Context:
 ${transcriptionText}
 
-***Relevant Chat History:***
+# Relevant Chat History:
 ${chatHistoryText}
 
-***User's Question:***
+# User's Question:
 ${userPrompt}`;
 
         console.log("LLM: Generating a streaming response...");
@@ -85,27 +87,56 @@ ${userPrompt}`;
             return res.end(); // End the response early on a critical error
         }
 
+
         // Step 4: Use generateContentStream for a single, efficient call
         const result = await llmModel.generateContentStream({
+            // The role and constraints are now defined in a dedicated system instruction
+            system_instruction: {
+                // CORRECTED: Use the 'parts' array to pass the system instruction text
+                parts: [
+                    {
+                        text: `You are a helpful assistant for a meeting management application. Your primary goal is to answer user questions based on the provided meeting transcription snippets and chat history.
+
+Instructions:
+- Answer the user's question directly using information from the transcription snippets
+- If the answer exists in the transcription, provide it clearly and completely
+- If the answer cannot be found in the provided context, state that politely
+- Use natural, conversational language
+- Focus on the content of what was discussed in the meeting
+- Do not mention that you are an AI assistant or refer to "provided context"`
+                    }
+                ]
+            },
             contents: [{
                 role: 'user',
-                parts: [{ text: fullPrompt }],
+                parts: [{ text: contentsPrompt }],
             }],
             generationConfig: {
-                maxOutputTokens: 200, // A reasonable limit to keep responses concise
-                temperature: 0.2, // Low temperature for more factual and less creative responses
+                maxOutputTokens: 6000, // A reasonable limit to keep responses concise
+                temperature: 0.4, // Low temperature for more factual and less creative responses
             },
         });
 
         let fullResponseText = '';
 
-        // Step 5: Stream the LLM's response back to the client and collect chunks
-        for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
-                fullResponseText += chunkText;
-                res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+        // Add heartbeat to keep connection alive
+        const heartbeatInterval = setInterval(() => {
+            res.write(':heartbeat\n\n');
+        }, 15000);
+
+        try {
+            // Step 5: Stream the LLM's response back to the client and collect chunks
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                if (chunkText) {
+                    fullResponseText += chunkText;
+                    console.log(`LLM Response: ${chunkText}`);
+                    // CORRECTED: Add the required '\n\n' to terminate each data message
+                    res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+                }
             }
+        } finally {
+            clearInterval(heartbeatInterval);
         }
 
         // Step 6: After the stream ends, update the complete chat entry in MongoDB and create embedding
@@ -113,7 +144,7 @@ ${userPrompt}`;
             if (chatId) {
                 await updateChatEntry(chatId, fullResponseText);
                 console.log("Chat history successfully updated in MongoDB.");
-                
+
                 // Create embedding for the chat pair
                 await upsertChatPair(jobId, userPrompt, fullResponseText, chatId);
                 console.log("Chat pair embedded successfully.");
@@ -122,7 +153,7 @@ ${userPrompt}`;
             console.error("MONGODB_UPDATE_ERROR:", dbError);
             // Don't stop the stream, just log the error
         }
-        
+
         // Signal the end of the stream
         res.write('data: {"event": "stream_end"}\n\n');
         res.end();

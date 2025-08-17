@@ -42,25 +42,26 @@ async function createTranscription(jobId) {
 
 /**
  * Appends new text to an existing transcription document.
+ * If the document does not exist, it creates a new one and appends the text.
  * @param {string} jobId The unique identifier of the transcription job.
  * @param {string} newText The text chunk to append.
  * @returns {Promise<boolean>} True if the document was updated successfully.
  */
 async function appendTranscription(jobId, newText) {
     try {
-        const meeting = await Meeting.findOneAndUpdate(
+        const result = await Meeting.findOneAndUpdate(
             { jobId: jobId },
             { $push: { transcriptionChunks: newText } },
-            { new: true } // Return the updated document
+            { new: true, upsert: true } // Return the updated document, create if not found
         );
 
-        if (!meeting) {
-            console.warn(`No document found for jobId: ${jobId}. Cannot append text.`);
-            return false;
+        if (result) {
+            console.log(`Successfully appended text for jobId: ${jobId}`);
+            return true;
         }
 
-        console.log(`Successfully appended text for jobId: ${jobId}`);
-        return true;
+        console.warn(`Failed to append text for jobId: ${jobId}. Unknown error.`);
+        return false;
     } catch (err) {
         console.error('Error appending transcription text:', err);
         return false;

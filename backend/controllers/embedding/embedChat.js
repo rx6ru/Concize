@@ -24,13 +24,23 @@ const createChatCollection = async () => {
         const collectionExists = collections.collections.some(c => c.name === CHAT_COLLECTION_NAME);
         
         if (!collectionExists) {
+            // Step 1: Create the collection first. This is where your vectors and payload will live.
             await client.createCollection(CHAT_COLLECTION_NAME, {
                 vectors: {
-                    size: 768, // Matches the embedding-001 model
+                    size: 768,
                     distance: 'Cosine',
                 },
             });
             console.log(`Qdrant: Collection '${CHAT_COLLECTION_NAME}' created successfully for chat embeddings.`);
+
+            // Step 2: Now, add the index. This is the new, critical part.
+            // The `createPayloadIndex` function tells Qdrant to build an index on a specific field within the payload.
+            await client.createPayloadIndex(CHAT_COLLECTION_NAME, {
+                field_name: 'jobId',
+                field_schema: 'keyword'
+            });
+            console.log(`Qdrant: Payload index created for 'jobId' in '${CHAT_COLLECTION_NAME}'.`);
+
         } else {
             console.log(`Qdrant: Collection '${CHAT_COLLECTION_NAME}' already exists for chat embeddings.`);
         }
@@ -63,10 +73,11 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
         }
 
         const point = {
-            id: chatId || uuidv4(), // Use MongoDB _id as Qdrant ID for easy lookup, fallback to new UUID
+            id: uuidv4(), // CRITICAL FIX: Always use a new UUID for the Qdrant point ID
             vector: vector,
             payload: {
                 jobId: jobId,
+                mongoId: chatId, // Store the MongoDB _id here for future reference
                 userChat: userChat,
                 aiChat: aiChat,
                 timestamp: new Date().toISOString(), // Store timestamp of embedding
@@ -78,7 +89,7 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
             points: [point],
         });
 
-        console.log(`Qdrant: Successfully upserted chat pair for jobId: ${jobId}, chatId: ${chatId}`);
+        console.log(`Qdrant: Successfully upserted chat pair for jobId: ${jobId}, mongoId: ${chatId}`);
         return { success: true, result: result };
 
     } catch (err) {

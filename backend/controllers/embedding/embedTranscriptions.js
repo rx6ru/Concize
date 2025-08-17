@@ -29,6 +29,14 @@ const createTranCollection = async () => {
                 },
             });
             console.log(`Qdrant: Collection '${COLLECTION_NAME}' created successfully for transcriptions.`);
+
+            // CRITICAL FIX: Add a payload index on the 'jobId' field for efficient filtering.
+            await client.createPayloadIndex(COLLECTION_NAME, {
+                field_name: 'jobId',
+                field_schema: 'keyword'
+            });
+            console.log(`Qdrant: Payload index created for 'jobId' in '${COLLECTION_NAME}'.`);
+
         } else {
             console.log(`Qdrant: Collection '${COLLECTION_NAME}' already exists for transcriptions.`);
         }
@@ -40,13 +48,17 @@ const createTranCollection = async () => {
 
 /**
  * Generates embeddings for an array of text chunks and upserts them into Qdrant.
- * @param {string} jobId - The unique ID of the meeting session. (NEW PARAMETER)
+ * This function first ensures the collection exists before attempting the upsert.
+ * @param {string} jobId - The unique ID of the meeting session.
  * @param {Array<Object>} chunks An array of objects, where each object has a 'summary' and 'refined_text' property.
  * @param {Object} metadata The metadata to be associated with each point (e.g., originalname, uploadTimestamp).
  * @returns {Promise<Object>} A promise that resolves to the result of the upsert operation.
  */
-const upsertTranscriptionChunks = async (jobId, chunks, metadata) => { // jobId added here
+const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
     try {
+        // First, ensure the collection exists
+        await createTranCollection();
+
         if (!chunks || chunks.length === 0) {
             console.warn("No chunks to upsert.");
             return { success: true, result: null };
@@ -65,7 +77,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => { // jobId 
                 id: uuidv4(),
                 vector: vector,
                 payload: {
-                    jobId: jobId, // CRITICAL FIX: Add jobId to the payload
+                    jobId: jobId,
                     filename: metadata.originalname,
                     uploadTimestamp: metadata.uploadTimestamp,
                     text: chunk.refined_text,
