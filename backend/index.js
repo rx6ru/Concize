@@ -15,7 +15,7 @@ const app = express();
 // Define a whitelist of allowed origins.
 // This is necessary because requests with 'credentials: true' cannot use a wildcard '*'.
 const allowedOrigins = [
-    'chrome-extension://pegbbggcoakpcaijblildpajooeadcjk', // Your Chrome Extension ID
+    'chrome-extension://bdjgabpcncgafmgaommcofiaciigigmm', // Your Chrome Extension ID
     'http://localhost:3000', // For local development/testing
     'http://127.0.0.1:5500' // NEW: Added this origin from the error message
 ];
