@@ -1,3 +1,4 @@
+//service-worker.js
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "service-worker") {
     switch (message.type) {
