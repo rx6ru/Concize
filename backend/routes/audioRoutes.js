@@ -5,7 +5,7 @@ const multer = require('multer');
 const amqp = require('amqplib');
 const config = require('../utils/config');
 // Updated import to use the new Cloudinary upload function.
-const { storeAudioFile } = require('../db/cloudinary-utils/audio.db');
+const { storeAudioFile, deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
 
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
