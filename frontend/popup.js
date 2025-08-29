@@ -153,6 +153,19 @@ startButton.addEventListener("click", async () => {
     }
 
     try {
+        // Call the meeting/start API to get a jobId
+        const startMeetingResponse = await fetch('http://localhost:3000/api/meeting/start', {
+            method: 'POST',
+        });
+        const startMeetingData = await startMeetingResponse.json();
+
+        if (!startMeetingData.success) {
+            showStatusMessage(`Failed to start meeting session: ${startMeetingData.message}`, true);
+            updateUIForRecording(false); // Revert UI if meeting session can't start
+            return;
+        }
+        console.log(`Meeting session started with jobId: ${startMeetingData.jobId}`);
+
         const [tab] = await chrome.tabs.query({
             active: true,
             currentWindow: true,
@@ -224,9 +237,6 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "recording-stopped":
                 updateUIForRecording(false); // Ensure UI is reset to stopped
-                break;
-            case "update-transcription":
-                document.getElementById('transcriptionText').textContent = message.data;
                 break;
         }
     }

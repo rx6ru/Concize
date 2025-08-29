@@ -83,16 +83,32 @@ async function startRecording(streamId) {
       const audioBlob = new Blob(data, { type: mimeType });
       const extension = "webm";
 
-      const url = URL.createObjectURL(audioBlob);
+      // Send the audio blob to the backend
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `recording-${new Date().toISOString()}.${extension}`);
 
-      // Create temporary link element to trigger download
-      const downloadLink = document.createElement("a");
-      downloadLink.href = url;
-      downloadLink.download = `recording-${new Date().toISOString()}.${extension}`;
-      downloadLink.click();
+      try {
+        const response = await fetch('http://localhost:3000/api/audios/', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to upload audio: ${response.status} ${errorText}`);
+        }
+        console.log("Audio uploaded successfully.");
+      } catch (error) {
+        console.error("Error uploading audio:", error);
+        chrome.runtime.sendMessage({
+          type: "recording-error",
+          target: "popup",
+          error: error.message,
+        });
+      }
 
       // Cleanup
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(URL.createObjectURL(audioBlob)); // Revoke object URL if created
       recorder = undefined;
       data = [];
 
