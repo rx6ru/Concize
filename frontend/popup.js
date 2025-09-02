@@ -6,6 +6,9 @@ const workerStatusSpan = document.getElementById("workerStatus");
 const recordingIndicatorDiv = document.getElementById("recordingIndicator");
 const recordingGlyphDiv = document.getElementById("recordingGlyph");
 const toggleButtonWrapper = document.getElementById("toggleButtonWrapper");
+const getTranscriptionButton = document.getElementById("getTranscriptionButton");
+const transcriptionDisplayArea = document.getElementById("transcriptionDisplayArea");
+const transcriptionTextContent = document.getElementById("transcriptionTextContent");
 
 /**
  * Displays a general status message to the user.
@@ -228,6 +231,57 @@ stopButton.addEventListener("click", () => {
     });
 });
 
+// Event listener for the Get Transcription button
+getTranscriptionButton.addEventListener("click", async () => {
+    hideStatusMessage();
+    hidePermissionMessage();
+
+    try {
+        const result = await chrome.storage.local.get('jobId');
+        const jobId = result.jobId;
+
+        if (!jobId) {
+            showStatusMessage("No active recording session found. Please start a recording first.", true);
+            return;
+        }
+
+        showStatusMessage("Fetching transcription...");
+
+        const response = await fetch(`http://localhost:3000/api/transcription`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const transcriptionData = await response.json();
+        console.log('Received transcription data:', transcriptionData);
+
+        if (transcriptionData.transcriptionChunks && transcriptionData.transcriptionChunks.length > 0) {
+            const fullTranscription = transcriptionData.transcriptionChunks.join(' ');
+            console.log('Full Transcription:', fullTranscription);
+            transcriptionTextContent.textContent = fullTranscription;
+            transcriptionDisplayArea.classList.remove('hidden');
+            showStatusMessage("Transcription loaded successfully.");
+        } else {
+            transcriptionTextContent.textContent = "No transcription available for this session yet.";
+            transcriptionDisplayArea.classList.remove('hidden');
+            showStatusMessage("No transcription available.");
+        }
+
+    } catch (error) {
+        console.error("Error fetching transcription:", error);
+        showStatusMessage(`Failed to get transcription: ${error.message}`, true);
+        transcriptionDisplayArea.classList.add('hidden'); // Hide if error
+    }
+});
+
 // Event listener for the chat button
 const openChatButton = document.getElementById('openChat');
 openChatButton.addEventListener('click', () => {
@@ -251,9 +305,6 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "recording-stopped":
                 updateUIForRecording(false); // Ensure UI is reset to stopped
-                break;
-            case "update-transcription":
-                document.getElementById('transcriptionText').textContent = message.data;
                 break;
         }
     }

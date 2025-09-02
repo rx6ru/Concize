@@ -294,7 +294,6 @@
         </div>
 
         <!-- Message boxes for status and permissions -->
-        <div id="statusMessage" class="message-box"></div>
         <div id="permissionStatus" class="message-box"></div>
 
         <!-- Chat button -->
@@ -307,10 +306,23 @@
             </button>
         </div>
 
-        <!-- Transcription output area -->
-        <div id="transcriptionOutput" class="transcription-box">
-            <h3>Transcription:</h3>
-            <p id="transcriptionText">Start recording to see the transcription appear here.</p>
+        <!-- Get Transcription Button -->
+        <div class="button-wrapper" style="margin-top: 1rem; background: linear-gradient(to right, #28a745, #218838);">
+            <button id="getTranscriptionButton" class="action-button visible">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 17V3M6 11L12 17L18 11M19 21H5"/>
+                </svg>
+                Get Transcription
+            </button>
+        </div>
+
+        <!-- Message boxes for status and permissions -->
+        <div id="statusMessage" class="message-box"></div>
+
+        <!-- Transcription Display Area -->
+        <div id="transcriptionDisplayArea" class="transcription-box hidden">
+            <h3>Full Transcription:</h3>
+            <p id="transcriptionTextContent"></p>
         </div>
     </div>
     <!-- Link to the JavaScript file -->
