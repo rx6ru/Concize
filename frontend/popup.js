@@ -217,13 +217,26 @@ startButton.addEventListener("click", async () => {
 stopButton.addEventListener("click", () => {
     hideStatusMessage(); // Clear any old status messages when stopping
     hidePermissionMessage(); // Clear any old permission messages when stopping
-
+    
     // Update UI immediately to show stopped state
-    updateUIForRecording(false);
+            updateUIForRecording(false);
 
     chrome.runtime.sendMessage({
         type: "stop-recording",
         target: "offscreen",
+    });
+});
+
+// Event listener for the chat button
+const openChatButton = document.getElementById('openChat');
+openChatButton.addEventListener('click', () => {
+    chrome.windows.create({
+        url: chrome.runtime.getURL('chat-popup.html'),
+        type: 'popup',
+        width: 350,
+        height: 600,
+        left: 100,
+        top: 100
     });
 });
 
@@ -237,6 +250,9 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "recording-stopped":
                 updateUIForRecording(false); // Ensure UI is reset to stopped
+                break;
+            case "update-transcription":
+                document.getElementById('transcriptionText').textContent = message.data;
                 break;
         }
     }
