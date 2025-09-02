@@ -165,6 +165,7 @@ startButton.addEventListener("click", async () => {
             return;
         }
         console.log(`Meeting session started with jobId: ${startMeetingData.jobId}`);
+        await chrome.storage.local.set({ jobId: startMeetingData.jobId });
 
         const [tab] = await chrome.tabs.query({
             active: true,

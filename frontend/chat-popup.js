@@ -149,7 +149,8 @@ class ChatInterface {
         const API_URL = 'http://localhost:3000/api/chat/stream';
         
         try {
-            const jobId = "73832ac1-8f22-4915-b7b3-a330c8911ddc";
+            const result = await chrome.storage.local.get('jobId');
+            const jobId = result.jobId;
             
             const response = await fetch(API_URL, {
                 method: 'POST',
