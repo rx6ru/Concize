@@ -6,7 +6,7 @@ const cookieParser = require("cookie-parser");
 // We now import the correct function to initialize our Cloudinary service
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
 const { connectToMongo } = require("./db/mongoutils/transcription.db");
-const { startWorker } = require("./controllers/worker");
+const { startWorker, shutdown: workerShutdown } = require("./controllers/worker");
 const audioRoutes = require("./routes/audioRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
 const transcRoutes = require("./routes/transcRoutes");
@@ -70,14 +70,43 @@ app.use("/api/transcription", transcRoutes);
 app.use("/api/chat/", chatRoutes);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
 
   // Start the worker once when the server boots up.
   try {
     await startWorker();
-    console.log('Worker: Persistent worker started successfully.');
   } catch (error) {
     console.error('Worker: Failed to start persistent worker:', error);
   }
 });
+
+// Graceful Shutdown Logic
+const gracefulShutdown = async () => {
+  console.log('Received kill signal, shutting down gracefully...');
+
+  // 1. Close the server (stops accepting new requests)
+  server.close(async () => {
+    console.log('HTTP server closed.');
+
+    // 2. Close Worker (RabbitMQ)
+    try {
+      await workerShutdown();
+    } catch (err) {
+      console.error('Error during worker shutdown:', err);
+    }
+
+    // 3. Exit
+    console.log('Process termination complete.');
+    process.exit(0);
+  });
+
+  // Force close if it takes too long (e.g. hung connections)
+  setTimeout(() => {
+    console.error('Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
