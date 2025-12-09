@@ -11,6 +11,7 @@ const audioRoutes = require("./routes/audioRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
 const transcRoutes = require("./routes/transcRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const tempAuthCheck = require("./middlewares/tempAuthCheck");
 
 // Initialize Cloudinary before starting the server.
 // This is a crucial step for our audio storage and retrieval functions.
@@ -31,11 +32,11 @@ const app = express();
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : [
-      'chrome-extension://bdjgabpcncgafmgaommcofiaciigigmm',
-      'chrome-extension://ehgklfhpooihffchjkmlfenndjnjkejp',
-      'http://localhost:3000',
-      'http://127.0.0.1:5500'
-    ];
+    'chrome-extension://bdjgabpcncgafmgaommcofiaciigigmm',
+    'chrome-extension://ehgklfhpooihffchjkmlfenndjnjkejp',
+    'http://localhost:3000',
+    'http://127.0.0.1:5500'
+  ];
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -56,6 +57,9 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Apply temporary authentication middleware globally
+app.use(tempAuthCheck);
 
 // Connect to MongoDB once when the server starts.
 connectToMongo();
