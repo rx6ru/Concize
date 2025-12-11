@@ -156,6 +156,7 @@ class ChatInterface {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'x-auth-code': 'lostnfound'
                 },
                 body: JSON.stringify({
                     userPrompt: userMessage,

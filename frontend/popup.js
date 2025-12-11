@@ -159,6 +159,9 @@ startButton.addEventListener("click", async () => {
         // Call the meeting/start API to get a jobId
         const startMeetingResponse = await fetch('http://localhost:3000/api/meeting/start', {
             method: 'POST',
+            headers: {
+                'x-auth-code': 'lostnfound'
+            },
         });
         const startMeetingData = await startMeetingResponse.json();
 
@@ -209,7 +212,10 @@ startButton.addEventListener("click", async () => {
         chrome.runtime.sendMessage({
             type: "start-recording",
             target: "offscreen",
-            data: streamId,
+            data: {
+                streamId: streamId,
+                jobId: startMeetingData.jobId
+            },
         });
 
     } catch (error) {
@@ -251,6 +257,7 @@ getTranscriptionButton.addEventListener("click", async () => {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'x-auth-code': 'lostnfound'
             },
             credentials: 'include',
         });
