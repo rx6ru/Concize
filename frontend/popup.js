@@ -9,6 +9,10 @@ const toggleButtonWrapper = document.getElementById("toggleButtonWrapper");
 const getTranscriptionButton = document.getElementById("getTranscriptionButton");
 const transcriptionDisplayArea = document.getElementById("transcriptionDisplayArea");
 const transcriptionTextContent = document.getElementById("transcriptionTextContent");
+const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
+const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
+
+let fullTranscriptionText = ''; // To store the transcription
 
 /**
  * Displays a general status message to the user.
@@ -241,6 +245,7 @@ stopButton.addEventListener("click", () => {
 getTranscriptionButton.addEventListener("click", async () => {
     hideStatusMessage();
     hidePermissionMessage();
+    downloadButtonWrapper.classList.add('hidden'); // Hide download button initially
 
     try {
         const result = await chrome.storage.local.get('jobId');
@@ -271,24 +276,59 @@ getTranscriptionButton.addEventListener("click", async () => {
         console.log('Received transcription data:', transcriptionData);
 
         if (transcriptionData.transcriptionChunks && transcriptionData.transcriptionChunks.length > 0) {
-            const fullTranscription = transcriptionData.transcriptionChunks.join(' ');
-            console.log('Full Transcription:', fullTranscription);
-            transcriptionTextContent.textContent = fullTranscription;
+            fullTranscriptionText = transcriptionData.transcriptionChunks.join(' ');
+            console.log('Full Transcription:', fullTranscriptionText);
+
+            transcriptionTextContent.textContent = fullTranscriptionText;
             transcriptionDisplayArea.classList.remove('hidden');
+            downloadButtonWrapper.classList.remove('hidden'); // Show download button
             showStatusMessage("Transcription loaded successfully.");
         } else {
-            transcriptionTextContent.textContent = "No transcription available for this session yet.";
+            fullTranscriptionText = "No transcription available for this session yet.";
+            transcriptionTextContent.textContent = fullTranscriptionText;
             transcriptionDisplayArea.classList.remove('hidden');
-            showStatusMessage("No transcription available.");
+            showStatusMessage("No transcription available.", true);
         }
 
     } catch (error) {
         console.error("Error fetching transcription:", error);
         showStatusMessage(`Failed to get transcription: ${error.message}`, true);
-        transcriptionDisplayArea.classList.add('hidden'); // Hide if error
+        transcriptionDisplayArea.classList.add('hidden');
+        downloadButtonWrapper.classList.add('hidden');
     }
 });
 
+// Event listener for the Download Transcription button
+downloadTranscriptionButton.addEventListener("click", async () => {
+    if (!fullTranscriptionText) {
+        showStatusMessage("No transcription text to download.", true);
+        return;
+    }
+    
+    try {
+        const result = await chrome.storage.local.get('jobId');
+        const jobId = result.jobId || 'session';
+
+        // Create a Blob from the transcription text
+        const blob = new Blob([fullTranscriptionText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+
+        // Create a temporary anchor element and trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transcription-${jobId}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url); // Clean up the object URL
+        
+        showStatusMessage("Download started.", false);
+
+    } catch (error) {
+        console.error("Error creating download:", error);
+        showStatusMessage(`Failed to create download: ${error.message}`, true);
+    }
+});
 // Event listener for the chat button
 const openChatButton = document.getElementById('openChat');
 openChatButton.addEventListener('click', () => {

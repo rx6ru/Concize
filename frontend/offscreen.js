@@ -8,12 +8,14 @@ let dataA = [], dataB = [];
 let activeStreams = [];
 let currentJobId;
 let stopTimeouts = [];
+let userStopped = false;
 
 // Entry point for messages from other parts of the extension
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "offscreen") {
     switch (message.type) {
       case "start-recording":
+        userStopped = false; // Reset flag on new recording
         currentJobId = message.data.jobId;
         await startRecording(message.data.streamId);
         break;
@@ -54,6 +56,7 @@ async function startRecording(streamId) {
 // Main function to stop the recording process
 async function stopRecording() {
   console.log("Stopping recording process...");
+  userStopped = true;
   
   // Stop all running recorders
   if (recorderA?.state === 'recording') {
@@ -102,8 +105,9 @@ function runRecorderCycle(recorderName, stream) {
   };
 
   recorder.onstop = () => {
-    console.log(`Recorder ${recorderName} stopped.`);
-    sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }));
+    const isLast = userStopped;
+    console.log(`Recorder ${recorderName} stopped. isLast: ${isLast}`);
+    sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }), isLast);
     dataBuffer.length = 0; // Clear buffer after sending
     if (isRecorderA) recorderA = null;
     else recorderB = null;
@@ -132,12 +136,12 @@ function runRecorderCycle(recorderName, stream) {
 }
 
 // Handles sending the audio blob to the backend
-async function sendAudioChunk(audioBlob) {
+async function sendAudioChunk(audioBlob, isLastChunk = false) {
   if (audioBlob.size === 0) {
     console.log("Skipping empty audio chunk.");
     return;
   }
-  console.log(`Preparing to send audio chunk of size ${audioBlob.size}`);
+  console.log(`Preparing to send audio chunk of size ${audioBlob.size}, isLast: ${isLastChunk}`);
 
   const formData = new FormData();
   formData.append('audio', audioBlob, `recording-${new Date().toISOString()}.webm`);
@@ -151,7 +155,8 @@ async function sendAudioChunk(audioBlob) {
       method: 'POST',
       headers: {
         'x-auth-code': 'lostnfound',
-        'Cookie': `jobId=${currentJobId}`
+        'Cookie': `jobId=${currentJobId}`,
+        'x-last-chunk': isLastChunk.toString()
       },
       body: formData,
     });
