@@ -20,3 +20,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Developer scripts
+dev-scripts/
