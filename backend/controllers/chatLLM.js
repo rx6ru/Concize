@@ -11,7 +11,7 @@ const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
 // Use the specified Gemini model for streaming content
 const llmModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-pro" // Corrected model to one that supports Google Search
+    model: "gemini-3-pro-preview"
 });
 
 /**
@@ -120,7 +120,7 @@ Do not mention that you are an AI assistant or refer to "provided context".`
                     }],
                     generationConfig: generationConfig,
                 });
-                
+
                 // Step 5: Stream the LLM's response back to the client and collect chunks
                 for await (const chunk of result.stream) {
                     if (chunk.text) {
@@ -171,12 +171,12 @@ Do not mention that you are an AI assistant or refer to "provided context".`
             } catch (dbError) {
                 console.error("MONGODB_UPDATE_ERROR:", dbError);
             }
-            
+
             // Signal the end of the stream
             res.write('data: {"event": "stream_end"}\n\n');
             res.end();
             console.log("LLM: Streaming complete.");
-        
+
         } else {
             // Handle final failure after all retries
             console.log("LLM failed to generate a response after all attempts.");
