@@ -5,8 +5,12 @@ const config = require('../../utils/config');
 // Initialize the Google Generative AI client with the API key
 const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
-// Select the embedding model
-const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
+// Select the embedding model - using gemini-embedding-001 (stable, replaces deprecated embedding-001)
+const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+
+// Output dimension for embeddings (768 via Matryoshka Representation Learning)
+// gemini-embedding-001 supports 768, 1536, or 3072 dimensions
+const OUTPUT_DIMENSIONALITY = 768;
 
 /**
  * Generates a vector embedding for a given text using the Gemini API.
@@ -15,14 +19,17 @@ const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
  */
 const getEmbedding = async (text) => {
     try {
-        console.log("EMBEDDING_LOG: Calling Google Gemini API for embedding...");
+        console.log("EMBEDDING_LOG: Calling Gemini gemini-embedding-001 API...");
 
-        // The Gemini SDK's method for embeddings
-        const { embedding } = await embeddingModel.embedContent(text);
+        // The Gemini SDK's method for embeddings with output dimensionality control
+        const result = await embeddingModel.embedContent({
+            content: { parts: [{ text }] },
+            outputDimensionality: OUTPUT_DIMENSIONALITY,
+        });
 
-        const vector = embedding.values;
+        const vector = result.embedding.values;
 
-        // Log the vector size for confirmation. The size is 768 for embedding-001.
+        // Log the vector size for confirmation
         console.log("EMBEDDING_LOG: Embedding generated successfully. Vector size:", vector.length);
 
         return vector;

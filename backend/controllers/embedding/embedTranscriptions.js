@@ -14,13 +14,13 @@ const COLLECTION_NAME = config.TRANSCRIPTION_COLLECTION;
 
 /**
  * Creates the Qdrant collection for transcriptions if it doesn't already exist.
- * The vector size (768) must match the 'embedding-001' model's output.
+ * The vector size (768) must match the 'gemini-embedding-001' model's output.
  */
 const createTranCollection = async () => {
     try {
         const collections = await client.getCollections();
         const collectionExists = collections.collections.some(c => c.name === COLLECTION_NAME);
-        
+
         if (!collectionExists) {
             await client.createCollection(COLLECTION_NAME, {
                 vectors: {
@@ -67,7 +67,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
         const points = [];
         for (const chunk of chunks) {
             const vector = await getEmbedding(chunk.refined_text);
-            
+
             if (!vector || vector.length === 0) {
                 console.error(`Skipping chunk due to failed embedding: ${chunk.refined_text}`);
                 continue;

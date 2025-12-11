@@ -16,13 +16,13 @@ const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION; // This will be a new env v
 
 /**
  * Creates the Qdrant collection for chat embeddings if it doesn't already exist.
- * The vector size (768) must match the 'embedding-001' model's output.
+ * The vector size (768) must match the 'gemini-embedding-001' model's output.
  */
 const createChatCollection = async () => {
     try {
         const collections = await client.getCollections();
         const collectionExists = collections.collections.some(c => c.name === CHAT_COLLECTION_NAME);
-        
+
         if (!collectionExists) {
             // Step 1: Create the collection first. This is where your vectors and payload will live.
             await client.createCollection(CHAT_COLLECTION_NAME, {
@@ -66,7 +66,7 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
         // Combine user and AI chat for a comprehensive embedding
         const combinedChatText = `User: ${userChat}\nAI response: ${aiChat}`;
         const vector = await getEmbedding(combinedChatText);
-        
+
         if (!vector || vector.length === 0) {
             console.error(`Qdrant: Skipping chat pair embedding due to failed embedding for jobId: ${jobId}, chatId: ${chatId}`);
             return { success: false, error: "Failed to generate embedding for chat pair." };
