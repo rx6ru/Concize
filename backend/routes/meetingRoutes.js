@@ -23,7 +23,7 @@ router.post('/start', async (req, res) => {
 
         // Set the jobId as an HTTP-only cookie for security
         res.cookie('jobId', jobId, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
-        
+
         console.log(`New transcription session started with jobId: ${jobId}`);
         res.status(200).json({
             success: true,
@@ -37,31 +37,7 @@ router.post('/start', async (req, res) => {
     }
 });
 
-// POST /api/meeting/stop
-// Updates the meeting status to 'completed' and sends any remaining audio chunks to be processed.
-router.post('/stop', async (req, res) => {
-    console.log('API Request: /api/meeting/stop received.');
-    const { jobId } = req.cookies;
 
-    if (!jobId) {
-        return res.status(400).send('No meeting session found to stop.');
-    }
-
-    try {
-        // Update the meeting status to 'completed' in MongoDB
-        const result = await updateMeetingStatus(jobId, 'completed');
-
-        if (result) {
-            console.log(`Meeting status for jobId ${jobId} updated to 'completed'.`);
-            res.status(200).json({ success: true, message: `Meeting session for jobId ${jobId} successfully marked as completed.` });
-        } else {
-            res.status(404).json({ success: false, message: `Meeting with jobId ${jobId} not found.` });
-        }
-    } catch (error) {
-        console.error('API Error in /api/meeting/stop:', error);
-        res.status(500).json({ success: false, message: 'An unexpected error occurred while trying to stop the meeting.' });
-    }
-});
 
 // The status route is no longer needed as the worker is now a persistent process
 // Its status is not tied to a single meeting.

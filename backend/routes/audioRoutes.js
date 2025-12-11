@@ -102,7 +102,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     // --- Upload to Cloudinary and Push to Queue ---
     console.log("11: Validations passed. Starting Cloudinary upload...");
-    
+
     let fileId;
     try {
         // Use the new function to upload to Cloudinary instead of Firebase.
@@ -125,9 +125,13 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
         await ch.assertQueue(audioQueue, { durable: true });
 
+        const isLastChunk = req.headers['x-last-chunk'] === 'true';
+        console.log(`14.5: Last chunk flag detected: ${isLastChunk}`);
+
         const message = {
             jobId: jobId,
             fileId: fileId, // Use the public_id directly
+            isLastChunk: isLastChunk, // Pass the flag to the worker
             metadata: {
                 originalFileName: audioFile.originalname,
                 mimetype: audioFile.mimetype,
@@ -151,7 +155,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     } catch (queueErr) {
         console.error('Error with RabbitMQ or message confirmation:', queueErr);
-        
+
         // Clean up uploaded file if queue fails
         if (fileId) {
             try {
@@ -162,7 +166,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
                 console.error('Failed to clean up file:', cleanupErr);
             }
         }
-        
+
         if (!res.headersSent) {
             res.status(500).send('Failed to push audio to queue.');
         }

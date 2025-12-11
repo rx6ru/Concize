@@ -12,6 +12,7 @@ const {
   deleteAudioFile,
   initialiseCloudinary,
 } = require("../db/cloudinary-utils/audio.db"); // Cloudinary utils
+const { completeMeeting } = require("./meetingCompletion");
 const config = require("../utils/config");
 
 const audioQueue = "audio_queue";
@@ -168,6 +169,12 @@ const startWorker = async () => {
             `Worker: Acknowledged message for "${metadata.originalFileName || "unknown"
             }"`
           );
+
+          // Check for "Last Chunk" flag and complete the meeting
+          if (messageContent.isLastChunk) {
+            console.log(`Worker: Last chunk detected for jobId ${jobId}. Initiating meeting completion...`);
+            await completeMeeting(jobId);
+          }
         } catch (error) {
           console.error(
             `Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
