@@ -108,7 +108,7 @@ Do not mention that you are an AI assistant or refer to "provided context".`
         let responseValid = false;
 
         // Start of Retry Logic
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
             let currentResponseChunk = '';
             try {
                 const result = await llmModel.generateContentStream({
@@ -142,8 +142,19 @@ Do not mention that you are an AI assistant or refer to "provided context".`
 
             } catch (llmError) {
                 console.error(`LLM_STREAM_ERROR on attempt ${attempt + 1}:`, llmError);
-                if (attempt === 1) { // If this is the last attempt, re-throw the error
+
+                // If this is the last attempt (attempt index 2), re-throw
+                if (attempt === 2) {
                     throw llmError;
+                }
+
+                // "After 1st retry, add a 31 second delay"
+                // Attempt 0 = Initial call
+                // Attempt 1 = 1st Retry. 
+                // So if Attempt 1 fails, we look here.
+                if (attempt === 1) {
+                    console.log("LLM: Waiting 31 seconds before final retry...");
+                    await new Promise(resolve => setTimeout(resolve, 31000));
                 }
             }
         }
