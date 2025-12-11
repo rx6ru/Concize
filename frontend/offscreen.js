@@ -84,8 +84,6 @@ async function stopRecording() {
     target: "service-worker",
   });
   console.log("Recording process stopped.");
-  // Close the offscreen document
-  await chrome.offscreen.closeDocument();
 }
 
 // Manages the lifecycle of a single recorder
