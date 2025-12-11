@@ -11,7 +11,7 @@ const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
 // Use the specified Gemini model for streaming content
 const llmModel = genAI.getGenerativeModel({
-    model: "gemini-3-pro-preview"
+    model: "gemini-2.5-flash-lite"
 });
 
 /**
