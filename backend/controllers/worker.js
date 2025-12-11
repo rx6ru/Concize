@@ -15,7 +15,7 @@ const {
 const { completeMeeting } = require("./meetingCompletion");
 const config = require("../utils/config");
 
-const audioQueue = "audio_queue";
+const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
 let globalConnection = null;
@@ -56,7 +56,8 @@ const startWorker = async () => {
     globalChannel.consume(
       audioQueue,
       async (msg) => {
-        console.log("Worker: Received a message from the queue.");
+        console.log("\n\n\n----Worker: Received a message from the queue.-----\n\n\n");
+        console.log("------START OF ONE WORKER PROCESS------\n\n\n");
         if (msg === null) {
           console.log("Worker: Consumer cancelled. No message received.");
           return;
@@ -175,23 +176,26 @@ const startWorker = async () => {
             console.log(`Worker: Last chunk detected for jobId ${jobId}. Initiating meeting completion...`);
             await completeMeeting(jobId);
           }
+
+          console.log("\n\n\n------END OF ONE WORKER PROCESS------\n\n\n");
+
         } catch (error) {
           console.error(
-            `Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
-            }"`
+            `\n\n\nXXXXX----Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
+            }"----XXXXX\n\n\n`
           );
-          console.error("Worker: Error details:", error);
+          console.error("Worker: Error details:\n\n\n", error);
 
           // Delete from Cloudinary even if failure
           if (fileId) {
             try {
               await deleteAudioFile(fileId);
               console.log(
-                `Worker: Deleted failed job's audio file and metadata for ID: ${fileId}`
+                `-----Worker: Deleted failed job's audio file and metadata for ID: ${fileId}-----\n\n\n`
               );
             } catch (deleteError) {
               console.error(
-                `Worker: Failed to delete audio file and metadata for failed job:`,
+                `-----Worker: Failed to delete audio file and metadata for failed job:-----\n\n\n`,
                 deleteError
               );
             }

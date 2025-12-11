@@ -6,7 +6,7 @@
 const amqp = require('amqplib');
 const config = require('../utils/config'); // Ensure this path is correct
 
-const audioQueue = 'audio_queue';
+const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
 const runTestConsumer = async () => {

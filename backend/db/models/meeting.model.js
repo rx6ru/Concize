@@ -1,5 +1,6 @@
 // meeting.model.js
 const mongoose = require('mongoose');
+const config = require('../../utils/config');
 
 // Define the schema for a meeting transcription
 const meetingSchema = new mongoose.Schema({
@@ -26,7 +27,7 @@ const meetingSchema = new mongoose.Schema({
     },
 });
 
-// Create and export the Mongoose model
-const Meeting = mongoose.model('Meeting', meetingSchema, 'transcriptions');
+// Create and export the Mongoose model with dynamic collection name
+const Meeting = mongoose.model('Meeting', meetingSchema, config.MONGO_COLLECTION);
 
 module.exports = Meeting;

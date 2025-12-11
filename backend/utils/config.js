@@ -14,6 +14,10 @@ const config = {
     TRANSCRIPTION_COLLECTION: process.env.TRANSCRIPTION_COLLECTION,
     CHAT_COLLECTION: process.env.CHAT_COLLECTION,
 
+    // Dev Environment Isolation - prefix for shared resources
+    DEV_PREFIX: process.env.DEV_PREFIX || '',
+    AUDIO_QUEUE: `${process.env.DEV_PREFIX || ''}audio_queue`,
+    MONGO_COLLECTION: `${process.env.DEV_PREFIX || ''}transcriptions`,
 
     // Cloudinary credentials for audio storage
     CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,

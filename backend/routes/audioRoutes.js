@@ -14,7 +14,7 @@ const ffprobePath = require('@ffprobe-installer/ffprobe').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
 
-const audioQueue = 'audio_queue';
+const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
 // Configure Multer to store the file in memory as a Buffer.
