@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const client = new QdrantClient({
     url: config.QDRANT_URL,
     apiKey: config.QDRANT_API_KEY,
+    timeout: 60000,
 });
 
 const COLLECTION_NAME = config.TRANSCRIPTION_COLLECTION;

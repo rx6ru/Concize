@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const client = new QdrantClient({
     url: config.QDRANT_URL,
     apiKey: config.QDRANT_API_KEY,
+    timeout: 60000,
 });
 
 // Define the collection name for chat embeddings
