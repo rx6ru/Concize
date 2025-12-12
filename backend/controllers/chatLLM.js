@@ -2,12 +2,10 @@
 
 const { GoogleGenAI } = require('@google/genai');
 const config = require('../utils/config');
+const keyRotation = require('../utils/keyRotation');
 const { queryTranscriptions, queryChats } = require('./queryVectordb');
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('./embedding/embedChat');
-
-// Initialize the Google GenAI client with the API key (server-side)
-const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
 
 // Model id to use
 const MODEL_ID = "gemini-2.5-flash";
@@ -116,6 +114,10 @@ Do not mention that you are an AI assistant or refer to "provided context".`
         for (let attempt = 0; attempt < 3; attempt++) {
             let currentResponseChunk = '';
             try {
+                // Get a rotated key for this attempt (Failover support)
+                const currentKey = keyRotation.getNextKey();
+                const ai = new GoogleGenAI({ apiKey: currentKey });
+
                 const streamResponse = await ai.models.generateContentStream({
                     model: MODEL_ID,
                     contents: [

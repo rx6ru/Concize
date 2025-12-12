@@ -3,13 +3,11 @@
 
 const { GoogleGenAI } = require('@google/genai'); // confirm package installed
 const config = require('../../utils/config');
+const keyRotation = require('../../utils/keyRotation'); // Key Rotation
 
-if (!config?.GEMINI_API_KEY) {
-    console.warn('WARNING: GEMINI_API_KEY is not set in config. Ensure your key or ADC is configured.');
+if (!config?.GEMINI_API_KEY && (!config?.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0)) {
+    console.warn('WARNING: GEMINI_API_KEY(S) not set in config.');
 }
-
-// Initialize the Google GenAI client with the API key (or ADC if running in GCP)
-const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
 
 // Preferred embedding model (Gemini Embedding)
 const MODEL_ID = 'gemini-embedding-001';
@@ -21,21 +19,22 @@ const DEFAULT_OUTPUT_DIMENSIONALITY = 768;
  * Attempts to call several likely SDK methods for generating embeddings,
  * returning the raw SDK response for further parsing.
  *
+ * @param {Object} aiInstance - The GoogleGenAI instance to use
  * @param {Object} params - parameters to pass to the SDK call.
  * @returns {Promise<any>} sdkResponse
  */
-async function _callEmbeddingEndpoint(params) {
+async function _callEmbeddingEndpoint(aiInstance, params) {
     // Try multiple method names to be robust across SDK minor versions
     const candidateCalls = [
         // modern / canonical shapes
-        () => ai.models.embedContent?.(params),
-        () => ai.models.embed?.(params),
-        () => ai.models.embed_content?.(params),
+        () => aiInstance.models.embedContent?.(params),
+        () => aiInstance.models.embed?.(params),
+        () => aiInstance.models.embed_content?.(params),
 
         // some SDKs expose top-level client methods
-        () => ai.embedContent?.(params),
-        () => ai.embed?.(params),
-        () => ai.embed_content?.(params),
+        () => aiInstance.embedContent?.(params),
+        () => aiInstance.embed?.(params),
+        () => aiInstance.embed_content?.(params),
     ];
 
     let lastError = null;
@@ -134,6 +133,10 @@ const getEmbedding = async (text, opts = {}) => {
     try {
         console.log(`EMBEDDING_LOG: Requesting embedding from model=${model} dim=${outputDimensionality}...`);
 
+        // Get rotated key and instantiate client
+        const currentKey = keyRotation.getNextKey();
+        const aiInstance = new GoogleGenAI({ apiKey: currentKey });
+
         const params = {
             model,
             // some SDKs accept 'contents' as a string or array; send the canonical contents array
@@ -144,7 +147,7 @@ const getEmbedding = async (text, opts = {}) => {
         };
 
         // Call the SDK (tries multiple possible method names)
-        const sdkResponse = await _callEmbeddingEndpoint(params);
+        const sdkResponse = await _callEmbeddingEndpoint(aiInstance, params);
 
         // Attempt to extract the vector from the response
         const vector = _extractEmbeddingVector(sdkResponse);
