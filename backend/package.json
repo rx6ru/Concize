@@ -14,7 +14,7 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
-    "@google/generative-ai": "^0.24.1",
+    "@google/genai": "^1.33.0",
     "@qdrant/js-client-rest": "^1.15.0",
     "amqplib": "^0.10.8",
     "axios": "^1.11.0",

@@ -1,37 +1,49 @@
 // db/mongoutils/chatLLM.js
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const config = require('../utils/config');
 const { queryTranscriptions, queryChats } = require('./queryVectordb');
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('./embedding/embedChat');
 
-// Initialize the Google Generative AI client with the API key
-const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
+// Initialize the Google GenAI client with the API key (server-side)
+const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
 
-// Use the specified Gemini model for streaming content
-const llmModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-lite"
-});
+// Model id to use
+const MODEL_ID = "gemini-2.5-flash-lite";
 
 /**
- * Orchestrates the full RAG (Retrieval-Augmented Generation) process with Google Search and a retry mechanism.
- * 1. Retrieves relevant context from Qdrant.
- * 2. Prepares a system prompt.
- * 3. Creates a new chat entry in the database for the user's prompt.
- * 4. Sends the prompt to the LLM via a streaming API with Google Search enabled, retrying once on an empty response.
- * 5. Streams the LLM's response back to the client using SSE.
- * 6. Collects the full LLM response and updates the chat entry in MongoDB.
+ * Orchestrates the full RAG process and streams the LLM response over SSE.
  *
- * @param {Object} res - The Express response object for SSE streaming.
- * @param {string} userPrompt - The user's message/query.
- * @param {string} jobId - The unique ID of the current meeting session.
+ * @param {Object} res - Express response object (SSE)
+ * @param {string} userPrompt - The user's message/query
+ * @param {string} jobId - Meeting/session id
  */
 const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     let chatId = null;
     let fullResponseText = '';
+    let heartbeatInterval = null;
+
+    const startHeartbeat = () => {
+        if (heartbeatInterval) return;
+        heartbeatInterval = setInterval(() => {
+            try {
+                res.write(':heartbeat\n\n');
+            } catch (e) {
+                // ignore write errors
+            }
+        }, 15000);
+    };
+
+    const clearHeartbeat = () => {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+    };
 
     try {
+        // SSE headers
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
@@ -41,16 +53,12 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders();
 
-        // Step 1: Query relevant context from both collections
+        // Step 1: gather context
         const [transcriptionContext, chatHistory] = await Promise.all([
             queryTranscriptions(userPrompt, jobId, 5),
             queryChats(userPrompt, jobId, 3)
         ]);
 
-        console.log("LLM: Transcription Context:", transcriptionContext);
-        console.log("LLM: Chat History:", chatHistory);
-
-        // Step 2: Combine all contexts into a single string for the LLM
         const transcriptionText = transcriptionContext.length > 0
             ? transcriptionContext.map(chunk => `Transcription Snippet: ${chunk.text}`).join('\n')
             : "No specific meeting transcriptions were found for this query.";
@@ -58,9 +66,6 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
         const chatHistoryText = chatHistory.length > 0
             ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
             : "No specific chat history was found for this query.";
-
-        console.log("LLM: Transcription Text:", transcriptionText);
-        console.log("LLM: Chat Text:", chatHistoryText);
 
         const contentsPrompt =
             `# Meeting Transcription Context:
@@ -72,9 +77,7 @@ ${chatHistoryText}
 # User's Question:
 ${userPrompt}`;
 
-        console.log("LLM: Generating a streaming response...");
-
-        // Step 3: Create the chat entry in MongoDB before generating the response
+        // Step 3: create chat entry in DB
         try {
             const newChat = await createChatEntry(jobId, userPrompt);
             chatId = newChat._id;
@@ -86,11 +89,12 @@ ${userPrompt}`;
             return res.end();
         }
 
-        const tools = [{
-            googleSearch: {}
-        }];
+        // Tools (if any)
+        const tools = [{ googleSearch: {} }];
 
-        const systemInstruction = {
+        // System content
+        const systemContent = {
+            role: 'system',
             parts: [{
                 text: `You are a helpful assistant for a meeting management application. Your primary goal is to answer user questions.
 First, use the provided meeting transcription snippets and chat history to answer the question.
@@ -100,42 +104,76 @@ Do not mention that you are an AI assistant or refer to "provided context".`
             }]
         };
 
+        // Generation parameters
         const generationConfig = {
-            maxOutputTokens: 6000,
             temperature: 0.4,
+            maxOutputTokens: 6000
         };
 
         let responseValid = false;
 
-        // Start of Retry Logic
+        // Retry loop
         for (let attempt = 0; attempt < 3; attempt++) {
             let currentResponseChunk = '';
             try {
-                const result = await llmModel.generateContentStream({
-                    // tools: tools,
-                    system_instruction: systemInstruction,
-                    contents: [{
-                        role: 'user',
-                        parts: [{ text: contentsPrompt }],
-                    }],
-                    generationConfig: generationConfig,
+                const streamResponse = await ai.models.generateContentStream({
+                    model: MODEL_ID,
+                    contents: [
+                        systemContent,
+                        {
+                            role: 'user',
+                            parts: [{ text: contentsPrompt }]
+                        }
+                    ],
+                    config: {
+                        generation: generationConfig,
+                        tools: tools
+                    }
                 });
 
-                // Step 5: Stream the LLM's response back to the client and collect chunks
-                for await (const chunk of result.stream) {
-                    if (chunk.text) {
-                        const chunkText = chunk.text();
+                // Determine the async iterable to use (handle SDK minor differences)
+                const iterable = streamResponse?.stream ?? streamResponse;
+
+                // Start heartbeat while streaming
+                startHeartbeat();
+
+                // Iterate streaming chunks as they arrive
+                for await (const chunk of iterable) {
+                    // Robust extraction: chunk.text may be a string or a function
+                    let chunkText = '';
+                    try {
+                        if (!chunk) continue;
+                        if (typeof chunk.text === 'function') {
+                            chunkText = chunk.text();
+                        } else if (typeof chunk.text === 'string') {
+                            chunkText = chunk.text;
+                        } else if (chunk.output && typeof chunk.output.text === 'string') {
+                            chunkText = chunk.output.text;
+                        } else if (Array.isArray(chunk.delta)) {
+                            // fallback: some SDKs may provide delta array
+                            chunkText = chunk.delta.map(d => (d?.text || '')).join('');
+                        }
+                    } catch (e) {
+                        console.warn('Warning: failed to decode chunk text', e);
+                        chunkText = '';
+                    }
+
+                    if (chunkText) {
                         currentResponseChunk += chunkText;
+                        // Stream chunk to client
                         res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
                     }
                 }
 
-                // Check if the current response is valid
+                // Clear heartbeat after this attempt's streaming finished
+                clearHeartbeat();
+
+                // If we gathered anything, accept and break retry loop
                 if (currentResponseChunk.trim()) {
                     fullResponseText = currentResponseChunk;
                     responseValid = true;
                     console.log(`LLM Response received on attempt ${attempt + 1}.`);
-                    break; // Success, exit the retry loop
+                    break;
                 } else {
                     console.log(`LLM returned empty response on attempt ${attempt + 1}. Retrying...`);
                 }
@@ -143,33 +181,23 @@ Do not mention that you are an AI assistant or refer to "provided context".`
             } catch (llmError) {
                 console.error(`LLM_STREAM_ERROR on attempt ${attempt + 1}:`, llmError);
 
-                // If this is the last attempt (attempt index 2), re-throw
+                // Ensure heartbeat cleared if an error occurred mid-stream
+                clearHeartbeat();
+
+                // Final attempt failed — rethrow to outer catch
                 if (attempt === 2) {
                     throw llmError;
                 }
 
-                // "After 1st retry, add a 31 second delay"
-                // Attempt 0 = Initial call
-                // Attempt 1 = 1st Retry. 
-                // So if Attempt 1 fails, we look here.
+                // Delay before final retry (mirror previous behavior)
                 if (attempt === 1) {
                     console.log("LLM: Waiting 31 seconds before final retry...");
                     await new Promise(resolve => setTimeout(resolve, 31000));
                 }
             }
-        }
-        // End of Retry Logic
+        } // end retry loop
 
-        // A heartbeat is not needed during the retry loop as the initial connection might close.
-        // Start the heartbeat only if a response is being streamed.
-        if (responseValid) {
-            const heartbeatInterval = setInterval(() => {
-                res.write(':heartbeat\n\n');
-            }, 15000);
-        }
-
-
-        // Step 6: After the stream ends, update the complete chat entry
+        // Update DB entries and embeddings if response is valid
         if (responseValid) {
             try {
                 if (chatId) {
@@ -183,13 +211,14 @@ Do not mention that you are an AI assistant or refer to "provided context".`
                 console.error("MONGODB_UPDATE_ERROR:", dbError);
             }
 
-            // Signal the end of the stream
+            // End the stream
             res.write('data: {"event": "stream_end"}\n\n');
             res.end();
             console.log("LLM: Streaming complete.");
 
         } else {
-            // Handle final failure after all retries
+            // No valid response after retries
+            clearHeartbeat();
             console.log("LLM failed to generate a response after all attempts.");
             res.write(`data: ${JSON.stringify({ text: "I apologize, but I couldn't generate a response at this time. Please try again later." })}\n\n`);
             res.write('data: {"event": "stream_end"}\n\n');
@@ -198,9 +227,15 @@ Do not mention that you are an AI assistant or refer to "provided context".`
 
     } catch (error) {
         console.error("LLM_STREAM_ERROR:", error);
-        res.write(`data: ${JSON.stringify({ text: "I apologize, but an error occurred while processing your request. Please try again later." })}\n\n`);
-        res.write('data: {"event": "stream_end"}\n\n');
-        res.end();
+        try {
+            // Ensure heartbeat cleared and send error to client
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            res.write(`data: ${JSON.stringify({ text: "I apologize, but an error occurred while processing your request. Please try again later." })}\n\n`);
+            res.write('data: {"event": "stream_end"}\n\n');
+            res.end();
+        } catch (e) {
+            try { res.end(); } catch (_) { }
+        }
     }
 };
 
