@@ -1,9 +1,8 @@
-// tests/integration_rotation.test.js
 const { getEmbedding } = require('../controllers/embedding/embeddingService');
-const keyRotation = require('../utils/keyRotation');
+const geminiService = require('../utils/llm/geminiService');
 
-// Mock keyRotation
-jest.mock('../utils/keyRotation');
+// Mock geminiService
+jest.mock('../utils/llm/geminiService');
 jest.mock('@google/genai', () => {
     return {
         GoogleGenAI: jest.fn().mockImplementation(({ apiKey }) => {
@@ -18,16 +17,17 @@ jest.mock('@google/genai', () => {
     };
 });
 
-describe('Key Rotation Integration', () => {
+describe('Key Rotation Integration (Gemini)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    test('getEmbedding should call keyRotation.getNextKey()', async () => {
-        keyRotation.getNextKey.mockReturnValue('mock-key-1');
+    test('getEmbedding should call geminiService.getNextKey()', async () => {
+        geminiService.getNextKey.mockReturnValue('mock-key-1');
 
         await getEmbedding("test text");
 
-        expect(keyRotation.getNextKey).toHaveBeenCalled();
+        expect(geminiService.getNextKey).toHaveBeenCalled();
     });
 });
+

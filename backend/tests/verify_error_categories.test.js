@@ -7,17 +7,21 @@ const EventEmitter = require('events');
 // Mock dependencies
 jest.mock('../db/mongoutils/chat.db');
 jest.mock('../controllers/queryVectordb');
-jest.mock('../utils/keyRotation', () => ({
-    getNextKey: () => 'mock-key'
-}));
-jest.mock('@google/genai', () => ({
-    GoogleGenAI: jest.fn().mockImplementation(() => ({
-        models: {
-            generateContentStream: jest.fn().mockResolvedValue({
-                stream: (async function* () { yield { text: () => "Mock Response" }; })()
-            })
-        }
-    }))
+jest.mock('../utils/llm/groqService', () => ({
+    getClient: jest.fn().mockReturnValue({
+        chat: {
+            completions: {
+                create: jest.fn().mockResolvedValue({
+                    // Async Iterable Stream
+                    [Symbol.asyncIterator]: async function* () {
+                        yield { choices: [{ delta: { content: "Mock Response" } }] };
+                    }
+                })
+            }
+        },
+        apiKey: 'mock-groq-key'
+    }),
+    currentIndex: 0
 }));
 
 // Mock Response Object
@@ -27,7 +31,10 @@ class MockResponse extends EventEmitter {
         this.statusCode = 200;
         this.headers = {};
         this.bodyChunks = [];
+        this.bodyChunks = [];
         this.jsonBody = null;
+        this.writable = true;
+        this.writableEnded = false;
     }
     setHeader(k, v) { this.headers[k] = v; }
     flushHeaders() { this.emit('headers_sent'); }

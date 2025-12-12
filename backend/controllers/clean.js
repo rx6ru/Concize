@@ -1,11 +1,6 @@
 // clean.js
-const Groq = require('groq-sdk');
 const config = require('../utils/config');
-
-// Initialize Groq SDK with API key from a config file
-const groq = new Groq({
-    apiKey: config.GROQ_API_KEY,
-});
+const groqService = require('../utils/llm/groqService');
 
 const sysPrompt = `You are a text processor for a video conference transcription. Your task is to refine, chunk, and summarize the provided unrefined transcript. The output MUST be a JSON array of objects. Each object in the array represents a single, semantically coherent chunk of the dialogue.
     
@@ -47,6 +42,8 @@ const clean = async (text) => {
         try {
             console.log(`CLEANING_LOG: Attempt ${attempt} of ${MAX_RETRIES} to clean transcription.`);
 
+            // Get rotated Groq client
+            const groq = groqService.getClient();
             const chatCompletion = await groq.chat.completions.create({
                 "messages": [
                     {

@@ -3,10 +3,10 @@
 
 const { GoogleGenAI } = require('@google/genai'); // confirm package installed
 const config = require('../../utils/config');
-const keyRotation = require('../../utils/keyRotation'); // Key Rotation
+const geminiService = require('../../utils/llm/geminiService'); // Key Rotation
 
-if (!config?.GEMINI_API_KEY && (!config?.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0)) {
-    console.warn('WARNING: GEMINI_API_KEY(S) not set in config.');
+if (!config?.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {
+    console.warn('WARNING: GEMINI_API_KEYS not set in config. Embeddings will fail.');
 }
 
 // Preferred embedding model (Gemini Embedding)
@@ -134,7 +134,7 @@ const getEmbedding = async (text, opts = {}) => {
         console.log(`EMBEDDING_LOG: Requesting embedding from model=${model} dim=${outputDimensionality}...`);
 
         // Get rotated key and instantiate client
-        const currentKey = keyRotation.getNextKey();
+        const currentKey = geminiService.getNextKey();
         const aiInstance = new GoogleGenAI({ apiKey: currentKey });
 
         const params = {

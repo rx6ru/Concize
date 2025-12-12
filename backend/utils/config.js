@@ -4,7 +4,9 @@ require('dotenv').config();
 const config = {
     MONGODB_URL: process.env.MONGODB_URL,
     CLOUDAMQP_URL: process.env.CLOUDAMQP_URL,
-    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    GROQ_API_KEYS: (process.env.GROQ_API_KEYS && process.env.GROQ_API_KEYS.trim() !== '')
+        ? process.env.GROQ_API_KEYS.split(',').map(k => k.trim()).filter(k => k)
+        : (process.env.GROQ_API_KEY ? [process.env.GROQ_API_KEY] : []),
     // Gemini API Keys (comma-separated list, supports 1 or more keys)
     GEMINI_API_KEYS: (process.env.GEMINI_API_KEYS && process.env.GEMINI_API_KEYS.trim() !== '')
         ? process.env.GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(k => k)
@@ -35,7 +37,7 @@ const config = {
 
 const required = [
     "CLOUDAMQP_URL",
-    "GROQ_API_KEY",
+    // "GROQ_API_KEY", // Removed single key check
     // Accept either GEMINI_API_KEY or GEMINI_API_KEYS
     // Validated by custom check below
     "PORT",
@@ -58,9 +60,15 @@ required.forEach((key) => {
     }
 });
 
-// Custom validation: GEMINI_API_KEYS must be configured with at least one key
+// Custom validation: GROQ_API_KEYS must be configured with at least one key
+if (!config.GROQ_API_KEYS || config.GROQ_API_KEYS.length === 0) {
+    console.error('ERROR: GROQ_API_KEYS environment variable is not set or is empty. Provide at least one API key.');
+    process.exit(1);
+}
+
+// Custom validation: GEMINI_API_KEYS must be configured for embeddings
 if (!config.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {
-    console.error('ERROR: GEMINI_API_KEYS environment variable is not set or is empty. Provide at least one API key.');
+    console.error('ERROR: GEMINI_API_KEYS environment variable is not set or is empty. Embeddings require at least one Gemini API key.');
     process.exit(1);
 }
 

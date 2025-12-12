@@ -1,15 +1,10 @@
 // controllers/transcription.js
 
-const Groq = require("groq-sdk");
 const config = require("../utils/config");
+const groqService = require("../utils/llm/groqService");
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: config.GROQ_API_KEY,
-});
 
 /**
  * Transcribes audio using Groq's Whisper API
@@ -41,16 +36,19 @@ async function transcribe(audioBuffer, metadata = {}) {
     const tempFilePath = path.join(tempDir, tempFileName);
 
     console.log(`TRANSCRIPTION_LOG: Writing buffer to temporary file: ${tempFilePath}`);
-    
+
     // Write buffer to temporary file
     fs.writeFileSync(tempFilePath, audioBuffer);
-    
+
     console.log(`TRANSCRIPTION_LOG: Temporary file created. Size: ${fs.statSync(tempFilePath).size} bytes`);
 
     // Create file stream for Groq API
     const fileStream = fs.createReadStream(tempFilePath);
 
     console.log(`TRANSCRIPTION_LOG: Calling Groq API for transcription with model: "whisper-large-v3"...`);
+
+    // Get rotated Groq client
+    const groq = groqService.getClient();
 
     // Call Groq transcription API
     const transcription = await groq.audio.transcriptions.create({
@@ -81,23 +79,23 @@ async function transcribe(audioBuffer, metadata = {}) {
     console.error("TRANSCRIPTION_ERROR: Groq Transcription API Error caught:");
     console.error("   Message:", error.message);
     console.error("   Error type:", error.constructor.name);
-    
+
     if (error.status) {
       console.error("   HTTP Status:", error.status);
     }
-    
+
     if (error.error) {
       console.error("   API Error Details:", error.error);
     }
-    
+
     console.error("   Error Stack:", error.stack);
 
     // Clean up temporary file if it exists
     const tempDir = os.tmpdir();
-    const possibleTempFiles = fs.readdirSync(tempDir).filter(file => 
+    const possibleTempFiles = fs.readdirSync(tempDir).filter(file =>
       file.startsWith('audio_') && file.endsWith('.webm')
     );
-    
+
     for (const tempFile of possibleTempFiles) {
       try {
         const tempFilePath = path.join(tempDir, tempFile);
