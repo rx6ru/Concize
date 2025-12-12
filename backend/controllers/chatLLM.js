@@ -10,7 +10,7 @@ const { upsertChatPair } = require('./embedding/embedChat');
 const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
 
 // Model id to use
-const MODEL_ID = "gemini-2.5-flash-lite";
+const MODEL_ID = "gemini-2.5-flash";
 
 /**
  * Orchestrates the full RAG process and streams the LLM response over SSE.
@@ -119,15 +119,15 @@ Do not mention that you are an AI assistant or refer to "provided context".`
                 const streamResponse = await ai.models.generateContentStream({
                     model: MODEL_ID,
                     contents: [
-                        systemContent,
                         {
                             role: 'user',
                             parts: [{ text: contentsPrompt }]
                         }
                     ],
                     config: {
-                        generation: generationConfig,
-                        tools: tools
+                        systemInstruction: systemContent.parts[0].text,
+                        generationConfig: generationConfig,
+                        tools: tools,
                     }
                 });
 
@@ -143,15 +143,14 @@ Do not mention that you are an AI assistant or refer to "provided context".`
                     let chunkText = '';
                     try {
                         if (!chunk) continue;
+
+                        // Robust extraction for @google/genai stream chunk
                         if (typeof chunk.text === 'function') {
                             chunkText = chunk.text();
+                        } else if (chunk.candidates && chunk.candidates[0] && chunk.candidates[0].content && chunk.candidates[0].content.parts && chunk.candidates[0].content.parts[0].text) {
+                            chunkText = chunk.candidates[0].content.parts[0].text;
                         } else if (typeof chunk.text === 'string') {
                             chunkText = chunk.text;
-                        } else if (chunk.output && typeof chunk.output.text === 'string') {
-                            chunkText = chunk.output.text;
-                        } else if (Array.isArray(chunk.delta)) {
-                            // fallback: some SDKs may provide delta array
-                            chunkText = chunk.delta.map(d => (d?.text || '')).join('');
                         }
                     } catch (e) {
                         console.warn('Warning: failed to decode chunk text', e);

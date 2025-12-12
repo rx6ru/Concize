@@ -4,3 +4,5 @@ dist/
 uploads/
 transcriptions/
 cred/
+
+.agent/
