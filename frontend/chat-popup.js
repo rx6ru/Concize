@@ -4,6 +4,7 @@ class ChatInterface {
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.errorMessage = document.getElementById('errorMessage');
+        this.scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
 
         this.chatContainer = document.querySelector('.chat-container');
         this.closeButton = document.getElementById('closeButton');
@@ -29,6 +30,16 @@ class ChatInterface {
         this.messageInput.addEventListener('input', () => {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 100) + 'px';
+        });
+
+        // Scroll to bottom button
+        this.messagesContainer.addEventListener('scroll', () => {
+            const isAtBottom = this.messagesContainer.scrollHeight - this.messagesContainer.scrollTop <= this.messagesContainer.clientHeight + 1; // Add a 1px tolerance
+            this.scrollToBottomBtn.classList.toggle('hidden', isAtBottom);
+        });
+
+        this.scrollToBottomBtn.addEventListener('click', () => {
+            this.scrollToBottom();
         });
 
 
@@ -80,7 +91,14 @@ class ChatInterface {
         bubbleDiv.className = 'message-bubble';
 
         if (type === 'bot') {
-            bubbleDiv.innerHTML = marked.parse(content);
+            const contentDiv = document.createElement('div');
+            contentDiv.innerHTML = marked.parse(content);
+            bubbleDiv.appendChild(contentDiv);
+
+            if (!content.includes('Sorry, I encountered an error.')) {
+                const copyBtn = this.createCopyButton(content);
+                bubbleDiv.appendChild(copyBtn);
+            }
         } else {
             bubbleDiv.textContent = content;
         }
@@ -92,13 +110,42 @@ class ChatInterface {
         return bubbleDiv;
     }
 
+    createCopyButton(textToCopy) {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        
+        const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        const tickIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>`;
+
+        copyBtn.innerHTML = copyIcon;
+
+        copyBtn.addEventListener('click', async () => {
+            copyBtn.disabled = true;
+            try {
+                await navigator.clipboard.writeText(textToCopy);
+                copyBtn.innerHTML = tickIcon;
+                copyBtn.classList.add('copy-success');
+                setTimeout(() => {
+                    copyBtn.innerHTML = copyIcon;
+                    copyBtn.classList.remove('copy-success');
+                    copyBtn.disabled = false;
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+                copyBtn.disabled = false;
+            }
+        });
+        return copyBtn;
+    }
+
     async streamBotResponse(userMessage) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message bot';
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
-        const indicator = document.createElement('span');
+        const indicator = document.createElement('div');
         indicator.className = 'streaming-indicator';
+        indicator.innerHTML = 'Processing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
 
         bubbleDiv.appendChild(indicator);
         messageDiv.appendChild(bubbleDiv);
@@ -176,6 +223,9 @@ class ChatInterface {
             }
 
             this.chatHistory.push({ role: 'bot', content: accumulatedText });
+
+            const copyBtn = this.createCopyButton(accumulatedText);
+            bubbleDiv.appendChild(copyBtn);
 
         } catch (error) {
             console.error('Streaming error:', error);

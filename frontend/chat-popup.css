@@ -5,6 +5,8 @@
     --text-secondary: #A0A0A0;
     --accent-blue: #007BFF;
     --accent-blue-dark: #0056b3;
+    --accent-grey: #887e9b;
+    --accent-grey-dark: #635973;
     --error-red: #ff6b6b;
     --border-color: rgba(255, 255, 255, 0.1);
 }
@@ -17,7 +19,20 @@
 }
 
 ::-webkit-scrollbar {
-    display: none;
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--accent-blue);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-blue-dark);
 }
 
 body {
@@ -41,7 +56,7 @@ body {
     width: 100%;
     position: relative;
     max-width: 100%;
-    background: var(--background-dark);
+    background: linear-gradient(180deg, var(--background-light) 0%, var(--background-dark) 100%);
     backdrop-filter: blur(20px);
     border: 1px solid var(--border-color);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -59,8 +74,6 @@ body {
     align-items: center;
     position: relative;
 }
-
-
 
 .chat-title {
     font-size: 16px;
@@ -100,19 +113,6 @@ body {
     scroll-behavior: smooth;
 }
 
-.chat-messages::-webkit-scrollbar {
-    width: 4px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
-}
-
 .message {
     display: flex;
     max-width: 90%;
@@ -144,10 +144,36 @@ body {
     padding: 10px 14px;
     border-radius: 16px;
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.6;
     word-wrap: break-word;
     position: relative;
     backdrop-filter: blur(10px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+}
+
+.copy-btn {
+    align-self: flex-end;
+    background: none;
+    border: none;
+    cursor: pointer;
+    margin-top: 8px;
+    padding: 4px;
+}
+
+.copy-btn svg {
+    width: 16px;
+    height: 16px;
+    color: var(--accent-grey);
+}
+
+.copy-btn:hover svg {
+    color: var(--accent-grey-dark);
+}
+
+.copy-btn.copy-success svg {
+    color: #28a745; /* Green color for success */
 }
 
 .message.user .message-bubble {
@@ -167,7 +193,7 @@ body {
 .message.bot .message-bubble h1,
 .message.bot .message-bubble h2,
 .message.bot .message-bubble h3 {
-    margin: 8px 0 4px 0;
+    margin: 12px 0 6px 0;
     color: var(--text-primary);
 }
 
@@ -203,19 +229,36 @@ body {
     text-decoration: underline;
 }
 
-.streaming-indicator {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    background: var(--text-secondary);
-    border-radius: 50%;
-    animation: pulse 1.5s infinite;
-    margin-left: 4px;
+.message.bot .message-bubble ul,
+.message.bot .message-bubble ol {
+    padding-left: 20px;
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 1; }
+.streaming-indicator {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary);
+}
+
+.streaming-indicator .dot {
+    animation: blink 1.4s infinite;
+}
+
+.streaming-indicator .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.streaming-indicator .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes blink {
+    0%, 80%, 100% {
+        opacity: 0;
+    }
+    40% {
+        opacity: 1;
+    }
 }
 
 .input-container {
@@ -228,7 +271,7 @@ body {
 .input-wrapper {
     display: flex;
     gap: 8px;
-    align-items: flex-end;
+    align-items: center;
     max-width: 100%;
 }
 
@@ -246,14 +289,18 @@ body {
     line-height: 1.4;
     min-height: 20px;
     max-height: 100px;
-    overflow-y: auto;
+    overflow: hidden;
     transition: all 0.2s ease;
 }
 
 .input-field:focus {
     background: var(--background-light);
     border-color: var(--accent-blue);
+}
+
+.input-wrapper:has(.input-field:focus) {
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    border-radius: 22px;
 }
 
 .input-field::placeholder {
@@ -327,4 +374,33 @@ body {
     font-size: 13px;
     margin-top: 8px;
     text-align: center;
+}
+
+.scroll-to-bottom-btn {
+    position: absolute;
+    bottom: 85px;
+    right: 20px;
+    background: var(--accent-grey);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.scroll-to-bottom-btn:hover {
+    background: var(--accent-grey-dark);
+}
+
+.hidden {
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
 }
