@@ -5,12 +5,10 @@ const config = {
     MONGODB_URL: process.env.MONGODB_URL,
     CLOUDAMQP_URL: process.env.CLOUDAMQP_URL,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
-    GROQ_API_KEY: process.env.GROQ_API_KEY,
-    // Support multiple keys (comma-separated) or fallback to single key
+    // Gemini API Keys (comma-separated list, supports 1 or more keys)
     GEMINI_API_KEYS: (process.env.GEMINI_API_KEYS && process.env.GEMINI_API_KEYS.trim() !== '')
         ? process.env.GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(k => k)
-        : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []),
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY, // Keep for backward compat / single use if needed
+        : [],
 
     PORT: process.env.PORT || 3000,
     NODE_ENV: process.env.NODE_ENV || 'development',
@@ -38,7 +36,8 @@ const config = {
 const required = [
     "CLOUDAMQP_URL",
     "GROQ_API_KEY",
-    "GEMINI_API_KEY",
+    // Accept either GEMINI_API_KEY or GEMINI_API_KEYS
+    // Validated by custom check below
     "PORT",
     "NODE_ENV",
     "QDRANT_URL",
@@ -58,5 +57,11 @@ required.forEach((key) => {
         process.exit(1);
     }
 });
+
+// Custom validation: GEMINI_API_KEYS must be configured with at least one key
+if (!config.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {
+    console.error('ERROR: GEMINI_API_KEYS environment variable is not set or is empty. Provide at least one API key.');
+    process.exit(1);
+}
 
 module.exports = config;

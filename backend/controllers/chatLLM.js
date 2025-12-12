@@ -11,7 +11,51 @@ const { upsertChatPair } = require('./embedding/embedChat');
 const MODEL_ID = "gemini-2.5-flash";
 
 /**
+ * Maps system errors to professional user-facing messages.
+ * @param {Error} error 
+ * @returns {Object} { status, message, code }
+ */
+const mapErrorToResponse = (error) => {
+    const msg = error.message || '';
+
+    // Timeout
+    if (msg.includes('ConnectTimeoutError') || msg.includes('ETIMEDOUT')) {
+        return {
+            status: 503,
+            code: 'SERVICE_TIMEOUT',
+            message: "We are having trouble connecting to the knowledge base. Please check your network or try again later."
+        };
+    }
+
+    // Rate Limit (429) - either from Google or internal
+    if (msg.includes('429') || msg.includes('Quota')) {
+        return {
+            status: 429,
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: "Our AI service is currently experiencing high demand. Please wait a moment before sending your next message."
+        };
+    }
+
+    // Auth (401/403)
+    if (msg.includes('401') || msg.includes('403')) {
+        return {
+            status: 401,
+            code: 'UNAUTHORIZED',
+            message: "You are not authorized to perform this action. Please refresh your credentials."
+        };
+    }
+
+    // Default Generic
+    return {
+        status: 500,
+        code: 'INTERNAL_SERVER_ERROR',
+        message: "An unexpected system error occurred. Our team has been notified."
+    };
+};
+
+/**
  * Orchestrates the full RAG process and streams the LLM response over SSE.
+ * Implements "Category A" (Success Stream) vs "Category B" (JSON Error) logic.
  *
  * @param {Object} res - Express response object (SSE)
  * @param {string} userPrompt - The user's message/query
@@ -21,6 +65,60 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     let chatId = null;
     let fullResponseText = '';
     let heartbeatInterval = null;
+
+    // --- Phase 1: Context Retrieval & Validation (Category B Potential) ---
+    // If anything fails here, we send a JSON error response (4xx/5xx).
+    // do NOT set SSE headers yet.
+
+    let contentsPrompt = '';
+
+    try {
+        // Step 1: Gather context (Parallel)
+        const [transcriptionContext, chatHistory] = await Promise.all([
+            queryTranscriptions(userPrompt, jobId, 5),
+            queryChats(userPrompt, jobId, 3)
+        ]);
+
+        const transcriptionText = transcriptionContext.length > 0
+            ? transcriptionContext.map(chunk => `Transcription Snippet: ${chunk.text}`).join('\n')
+            : "No specific meeting transcriptions were found for this query.";
+
+        const chatHistoryText = chatHistory.length > 0
+            ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
+            : "No specific chat history was found for this query.";
+
+        contentsPrompt =
+            `# Meeting Transcription Context:
+${transcriptionText}
+
+# Relevant Chat History:
+${chatHistoryText}
+
+# User's Question:
+${userPrompt}`;
+
+        // Step 2: Create chat entry in DB
+        const newChat = await createChatEntry(jobId, userPrompt);
+        chatId = newChat._id;
+        console.log(`Chat entry created with ID: ${chatId}`);
+
+    } catch (phase1Error) {
+        console.error("LLM_PRE_STREAM_ERROR:", phase1Error);
+        const { status, message, code } = mapErrorToResponse(phase1Error);
+
+        // Return Category B (JSON Error)
+        return res.status(status).json({
+            error: {
+                type: 'server_error',
+                code: code,
+                message: message
+            }
+        });
+    }
+
+    // --- Phase 2: Streaming (Category A) ---
+    // At this point, context is ready and DB entry exists.
+    // We commit to the 200 OK stream.
 
     const startHeartbeat = () => {
         if (heartbeatInterval) return;
@@ -49,48 +147,12 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-
-        // Step 1: gather context
-        const [transcriptionContext, chatHistory] = await Promise.all([
-            queryTranscriptions(userPrompt, jobId, 5),
-            queryChats(userPrompt, jobId, 3)
-        ]);
-
-        const transcriptionText = transcriptionContext.length > 0
-            ? transcriptionContext.map(chunk => `Transcription Snippet: ${chunk.text}`).join('\n')
-            : "No specific meeting transcriptions were found for this query.";
-
-        const chatHistoryText = chatHistory.length > 0
-            ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
-            : "No specific chat history was found for this query.";
-
-        const contentsPrompt =
-            `# Meeting Transcription Context:
-${transcriptionText}
-
-# Relevant Chat History:
-${chatHistoryText}
-
-# User's Question:
-${userPrompt}`;
-
-        // Step 3: create chat entry in DB
-        try {
-            const newChat = await createChatEntry(jobId, userPrompt);
-            chatId = newChat._id;
-            console.log(`Chat entry created with ID: ${chatId}`);
-        } catch (dbError) {
-            console.error("MONGODB_CREATE_ERROR:", dbError);
-            res.write(`data: ${JSON.stringify({ text: "I apologize, but an error occurred while saving your message." })}\n\n`);
-            res.write('data: {"event": "stream_end"}\n\n');
-            return res.end();
-        }
+        res.flushHeaders(); // Explicitly sending headers now
 
         // Tools (if any)
         const tools = [{ googleSearch: {} }];
 
-        // System content
+        // System content (Preserving user's custom instruction)
         const systemContent = {
             role: 'system',
             parts: [{
@@ -218,7 +280,7 @@ Do not mention that you are an AI assistant or refer to "provided context". Impr
             console.log("LLM: Streaming complete.");
 
         } else {
-            // No valid response after retries
+            // No valid response after retries (Mid-stream failure)
             clearHeartbeat();
             console.log("LLM failed to generate a response after all attempts.");
             res.write(`data: ${JSON.stringify({ text: "I apologize, but I couldn't generate a response at this time. Please try again later." })}\n\n`);
@@ -227,11 +289,14 @@ Do not mention that you are an AI assistant or refer to "provided context". Impr
         }
 
     } catch (error) {
-        console.error("LLM_STREAM_ERROR:", error);
+        console.error("LLM_STREAM_ERROR (Mid-Stream):", error);
         try {
-            // Ensure heartbeat cleared and send error to client
+            // Ensure heartbeat cleared
             if (heartbeatInterval) clearInterval(heartbeatInterval);
-            res.write(`data: ${JSON.stringify({ text: "I apologize, but an error occurred while processing your request. Please try again later." })}\n\n`);
+
+            // Send standard error text since we are already in stream mode (Status 200)
+            const { message } = mapErrorToResponse(error);
+            res.write(`data: ${JSON.stringify({ text: message })}\n\n`);
             res.write('data: {"event": "stream_end"}\n\n');
             res.end();
         } catch (e) {
