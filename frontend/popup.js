@@ -11,6 +11,7 @@ const transcriptionDisplayArea = document.getElementById("transcriptionDisplayAr
 const transcriptionTextContent = document.getElementById("transcriptionTextContent");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
 const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
+const openChatButton = document.getElementById("openChat");
 
 let fullTranscriptionText = ''; // To store the transcription
 
@@ -329,8 +330,7 @@ downloadTranscriptionButton.addEventListener("click", async () => {
         showStatusMessage(`Failed to create download: ${error.message}`, true);
     }
 });
-// Event listener for the chat button
-const openChatButton = document.getElementById('openChat');
+
 openChatButton.addEventListener('click', () => {
     chrome.windows.create({
         url: chrome.runtime.getURL('chat-popup.html'),

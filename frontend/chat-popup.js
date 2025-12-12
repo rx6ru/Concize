@@ -4,7 +4,7 @@ class ChatInterface {
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.errorMessage = document.getElementById('errorMessage');
-        this.opacitySlider = document.getElementById('opacitySlider');
+
         this.chatContainer = document.querySelector('.chat-container');
         this.closeButton = document.getElementById('closeButton');
         this.isStreaming = false;
@@ -31,47 +31,7 @@ class ChatInterface {
             this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 100) + 'px';
         });
 
-        // Opacity slider
-        this.opacitySlider.addEventListener('input', (e) => {
-            this.updateOpacity(e.target.value);
-        });
 
-        // Initialize opacity
-        this.updateOpacity(this.opacitySlider.value);
-    }
-
-    addWelcomeMessage() {
-        const welcomeDiv = document.createElement('div');
-        welcomeDiv.className = 'empty-state';
-        welcomeDiv.innerHTML = `
-            <div class="welcome-message">
-                <h3>Welcome to Concize AI Assistant</h3>
-                <p>Ask me anything about your audio recordings or any other topic!</p>
-            </div>
-        `;
-        this.messagesContainer.appendChild(welcomeDiv);
-    }
-
-    updateOpacity(value) {
-        const opacity = value / 100;
-        
-        // Apply opacity to the entire chat container (the whole floating window)
-        this.chatContainer.style.opacity = opacity;
-        
-        // At very low opacity, ensure some visibility for interaction
-        if (opacity < 0.1) {
-            // Add a subtle outline when nearly invisible so users can still find it
-            this.chatContainer.style.boxShadow = `0 0 0 1px rgba(255, 255, 255, ${0.3}), 0 8px 32px rgba(0, 0, 0, 0.3)`;
-        } else if (opacity < 0.3) {
-            // Reduced shadow for low opacity
-            this.chatContainer.style.boxShadow = `0 8px 32px rgba(0, 0, 0, ${0.2})`;
-        } else {
-            // Normal shadow for higher opacity
-            this.chatContainer.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.3)';
-        }
-        
-        // Store current opacity for potential future use
-        this.currentOpacity = opacity;
     }
 
     showError(message) {
