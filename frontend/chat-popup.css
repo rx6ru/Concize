@@ -188,6 +188,53 @@ body {
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     border-bottom-left-radius: 4px;
+    display: flex; /* Ensure flex for column layout */
+    flex-direction: column;
+}
+
+.message.bot .message-bubble .message-content {
+    /* Styles for the actual message text inside the bubble */
+    color: var(--text-primary); /* Default text color for bot messages */
+}
+
+/* Specific styles for error bubbles */
+.message.bot .message-bubble.error-bubble {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid var(--error-red);
+    display: flex;
+    flex-direction: row; /* For icon and text to be side-by-side */
+    align-items: center;
+    gap: 8px;
+    color: var(--error-red); /* Text color for error messages */
+}
+
+.message.bot .message-bubble.error-bubble .message-content {
+    color: var(--error-red); /* Ensure error text is red */
+}
+
+.message.bot .message-bubble.error-bubble svg {
+    width: 20px;
+    height: 20px;
+    color: var(--error-red);
+    flex-shrink: 0;
+}
+
+.mid-stream-error {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--error-red);
+  font-size: 0.9em;
+}
+
+.mid-stream-error svg {
+  width: 20px;
+  height: 20px;
+  color: var(--error-red);
+  flex-shrink: 0;
 }
 
 .message.bot .message-bubble h1,

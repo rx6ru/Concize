@@ -53,6 +53,14 @@ class ChatInterface {
         }, 5000);
     }
 
+    // --- SECURITY: HTML ESCAPE HELPER ---
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // --- MAIN SEND LOGIC ---
     async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message || this.isStreaming) return;
@@ -60,7 +68,7 @@ class ChatInterface {
         this.clearEmptyState();
         this.addMessage(message, 'user');
         this.chatHistory.push({ role: 'user', content: message });
-        
+
         this.messageInput.value = '';
         this.messageInput.style.height = 'auto';
         this.setStreamingState(true);
@@ -68,9 +76,12 @@ class ChatInterface {
         try {
             await this.streamBotResponse(message);
         } catch (error) {
-            console.error('Error:', error);
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
-            this.showError('Connection error. Please check if the server is running.');
+            console.error('Logic Error caught in sendMessage:', error);
+            // NB: Most specific errors are now handled inside streamBotResponse (ui updated there)
+            // This catch handles critical failures (like network down before fetch)
+            if (!this.currentStreamingMessage) {
+                this.addMessage('Sorry, I encountered a connection error. Please try again.', 'bot');
+            }
         } finally {
             this.setStreamingState(false);
         }
@@ -82,11 +93,11 @@ class ChatInterface {
             emptyState.remove();
         }
     }
-    
+
     addMessage(content, type) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
-        
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
 
@@ -102,18 +113,18 @@ class ChatInterface {
         } else {
             bubbleDiv.textContent = content;
         }
-        
+
         messageDiv.appendChild(bubbleDiv);
         this.messagesContainer.appendChild(messageDiv);
         this.scrollToBottom();
-        
+
         return bubbleDiv;
     }
 
     createCopyButton(textToCopy) {
         const copyBtn = document.createElement('button');
         copyBtn.className = 'copy-btn';
-        
+
         const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
         const tickIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>`;
 
@@ -138,11 +149,16 @@ class ChatInterface {
         return copyBtn;
     }
 
+    // --- ROBUST ERROR HANDLING STREAM LOGIC ---
     async streamBotResponse(userMessage) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message bot';
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
+
+        const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+
+        // 1. Setup Loading Indicator
         const indicator = document.createElement('div');
         indicator.className = 'streaming-indicator';
         indicator.innerHTML = 'Processing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
@@ -154,11 +170,11 @@ class ChatInterface {
         this.scrollToBottom();
 
         const API_URL = 'http://localhost:3000/api/chat/stream';
-        
+        let accumulatedText = '';
         try {
             const result = await chrome.storage.local.get('jobId');
             const jobId = result.jobId;
-            
+
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
@@ -171,71 +187,130 @@ class ChatInterface {
                 })
             });
 
+            // --- ERROR CHECK 1: PRE-STREAM HTTP ERRORS (429, 503, 500) ---
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                let errorMessage = `Server Error (${response.status})`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error && errorData.error.message) {
+                        errorMessage = errorData.error.message;
+                    }
+                } catch (parseErr) {
+                    console.warn("Failed to parse error JSON:", parseErr);
+                }
+
+                // Remove loading indicator immediately
+                indicator.remove();
+
+                // Display Error IN BUBBLE using CSS class
+                bubbleDiv.classList.add('error-bubble');
+                bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(errorMessage)}</p></div>`;
+
+                // Throwing here stops further execution and is caught by the outer catch block
+                throw new Error(errorMessage);
             }
 
+            // --- STREAMING PHASE ---
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let accumulatedText = '';
+            
             let indicatorRemoved = false;
+            let isErrorEvent = false; // Flag for multi-line SSE events
 
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) break;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-                
-                for (const line of lines) {
-                    const trimmedLine = line.trim();
-                    if (trimmedLine) {
-                        try {
-                            let jsonData;
-                            if (trimmedLine.startsWith('data: ')) {
-                                const jsonStr = trimmedLine.slice(6);
-                                if (jsonStr === '[DONE]') break;
-                                jsonData = JSON.parse(jsonStr);
-                            } else {
-                                jsonData = JSON.parse(trimmedLine);
-                            }
-                            
-                            if (jsonData.event === 'stream_end') {
-                                break;
-                            } else if (jsonData.text) {
-                                if (!indicatorRemoved) {
-                                    indicator.remove();
-                                    indicatorRemoved = true;
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue;
+
+                        // --- ERROR CHECK 2: MID-STREAM SSE ERRORS ---
+                        if (trimmedLine.startsWith('event: error')) {
+                            isErrorEvent = true;
+                            continue;
+                        }
+
+                        if (trimmedLine.startsWith('data: ')) {
+                            const jsonStr = trimmedLine.slice(6);
+
+                            try {
+                                const jsonData = JSON.parse(jsonStr);
+
+                                // Handle Error Data (Subsequent line to event: error)
+                                if (isErrorEvent) {
+                                    const errMsg = jsonData.message || "Stream interrupted.";
+                                    if (!indicatorRemoved) { indicator.remove(); indicatorRemoved = true; }
+
+                                    const errorHtml = `<div class="mid-stream-error">
+                                        ${errorIconSvg}
+                                        <div class="message-content"><b>Connection Lost:</b> ${this.escapeHtml(errMsg)}</div>
+                                    </div>`;
+
+                                    bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
+                                    isErrorEvent = false; // Reset flag
+                                    return; // Stop processing
                                 }
-                                accumulatedText += jsonData.text;
-                                bubbleDiv.innerHTML = marked.parse(accumulatedText);
-                                this.scrollToBottom();
-                                await new Promise(resolve => setTimeout(resolve, 20));
-                            }
-                        } catch (e) {
-                            if (trimmedLine !== 'data:' && !trimmedLine.startsWith('event:')) {
+
+                                // Handle Standard Text
+                                if (jsonData.event === 'stream_end') {
+                                    break;
+                                } else if (jsonData.text) {
+                                    if (!indicatorRemoved) {
+                                        indicator.remove();
+                                        indicatorRemoved = true;
+                                    }
+                                    accumulatedText += jsonData.text;
+                                    bubbleDiv.innerHTML = marked.parse(accumulatedText);
+                                    this.scrollToBottom();
+                                }
+                            } catch (e) {
                                 console.warn('Failed to parse JSON line:', trimmedLine, e);
                             }
                         }
                     }
                 }
+            } catch (streamError) {
+                // Handle Network Interruption mid-read
+                if (!indicatorRemoved) { indicator.remove(); indicatorRemoved = true; }
+                const errorHtml = `<div class="mid-stream-error">
+                    ${errorIconSvg}
+                    <div class="message-content"><b>Network Interrupted</b></div>
+                </div>`;
+                bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
+                throw streamError;
             }
 
-            this.chatHistory.push({ role: 'bot', content: accumulatedText });
-
-            const copyBtn = this.createCopyButton(accumulatedText);
-            bubbleDiv.appendChild(copyBtn);
+            // Only add to history and add copy button on full success
+            if (accumulatedText) {
+                this.chatHistory.push({ role: 'bot', content: accumulatedText });
+                const copyBtn = this.createCopyButton(accumulatedText);
+                bubbleDiv.appendChild(copyBtn);
+            }
 
         } catch (error) {
-            console.error('Streaming error:', error);
+            // console.error('Streaming error flow:', error);
+
+            // Clean up indicator if still present
             if (indicator && indicator.parentNode) {
                 indicator.remove();
             }
-            if (this.currentStreamingMessage) {
-                this.currentStreamingMessage.textContent = "Sorry, I'm having trouble connecting to the server. Please try again.";
+            
+            const hasContent = bubbleDiv.textContent.trim().length > 0 && !bubbleDiv.querySelector('.streaming-indicator');
+
+            // Fallback to display a generic error if the bubble is still empty
+            if (!hasContent && !bubbleDiv.innerHTML.includes('error-bubble') && !bubbleDiv.innerHTML.includes('mid-stream-error')) {
+                 bubbleDiv.classList.add('error-bubble');
+                //  bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(error.message)}</p></div>`;
+                 bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>Sorry, I'm having trouble connecting to the server. Please try again.</p></div>`;
             }
-            this.showError(`Connection failed: ${error.message}`);
+
+            // DO NOT re-throw here, as this function handles all UI updates for errors.
+            // throw error; 
         } finally {
             this.currentStreamingMessage = null;
         }
