@@ -1,7 +1,6 @@
 // embeddingService.js
 'use strict';
 
-const { GoogleGenAI } = require('@google/genai'); // confirm package installed
 const config = require('../../utils/config');
 const geminiService = require('../../utils/llm/geminiService'); // Key Rotation
 
@@ -16,42 +15,25 @@ const MODEL_ID = 'gemini-embedding-001';
 const DEFAULT_OUTPUT_DIMENSIONALITY = 768;
 
 /**
- * Attempts to call several likely SDK methods for generating embeddings,
- * returning the raw SDK response for further parsing.
+ * Calls the embedding endpoint on the GoogleGenAI SDK.
+ * Uses the official models.embedContent() method.
  *
  * @param {Object} aiInstance - The GoogleGenAI instance to use
  * @param {Object} params - parameters to pass to the SDK call.
  * @returns {Promise<any>} sdkResponse
  */
 async function _callEmbeddingEndpoint(aiInstance, params) {
-    // Try multiple method names to be robust across SDK minor versions
-    const candidateCalls = [
-        // modern / canonical shapes
-        () => aiInstance.models.embedContent?.(params),
-        () => aiInstance.models.embed?.(params),
-        () => aiInstance.models.embed_content?.(params),
-
-        // some SDKs expose top-level client methods
-        () => aiInstance.embedContent?.(params),
-        () => aiInstance.embed?.(params),
-        () => aiInstance.embed_content?.(params),
-    ];
-
-    let lastError = null;
-    for (const call of candidateCalls) {
-        try {
-            if (typeof call !== 'function') continue;
-            const res = await call();
-            if (res !== undefined) return res;
-        } catch (err) {
-            lastError = err;
-            // continue to next candidate
-        }
+    // Validate SDK method exists
+    if (!aiInstance?.models?.embedContent) {
+        const availableKeys = Object.keys(aiInstance?.models || {}).join(', ') || 'none';
+        throw new Error(
+            `Expected 'models.embedContent' method not found on @google/genai client. ` +
+            `Available model methods: [${availableKeys}]. ` +
+            `Ensure @google/genai SDK is up-to-date.`
+        );
     }
 
-    // If we reach here, none of the calls succeeded
-    const err = lastError ?? new Error('No embedding method found on the installed @google/genai client.');
-    throw err;
+    return await aiInstance.models.embedContent(params);
 }
 
 /**
@@ -133,9 +115,8 @@ const getEmbedding = async (text, opts = {}) => {
     try {
         console.log(`EMBEDDING_LOG: Requesting embedding from model=${model} dim=${outputDimensionality}...`);
 
-        // Get rotated key and instantiate client
-        const currentKey = geminiService.getNextKey();
-        const aiInstance = new GoogleGenAI({ apiKey: currentKey });
+        // Get rotated client instance
+        const aiInstance = geminiService.getClient();
 
         const params = {
             model,
@@ -153,7 +134,10 @@ const getEmbedding = async (text, opts = {}) => {
         const vector = _extractEmbeddingVector(sdkResponse);
 
         if (!Array.isArray(vector) || vector.length === 0) {
-            console.error('EMBEDDING_ERROR: Received unexpected embedding response shape:', JSON.stringify(sdkResponse && Object.keys(sdkResponse), null, 2));
+            const responseShape = (sdkResponse && typeof sdkResponse === 'object')
+                ? Object.keys(sdkResponse)
+                : String(sdkResponse);
+            console.error('EMBEDDING_ERROR: Received unexpected embedding response shape:', JSON.stringify(responseShape, null, 2));
             throw new Error('Embedding response did not contain a usable vector. Inspect logs for SDK response shape.');
         }
 

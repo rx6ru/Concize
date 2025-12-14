@@ -12,7 +12,7 @@ const {
   deleteAudioFile,
   initialiseCloudinary,
 } = require("../db/cloudinary-utils/audio.db"); // Cloudinary utils
-const { completeMeeting } = require("./meetingCompletion");
+const { completeMeeting, completeMeetingWithErrors } = require("./meetingCompletion");
 const config = require("../utils/config");
 
 const audioQueue = config.AUDIO_QUEUE;
@@ -67,6 +67,7 @@ const startWorker = async () => {
         let fileId;
         let metadata = {};
         let jobId;
+        let chunkProcessedSuccessfully = false; // Track processing outcome for last chunk handling
 
         try {
           // Parse message
@@ -80,11 +81,11 @@ const startWorker = async () => {
 
           console.log(`Worker: Processing job - JobId: ${jobId}, FileId: ${fileId}`);
 
-          // Ensure meeting is still active
+          // Ensure meeting is still active (skip if already finalized)
           const meetingStatus = await getMeetingStatus(jobId);
-          if (meetingStatus === "completed") {
+          if (meetingStatus === "completed" || meetingStatus === "completed_with_errors") {
             console.log(
-              `Worker: Skipping job for jobId ${jobId}. Meeting is already completed.`
+              `Worker: Skipping job for jobId ${jobId}. Meeting is already finalized (${meetingStatus}).`
             );
             await deleteAudioFile(fileId);
             globalChannel.ack(msg);
@@ -173,6 +174,8 @@ const startWorker = async () => {
 
           console.log("\n\n\n------END OF ONE WORKER PROCESS------\n\n\n");
 
+          chunkProcessedSuccessfully = true; // Mark as successful only if we reach this point
+
         } catch (error) {
           console.error(
             `\n\n\nXXXXX----Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
@@ -203,12 +206,17 @@ const startWorker = async () => {
           );
         }
 
-        // CRITICAL: Always check for last chunk AFTER try-catch, regardless of success/failure
-        // This ensures the meeting is marked as completed even if embedding fails
+        // CRITICAL: Check for last chunk AFTER try-catch
+        // Call appropriate completion function based on processing outcome
         if (messageContent && messageContent.isLastChunk && jobId) {
           console.log(`Worker: Last chunk detected for jobId ${jobId}. Initiating meeting completion...`);
           try {
-            await completeMeeting(jobId);
+            if (chunkProcessedSuccessfully) {
+              await completeMeeting(jobId);
+            } else {
+              console.warn(`Worker: Last chunk failed processing. Marking meeting with errors.`);
+              await completeMeetingWithErrors(jobId);
+            }
           } catch (completionError) {
             console.error(`Worker: Failed to complete meeting for jobId ${jobId}:`, completionError);
           }

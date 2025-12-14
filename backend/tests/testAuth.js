@@ -2,8 +2,8 @@ require('dotenv').config();
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
-// We know for a fact we put temp001 in the .env now
-const AUTH_CODE = 'temp001';
+// Read from environment to match actual config, fallback to temp001
+const AUTH_CODE = process.env.ALLOWED_AUTH_CODES?.split(',')[0]?.trim() || 'temp001';
 
 const makeRequest = (path, method, headers, description) => {
     return new Promise((resolve) => {
@@ -52,6 +52,7 @@ const runTests = async () => {
     await makeRequest(`/api/worker/status?authCode=${AUTH_CODE}`, 'GET', {}, 'Query Param Request');
 
     console.log('\n--- Tests Complete ---');
+    process.exit(0);
 };
 
 // Wait for server to start

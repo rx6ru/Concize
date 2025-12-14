@@ -81,9 +81,26 @@ const server = app.listen(PORT, async () => {
   }
 });
 
+
 // Graceful Shutdown Logic
+let isShuttingDown = false;
+let forceExitTimer = null;
+
 const gracefulShutdown = async () => {
+  // Prevent multiple invocations (e.g., Ctrl+C pressed twice)
+  if (isShuttingDown) {
+    console.log('Shutdown already in progress...');
+    return;
+  }
+  isShuttingDown = true;
+
   console.log('Received kill signal, shutting down gracefully...');
+
+  // Force close if it takes too long (e.g. hung connections)
+  forceExitTimer = setTimeout(() => {
+    console.error('Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
 
   // 1. Close the server (stops accepting new requests)
   server.close(async () => {
@@ -96,16 +113,13 @@ const gracefulShutdown = async () => {
       console.error('Error during worker shutdown:', err);
     }
 
-    // 3. Exit
+    // 3. Clear force timer and exit cleanly
+    if (forceExitTimer) {
+      clearTimeout(forceExitTimer);
+    }
     console.log('Process termination complete.');
     process.exit(0);
   });
-
-  // Force close if it takes too long (e.g. hung connections)
-  setTimeout(() => {
-    console.error('Could not close connections in time, forcefully shutting down');
-    process.exit(1);
-  }, 10000);
 };
 
 process.on('SIGTERM', gracefulShutdown);

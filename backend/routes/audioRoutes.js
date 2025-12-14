@@ -159,7 +159,6 @@ router.post('/', upload.single('audio'), async (req, res) => {
         // Clean up uploaded file if queue fails
         if (fileId) {
             try {
-                const { deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
                 await deleteAudioFile(fileId);
                 console.log('Cleaned up uploaded file due to queue failure');
             } catch (cleanupErr) {

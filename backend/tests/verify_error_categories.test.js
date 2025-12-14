@@ -31,7 +31,6 @@ class MockResponse extends EventEmitter {
         this.statusCode = 200;
         this.headers = {};
         this.bodyChunks = [];
-        this.bodyChunks = [];
         this.jsonBody = null;
         this.writable = true;
         this.writableEnded = false;
@@ -45,6 +44,9 @@ class MockResponse extends EventEmitter {
 }
 
 describe('Error Category Verification', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
 
     test('Category A: Success should result in 200 OK and Stream Headers', async () => {
         const res = new MockResponse();
@@ -60,7 +62,6 @@ describe('Error Category Verification', () => {
         expect(res.headers['Content-Type']).toBe('text/event-stream');
         expect(res.jsonBody).toBeNull();
         expect(res.bodyChunks.some(c => c.includes('Mock Response'))).toBe(true);
-        console.log('✅ Category A (Success) Test Passed');
     });
 
     test('Category B: Pre-Stream Failure (e.g. Qdrant Timeout) should result in 503 JSON', async () => {
@@ -80,7 +81,6 @@ describe('Error Category Verification', () => {
             }
         });
         expect(res.headers['Content-Type']).toBeUndefined(); // Should NOT set stream headers
-        console.log('✅ Category B (Timeout) Test Passed');
     });
 
     test('Category B: Pre-Stream Failure (e.g. Rate Limit) should result in 429 JSON', async () => {
@@ -93,6 +93,5 @@ describe('Error Category Verification', () => {
 
         expect(res.statusCode).toBe(429);
         expect(res.jsonBody.error.code).toBe('RATE_LIMIT_EXCEEDED');
-        console.log('✅ Category B (Rate Limit) Test Passed');
     });
 });

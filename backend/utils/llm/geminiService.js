@@ -6,7 +6,15 @@ class GeminiService extends BaseKeyRotationService {
         super(config.GEMINI_API_KEYS, 'Gemini');
     }
 
-    // Inherits getNextKey(), enough for GoogleGenAI SDK usage
+    /**
+     * Returns a GoogleGenAI client with a rotated API key.
+     * Matches the pattern used by GroqService for consistency.
+     */
+    getClient() {
+        const { GoogleGenAI } = require('@google/genai');
+        const key = this.getNextKey();
+        return new GoogleGenAI({ apiKey: key });
+    }
 }
 
 // Singleton instance

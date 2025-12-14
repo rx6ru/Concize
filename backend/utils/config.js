@@ -8,9 +8,13 @@ const config = {
         ? process.env.GROQ_API_KEYS.split(',').map(k => k.trim()).filter(k => k)
         : (process.env.GROQ_API_KEY ? [process.env.GROQ_API_KEY] : []),
     // Gemini API Keys (comma-separated list, supports 1 or more keys)
+    // Falls back to legacy GEMINI_API_KEY if GEMINI_API_KEYS is not set
     GEMINI_API_KEYS: (process.env.GEMINI_API_KEYS && process.env.GEMINI_API_KEYS.trim() !== '')
         ? process.env.GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(k => k)
-        : [],
+        : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []),
+
+    // Groq Chat Model ID (centralized for chat and cleaning)
+    GROQ_CHAT_MODEL: process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b',
 
     PORT: process.env.PORT || 3000,
     NODE_ENV: process.env.NODE_ENV || 'development',
@@ -29,10 +33,10 @@ const config = {
     CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
 
-    // Temp Auth
+    // Temp Auth (REQUIRED - no default, fail closed)
     ALLOWED_AUTH_CODES: (process.env.ALLOWED_AUTH_CODES && process.env.ALLOWED_AUTH_CODES.trim() !== '')
-        ? process.env.ALLOWED_AUTH_CODES.split(',').map(c => c.trim())
-        : ['temp-secret-123'],
+        ? process.env.ALLOWED_AUTH_CODES.split(',').map(c => c.trim()).filter(c => c)
+        : [],
 };
 
 const required = [

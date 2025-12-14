@@ -26,12 +26,14 @@ async function checkConnection() {
             limit: 1
         });
         console.log(`✅ Search Success! Found ${result.length} results.`);
+        process.exit(0);
 
     } catch (error) {
         console.error('❌ Connection Failed:', error);
         if (error.cause) {
             console.error('Cause:', error.cause);
         }
+        process.exit(1);
     }
 }
 

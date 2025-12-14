@@ -15,6 +15,9 @@ const os = require('os');
 async function transcribe(audioBuffer, metadata = {}) {
   console.log("TRANSCRIPTION_LOG: Entering transcribe function.");
 
+  // Declare tempFilePath outside try so it's accessible in catch for cleanup
+  let tempFilePath = null;
+
   try {
     // Validate inputs
     console.log("TRANSCRIPTION_LOG: Received audioBuffer type:", typeof audioBuffer);
@@ -33,7 +36,7 @@ async function transcribe(audioBuffer, metadata = {}) {
     // Create a temporary file from the buffer
     const tempDir = os.tmpdir();
     const tempFileName = `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.webm`;
-    const tempFilePath = path.join(tempDir, tempFileName);
+    tempFilePath = path.join(tempDir, tempFileName);
 
     console.log(`TRANSCRIPTION_LOG: Writing buffer to temporary file: ${tempFilePath}`);
 
@@ -90,21 +93,15 @@ async function transcribe(audioBuffer, metadata = {}) {
 
     console.error("   Error Stack:", error.stack);
 
-    // Clean up temporary file if it exists
-    const tempDir = os.tmpdir();
-    const possibleTempFiles = fs.readdirSync(tempDir).filter(file =>
-      file.startsWith('audio_') && file.endsWith('.webm')
-    );
-
-    for (const tempFile of possibleTempFiles) {
+    // Clean up THIS request's temporary file only (not all audio_*.webm files)
+    if (tempFilePath) {
       try {
-        const tempFilePath = path.join(tempDir, tempFile);
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath);
-          console.log(`TRANSCRIPTION_LOG: Cleaned up temporary file: ${tempFile}`);
+          console.log(`TRANSCRIPTION_LOG: Cleaned up temporary file: ${tempFilePath}`);
         }
       } catch (cleanupError) {
-        console.warn(`TRANSCRIPTION_WARNING: Failed to clean up temp file ${tempFile}:`, cleanupError.message);
+        console.warn(`TRANSCRIPTION_WARNING: Failed to clean up temp file:`, cleanupError.message);
       }
     }
 

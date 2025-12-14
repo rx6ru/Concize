@@ -97,5 +97,26 @@ describe('Audio Routes', () => {
             // but the route should not error out
             expect(response.status).toBe(202);
         });
+
+        it('should clean up uploaded file if queue fails', async () => {
+            const { deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
+            const amqp = require('amqplib');
+
+            // Mock successful upload
+            storeAudioFile.mockResolvedValue({ public_id: 'test-file-id' });
+
+            // Mock queue connection failure
+            amqp.connect.mockRejectedValueOnce(new Error('Queue connection failed'));
+
+            const testBuffer = Buffer.from('test audio data');
+
+            const response = await request(app)
+                .post('/api/audios')
+                .set('Cookie', 'jobId=test-job-queue-fail')
+                .attach('audio', testBuffer, 'test.webm');
+
+            expect(response.status).toBe(500);
+            expect(deleteAudioFile).toHaveBeenCalledWith('test-file-id');
+        });
     });
 });

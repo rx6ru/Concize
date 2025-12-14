@@ -21,8 +21,8 @@ const meetingSchema = new mongoose.Schema({
     // A new field to store the status of the meeting
     status: {
         type: String,
-        enum: ['in-progress', 'completed'], // Restrict status to a set of valid values
-        default: 'in-progress', // Set a default value for new meetings
+        enum: ['in-progress', 'completed', 'completed_with_errors'],
+        default: 'in-progress',
         required: true
     },
 });
