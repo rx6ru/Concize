@@ -76,4 +76,10 @@ if (!config.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {
     process.exit(1);
 }
 
+// Custom validation: ALLOWED_AUTH_CODES must have at least one code (fail closed)
+if (!config.ALLOWED_AUTH_CODES || config.ALLOWED_AUTH_CODES.length === 0) {
+    console.error('ERROR: ALLOWED_AUTH_CODES environment variable is not set or is empty. Provide at least one auth code.');
+    process.exit(1);
+}
+
 module.exports = config;

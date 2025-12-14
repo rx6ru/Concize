@@ -20,8 +20,7 @@ jest.mock('../utils/llm/groqService', () => ({
             }
         },
         apiKey: 'mock-groq-key'
-    }),
-    currentIndex: 0
+    })
 }));
 
 // Mock Response Object

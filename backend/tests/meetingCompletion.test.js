@@ -84,5 +84,17 @@ describe('meetingCompletion Controller', () => {
 
             expect(result).toBe(false);
         });
+
+        it('should return false and log error when updateMeetingStatus throws', async () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+            updateMeetingStatus.mockRejectedValue(new Error('Database error'));
+            const jobId = 'error-job';
+
+            const result = await completeMeetingWithErrors(jobId);
+
+            expect(result).toBe(false);
+            expect(consoleSpy).toHaveBeenCalled();
+            consoleSpy.mockRestore();
+        });
     });
 });

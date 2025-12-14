@@ -25,7 +25,7 @@ const createTranCollection = async () => {
         if (!collectionExists) {
             await client.createCollection(COLLECTION_NAME, {
                 vectors: {
-                    size: 768, // Matches the embedding-001 model
+                    size: 768, // Matches the gemini-embedding-001 model
                     distance: 'Cosine',
                 },
             });

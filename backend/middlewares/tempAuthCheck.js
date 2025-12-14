@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const config = require('../utils/config');
 
 const tempAuthCheck = (req, res, next) => {
@@ -18,7 +19,17 @@ const tempAuthCheck = (req, res, next) => {
         return res.status(401).json({ error: "Unauthorized: No authentication code provided." });
     }
 
-    if (allowedCodes.includes(providedCode)) {
+    // Use timing-safe comparison to prevent timing attacks
+    const isValidCode = allowedCodes.some(code => {
+        if (code.length !== providedCode.length) return false;
+        try {
+            return crypto.timingSafeEqual(Buffer.from(code), Buffer.from(providedCode));
+        } catch {
+            return false;
+        }
+    });
+
+    if (isValidCode) {
         console.log(`AUTH_LOG: IP=${clientIP} result=SUCCESS`);
         return next();
     } else {

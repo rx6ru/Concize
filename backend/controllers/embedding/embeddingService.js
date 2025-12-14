@@ -23,8 +23,8 @@ const DEFAULT_OUTPUT_DIMENSIONALITY = 768;
  * @returns {Promise<any>} sdkResponse
  */
 async function _callEmbeddingEndpoint(aiInstance, params) {
-    // Validate SDK method exists
-    if (!aiInstance?.models?.embedContent) {
+    // Validate SDK method exists and is a function
+    if (!aiInstance?.models?.embedContent || typeof aiInstance.models.embedContent !== 'function') {
         const availableKeys = Object.keys(aiInstance?.models || {}).join(', ') || 'none';
         throw new Error(
             `Expected 'models.embedContent' method not found on @google/genai client. ` +
@@ -117,6 +117,9 @@ const getEmbedding = async (text, opts = {}) => {
 
         // Get rotated client instance
         const aiInstance = geminiService.getClient();
+        if (!aiInstance) {
+            throw new Error('Failed to obtain Gemini client instance. Check GEMINI_API_KEYS configuration.');
+        }
 
         const params = {
             model,

@@ -12,7 +12,8 @@ const makeRequest = (path, method, headers, description) => {
             port: PORT,
             path: path,
             method: method,
-            headers: headers
+            headers: headers,
+            timeout: 5000
         };
 
         const req = http.request(options, (res) => {
@@ -32,27 +33,64 @@ const makeRequest = (path, method, headers, description) => {
             resolve({ error: e });
         });
 
+        req.on('timeout', () => {
+            req.destroy();
+            console.error(`[${description}] Error: Request timeout`);
+            resolve({ error: new Error('Request timeout') });
+        });
+
         req.end();
     });
 };
 
 const runTests = async () => {
     console.log('--- Starting Auth Middleware Tests (Headers Only) ---');
+    let failureCount = 0;
 
     console.log('\n1. Testing Unauthorized Request (No Code)');
-    await makeRequest('/api/worker/status', 'GET', {}, 'Unauthorized Request');
+    const test1 = await makeRequest('/api/worker/status', 'GET', {}, 'Unauthorized Request');
+    if (test1.status !== 401 && test1.status !== 403) {
+        console.error(`  ❌ FAILED: Expected 401/403, got ${test1.status}`);
+        failureCount++;
+    } else {
+        console.log(`  ✓ PASSED`);
+    }
 
     console.log('\n2. Testing Unauthorized Request (Invalid Code)');
-    await makeRequest('/api/worker/status', 'GET', { 'x-auth-code': 'wrong-code' }, 'Invalid Code Request');
+    const test2 = await makeRequest('/api/worker/status', 'GET', { 'x-auth-code': 'wrong-code' }, 'Invalid Code Request');
+    if (test2.status !== 401 && test2.status !== 403) {
+        console.error(`  ❌ FAILED: Expected 401/403, got ${test2.status}`);
+        failureCount++;
+    } else {
+        console.log(`  ✓ PASSED`);
+    }
 
     console.log('\n3. Testing Authorized Request (Header)');
-    await makeRequest('/api/worker/status', 'GET', { 'x-auth-code': AUTH_CODE }, 'Authorized Header Request');
+    const test3 = await makeRequest('/api/worker/status', 'GET', { 'x-auth-code': AUTH_CODE }, 'Authorized Header Request');
+    if (test3.status !== 200 && test3.status !== 404) {
+        console.error(`  ❌ FAILED: Expected 200/404, got ${test3.status}`);
+        failureCount++;
+    } else {
+        console.log(`  ✓ PASSED`);
+    }
 
     console.log('\n4. Testing Blocked Request (Query Param - Should Fail now)');
-    await makeRequest(`/api/worker/status?authCode=${AUTH_CODE}`, 'GET', {}, 'Query Param Request');
+    const test4 = await makeRequest(`/api/worker/status?authCode=${AUTH_CODE}`, 'GET', {}, 'Query Param Request');
+    if (test4.status !== 401 && test4.status !== 403) {
+        console.error(`  ❌ FAILED: Expected 401/403, got ${test4.status}`);
+        failureCount++;
+    } else {
+        console.log(`  ✓ PASSED`);
+    }
 
     console.log('\n--- Tests Complete ---');
-    process.exit(0);
+    if (failureCount > 0) {
+        console.error(`\n❌ ${failureCount} test(s) failed`);
+        process.exit(1);
+    } else {
+        console.log(`\n✓ All tests passed`);
+        process.exit(0);
+    }
 };
 
 // Wait for server to start

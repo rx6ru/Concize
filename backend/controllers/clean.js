@@ -48,16 +48,26 @@ const clean = async (text) => {
             });
 
             const fullResponse = chatCompletion.choices[0]?.message?.content || '';
-            const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
 
-            if (!jsonMatch) {
-                console.warn(`CLEANING_LOG: No valid JSON array found on attempt ${attempt}. Retrying...`);
-                // Continue to the next loop iteration for a retry
-                continue;
+            let parsedJson;
+            try {
+                // Try to parse the entire response as JSON first
+                parsedJson = JSON.parse(fullResponse);
+            } catch {
+                // Fall back to regex extraction if full parse fails
+                const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
+                if (!jsonMatch) {
+                    console.warn(`CLEANING_LOG: No valid JSON array found on attempt ${attempt}. Retrying...`);
+                    continue;
+                }
+                parsedJson = JSON.parse(jsonMatch[0]);
             }
 
-            const jsonString = jsonMatch[0];
-            const parsedJson = JSON.parse(jsonString);
+            // Validate that parsedJson is an array
+            if (!Array.isArray(parsedJson)) {
+                console.warn(`CLEANING_LOG: Response is not a JSON array on attempt ${attempt}. Retrying...`);
+                continue;
+            }
 
             console.log(`CLEANING_LOG: Parsed ${parsedJson.length} structured chunks successfully on attempt ${attempt}.`);
             return parsedJson;
