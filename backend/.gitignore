@@ -23,3 +23,6 @@ Thumbs.db
 
 # Developer scripts
 dev-scripts/
+
+# Security-sensitive prompts (do not commit)
+.secrets/

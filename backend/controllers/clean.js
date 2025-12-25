@@ -4,11 +4,10 @@ const path = require('path');
 const config = require('../utils/config');
 const groqService = require('../utils/llm/groqService');
 
-// Load system prompt from centralized prompts directory
-const SYSTEM_PROMPT = fs.readFileSync(
-    path.join(__dirname, '../prompts/transcriptClean.txt'),
-    'utf-8'
-).trim();
+// Load system prompt from secure module
+const { TRANSCRIPT_CLEAN_PROMPT } = require('../.secrets/transcriptClean');
+const SYSTEM_PROMPT = TRANSCRIPT_CLEAN_PROMPT;
+
 
 /**
  * Processes a raw text transcript, refining it and converting it into a

@@ -7,15 +7,22 @@ const groqService = require('../utils/llm/groqService');
 const { queryTranscriptions, queryChats } = require('./queryVectordb');
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('./embedding/embedChat');
+const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+
+// Security modules
+const {
+    validateInput,
+    isRelevantToMeeting,
+    recordViolation
+} = require('../utils/llmSecurity');
+const { SECURE_SYSTEM_PROMPT } = require('../.secrets/systemPrompt');
 
 // Model id from centralized config
 const MODEL_ID = config.GROQ_CHAT_MODEL;
 
-// Load system prompt from centralized prompts directory
-const SYSTEM_PROMPT = fs.readFileSync(
-    path.join(__dirname, '../prompts/chat.txt'),
-    'utf-8'
-).trim();
+// Use hardened system prompt
+const SYSTEM_PROMPT = SECURE_SYSTEM_PROMPT;
+
 
 /**
  * Maps system errors to professional user-facing messages.
@@ -109,6 +116,29 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     let fullResponseText = '';
     let heartbeatInterval = null;
 
+    // --- Phase 0: Security Validation (Category B Potential) ---
+    // If security checks fail, return JSON error immediately.
+
+    // Input Guardrails
+    const inputCheck = validateInput(userPrompt);
+    if (inputCheck.blocked) {
+        recordViolation(jobId, inputCheck.reason, { query: userPrompt.substring(0, 100) });
+        return res.status(400).json({ error: inputCheck.error });
+    }
+
+    // Relevance Filter (uses meeting summary)
+    const relevanceCheck = await isRelevantToMeeting(userPrompt, jobId);
+    if (!relevanceCheck.relevant) {
+        recordViolation(jobId, 'off_topic', { query: userPrompt.substring(0, 100) });
+        return res.status(400).json({
+            error: {
+                type: 'off_topic',
+                code: 'QUERY_NOT_RELEVANT',
+                message: relevanceCheck.message
+            }
+        });
+    }
+
     // --- Phase 1: Context Retrieval & Validation (Category B Potential) ---
     // If anything fails here, we send a JSON error response (4xx/5xx).
     // do NOT set SSE headers yet.
@@ -116,13 +146,13 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     let contentsPrompt = '';
 
     try {
-
-
         // Step 1: Gather context (Parallel)
-        const [transcriptionContext, chatHistory] = await Promise.all([
+        const [transcriptionContext, chatHistory, meetingSummary] = await Promise.all([
             queryTranscriptions(userPrompt, jobId, 5),
-            queryChats(userPrompt, jobId, 3)
+            queryChats(userPrompt, jobId, 3),
+            getMeetingSummary(jobId)
         ]);
+
 
         const transcriptionText = transcriptionContext.length > 0
             ? transcriptionContext.map(chunk => `Transcription Snippet: ${chunk.text}`).join('\n')
@@ -132,8 +162,16 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
             ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
             : "No specific chat history was found for this query.";
 
+        // Prepare Summary Context
+        const summaryContext = meetingSummary
+            ? `Title: ${meetingSummary.title}\nSummary: ${meetingSummary.content}`
+            : "No summary available yet.";
+
         contentsPrompt =
-            `# Meeting Transcription Context:
+            `# Meeting Summary (Current Context):
+${summaryContext}
+
+# Meeting Transcription Snippets (Specific Context):
 ${transcriptionText}
 
 # Relevant Chat History:

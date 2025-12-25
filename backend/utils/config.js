@@ -23,6 +23,9 @@ const config = {
     TRANSCRIPTION_COLLECTION: process.env.TRANSCRIPTION_COLLECTION,
     CHAT_COLLECTION: process.env.CHAT_COLLECTION,
 
+    // Summary Queue
+    SUMMARY_QUEUE: process.env.SUMMARY_QUEUE || 'summary_queue',
+
     // Dev Environment Isolation - prefix for shared resources
     DEV_PREFIX: process.env.DEV_PREFIX || '',
     AUDIO_QUEUE: `${process.env.DEV_PREFIX || ''}audio_queue`,

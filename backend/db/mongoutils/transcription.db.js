@@ -45,7 +45,7 @@ async function createTranscription(jobId) {
  * If the document does not exist, it creates a new one and appends the text.
  * @param {string} jobId The unique identifier of the transcription job.
  * @param {string} newText The text chunk to append.
- * @returns {Promise<boolean>} True if the document was updated successfully.
+ * @returns {Promise<Object>} Object containing success status and chunkIndex.
  */
 async function appendTranscription(jobId, newText) {
     try {
@@ -56,15 +56,16 @@ async function appendTranscription(jobId, newText) {
         );
 
         if (result) {
-            console.log(`Successfully appended text for jobId: ${jobId}`);
-            return true;
+            const chunkIndex = result.transcriptionChunks.length - 1;
+            console.log(`Successfully appended text for jobId: ${jobId}, chunkIndex: ${chunkIndex}`);
+            return { success: true, chunkIndex };
         }
 
         console.warn(`Failed to append text for jobId: ${jobId}. Unknown error.`);
-        return false;
+        return { success: false, chunkIndex: -1 };
     } catch (err) {
         console.error('Error appending transcription text:', err);
-        return false;
+        return { success: false, chunkIndex: -1, error: err };
     }
 }
 

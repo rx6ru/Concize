@@ -54,8 +54,11 @@ describe('transcription.db.js', () => {
     });
 
     describe('appendTranscription()', () => {
-        it('should append text and return true', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue({ jobId: 'test-job-456' });
+        it('should append text and return success with chunkIndex', async () => {
+            Meeting.findOneAndUpdate.mockResolvedValue({
+                jobId: 'test-job-456',
+                transcriptionChunks: ['First chunk', 'Hello world']
+            });
 
             const result = await appendTranscription('test-job-456', 'Hello world');
 
@@ -64,15 +67,38 @@ describe('transcription.db.js', () => {
                 { $push: { transcriptionChunks: 'Hello world' } },
                 { new: true, upsert: true }
             );
-            expect(result).toBe(true);
+            expect(result).toEqual({ success: true, chunkIndex: 1 });
         });
 
-        it('should return false if no document is updated', async () => {
+        it('should return chunkIndex 0 for first chunk', async () => {
+            Meeting.findOneAndUpdate.mockResolvedValue({
+                jobId: 'new-job',
+                transcriptionChunks: ['First chunk only']
+            });
+
+            const result = await appendTranscription('new-job', 'First chunk only');
+
+            expect(result).toEqual({ success: true, chunkIndex: 0 });
+        });
+
+        it('should return { success: false, chunkIndex: -1 } if no document is updated', async () => {
             Meeting.findOneAndUpdate.mockResolvedValue(null);
 
             const result = await appendTranscription('missing-job', 'Text');
 
-            expect(result).toBe(false);
+            expect(result).toEqual({ success: false, chunkIndex: -1 });
+        });
+
+        it('should return { success: false, chunkIndex: -1, error } on DB error', async () => {
+            const dbError = new Error('DB connection failed');
+            Meeting.findOneAndUpdate.mockRejectedValue(dbError);
+            jest.spyOn(console, 'error').mockImplementation(() => { });
+
+            const result = await appendTranscription('error-job', 'Text');
+
+            expect(result.success).toBe(false);
+            expect(result.chunkIndex).toBe(-1);
+            expect(result.error).toEqual(dbError);
         });
     });
 

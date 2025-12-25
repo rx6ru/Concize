@@ -6,7 +6,7 @@ const cookieParser = require("cookie-parser");
 // We now import the correct function to initialize our Cloudinary service
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
 const { connectToMongo } = require("./db/mongoutils/transcription.db");
-const { startWorker, shutdown: workerShutdown } = require("./controllers/worker");
+const { startWorker, shutdown: workerShutdown } = require("./workers/transcriptionWorker");
 const audioRoutes = require("./routes/audioRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
 const transcRoutes = require("./routes/transcRoutes");
