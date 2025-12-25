@@ -1,140 +1,120 @@
-## 🎙️ Concize RAG Pipeline Backend
+# 🎙️ Concize Backend
 
-A backend service for audio transcription and **RAG** (Retrieval-Augmented Generation) pipeline.
-This service uses:
+A production-ready backend for scalable real-time meeting transcription, summarization, and RAG-based chat.
 
-* 🐇 **RabbitMQ** – for asynchronous message queuing
-* 🎧 **Groq** – for audio transcription (max 25MB per file)
-* 🧠 **Qdrant** – for vector storage and semantic search
-* 🌐 **Gemini** – for generating embeddings
-* ☁️ **Cloudinary** – for audio file storage
-* 📦 **MongoDB** – for storing transcriptions and chat history
+## 🚀 Key Features
 
-## 🔄 System Architecture
+-   **Scalable Architecture**: Decoupled HTTP Server, Transcription Worker, and Summary Worker.
+-   **High-Speed AI**:
+    -   **Transcription**: Groq (Whisper V3) - Ultra-fast (~500x real-time).
+    -   **Chat & Cleaning**: Groq (Defaults to `openai/gpt-oss-120b`).
+    -   **Summarization**: Groq (`llama-3.1-8b-instant`) - Optimized for speed.
+    -   **Embeddings**: Gemini - For semantic search.
+-   **Self-Improving Summaries**: Real-time incremental meeting summarization.
+-   **Defense-in-Depth Security**:
+    -   **Relevance Filter**: Summary-anchored query validation.
+    -   **Input/Output Guardrails**: Prevention of prompt injections and leakage.
+    -   **Secure Prompts**: All system prompts stored in gitignored `.secrets/`.
+-   **Storage**:
+    -   **MongoDB**: Persistent data (Transcripts, Chat History, Summaries).
+    -   **Cloudinary**: Temporary audio storage.
+    -   **Qdrant**: Vector database for RAG.
 
-![Data Flow Diagram](image.png)
+---
 
-The system follows these steps:
-1. Audio files are uploaded and stored in Cloudinary
-2. RabbitMQ queues the audio for processing
-3. Worker processes audio using Groq for transcription
-4. Transcriptions are stored in MongoDB
-5. Gemini generates embeddings for semantic search
-6. Embeddings are stored in Qdrant
-7. Chat queries use RAG to provide context-aware responses
+## 🏗️ System Architecture
 
-## ⚙️ Setup
+The system runs as **distributed processes** communicating via RabbitMQ.
+
+1.  **Main API (Express)**: Handles Uploads, Chat, and Meeting Management.
+2.  **Transcription Worker**: Consumes `audioQueue`. Fetches from Cloudinary → Transcribes (Groq) → Clean (Groq `gpt-oss-120b`) → Embed (Gemini/Qdrant) → Publishes to `summaryQueue`.
+3.  **Summary Worker**: Consumes `summaryQueue`. Generates incremental summaries via LLM (`llama-3.1-8b-instant`).
+
+---
+
+## 🛠️ Setup
 
 ### 1. Install Dependencies
-
 ```bash
 cd backend
 npm install
 ```
 
-### 2. Environment Variables
-
-Create a `.env` file in the backend directory with:
+### 2. Environment Variables (`.env`)
+Create a `.env` file in `backend/`:
 
 ```env
-# Server Configuration
-PORT=3000
+# Server
+PORT=5001
 NODE_ENV=development
+DEV_PREFIX=dev_ # For data isolation
 
-# Groq API for transcription and cleaning
-GROQ_API_KEY=<your_groq_api_key>
+# Security
+ALLOWED_AUTH_CODES=your-secret-code,another-code
 
-# RabbitMQ for message queue
-CLOUDAMQP_URL=<your_cloudamqp_url>
+# Database
+MONGODB_URL=mongodb+srv://...
+CLOUDAMQP_URL=amqps://...
+QDRANT_URL=https://...
+QDRANT_API_KEY=...
 
-# MongoDB for data storage
-MONGODB_URL=<your_mongodb_url>
+# Models
+GROQ_API_KEYS=key1,key2,key3
+GEMINI_API_KEYS=key1,key2
+GROQ_CHAT_MODEL=openai/gpt-oss-120b # Optional override
 
-# Qdrant for vector storage
-QDRANT_URL=<your_qdrant_url>
-QDRANT_API_KEY=<your_qdrant_api_key>
+# Storage
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
 
-# Cloudinary for audio storage
-CLOUDINARY_CLOUD_NAME=<your_cloud_name>
-CLOUDINARY_API_KEY=<your_cloudinary_key>
-CLOUDINARY_API_SECRET=<your_cloudinary_secret>
-
-# Google Gemini API for embeddings
-GEMINI_API_KEY=<your_gemini_api_key>
+# Queues
+AUDIO_QUEUE=audio_processing_queue
+SUMMARY_QUEUE=meeting_summary_queue
 ```
-
 
 ---
 
-## 📡 API Endpoints
+## 🏃 Run Instructions
 
-### Worker Management
+Run the system in **two separate terminals**:
 
-#### `POST /api/worker/start`
-- **Description**: Starts the worker process for audio processing
-- **Response**: `{ "message": "Worker started." }`
-
-#### `POST /api/worker/stop`
-- **Description**: Gracefully stops the worker
-- **Response**: `{ "message": "Worker stopping..." }`
-
-#### `GET /api/worker/status`
-- **Description**: Gets worker status
-- **Response**: `{ "status": "running" | "stopped" }`
-
-### Audio Processing
-
-#### `POST /api/audios`
-- **Description**: Upload audio for transcription
-- **Request**: `multipart/form-data`
-  - Field: `audio`
-  - Formats: mp3, wav, flac, m4a, ogg, webm, mp4
-  - Max size: 25MB (Groq API limit)
-  - Max duration: 15 minutes
-- **Response**: `{ "message": "Audio received and queued" }`
-
-### Chat Endpoints
-
-#### `POST /api/chat`
-- **Description**: Send a message for RAG-enhanced response
-- **Request Body**:
-  ```json
-  {
-    "message": "Your question",
-    "jobId": "transcription_job_id"
-  }
-  ```
-- **Response**: Server-Sent Events (SSE) with AI responses
-
-## 🔁 Usage Workflow
-
-1. **Start the Worker**
-   ```bash
-   curl -X POST http://localhost:3000/api/worker/start
-   ```
-
-2. **Upload Audio**
-   ```bash
-   curl -X POST http://localhost:3000/api/audios \
-        -F "audio=@./your-audio.mp3" \
-        -H "Content-Type: multipart/form-data"
-   ```
-
-3. **Chat with Transcription**
-   ```bash
-   curl -X POST http://localhost:3000/api/chat \
-        -H "Content-Type: application/json" \
-        -d '{"message": "What was discussed?", "jobId": "your_job_id"}'
-   ```
-
-## 🚀 Running the Server
-
-Start the development server:
-
+### Terminal 1: Server + Transcription
+Starts the API server and the audio transcription worker.
 ```bash
-cd backend
 npm run dev
 ```
 
-The server will start on PORT 3000 (default) or the port specified in your `.env`
+### Terminal 2: Summary Worker
+Starts the background summarization service.
+```bash
+npm run worker:summary
+```
 
+*Note: For production, use `npm start` instead of `npm run dev`.*
+
+---
+
+## 📡 Key API Endpoints
+
+### Meeting Management
+-   `POST /api/meeting/start` - Initialize session (returns `jobId`)
+-   `GET /api/meeting/:jobId` - Get meeting status
+-   `GET /api/meeting/:jobId/summary` - **[NEW]** Get real-time summary
+
+### Audio
+-   `POST /api/audios` - Upload audio chunk (multipart/form-data)
+
+### Chat (RAG)
+-   `POST /api/chat` - Chat with meeting context
+    -   Body: `{ "message": "...", "jobId": "..." }`
+    -   Streamed Response (SSE)
+
+---
+
+## 🧪 Testing
+
+Run the full test suite (Unit + Integration):
+```bash
+npm test
+```

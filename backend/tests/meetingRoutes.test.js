@@ -60,3 +60,55 @@ describe('Meeting Routes', () => {
         });
     });
 });
+
+
+// Re-doing the top level mock to include getMeetingSummary
+jest.mock('../db/mongoutils/summary.db', () => ({
+    getMeetingSummary: jest.fn(),
+}));
+
+// Re-import after mock
+const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+
+describe('Meeting Routes (Expanded)', () => {
+    // Tests for GET /api/meeting/:jobId/summary
+    describe('GET /api/meeting/:jobId/summary', () => {
+
+        it('should return 200 and summary data when found', async () => {
+            const mockSummary = {
+                title: 'Test Summary',
+                content: 'Meeting content',
+                status: 'updating',
+                updatedAt: new Date().toISOString()
+            };
+            getMeetingSummary.mockResolvedValue(mockSummary);
+
+            const response = await request(app).get('/api/meeting/job-123/summary');
+
+            expect(response.status).toBe(200);
+            expect(response.body.success).toBe(true);
+            expect(response.body.summary).toEqual(mockSummary);
+            expect(getMeetingSummary).toHaveBeenCalledWith('job-123');
+        });
+
+        it('should return 404 when summary not found', async () => {
+            getMeetingSummary.mockResolvedValue(null);
+
+            const response = await request(app).get('/api/meeting/job-123/summary');
+
+            expect(response.status).toBe(404);
+            expect(response.body.success).toBe(false);
+            expect(response.body.error).toMatch(/not found/);
+        });
+
+        it('should return 500 on database error', async () => {
+            getMeetingSummary.mockRejectedValue(new Error('DB Error'));
+
+            const response = await request(app).get('/api/meeting/job-123/summary');
+
+            expect(response.status).toBe(500);
+            expect(response.body.success).toBe(false);
+        });
+    });
+});
+

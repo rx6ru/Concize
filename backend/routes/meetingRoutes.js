@@ -41,4 +41,39 @@ router.post('/start', async (req, res) => {
 // The status route is no longer needed as the worker is now a persistent process
 // Its status is not tied to a single meeting.
 
+// Import getMeetingSummary
+const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+
+// GET /api/meeting/:jobId/summary
+// Retrieves the current summary state for a specific meeting job.
+router.get('/:jobId/summary', async (req, res) => {
+    try {
+        const { jobId } = req.params;
+
+        if (!jobId) {
+            return res.status(400).json({ success: false, error: "Missing jobId parameter" });
+        }
+
+        const summary = await getMeetingSummary(jobId);
+
+        if (!summary) {
+            return res.status(404).json({ success: false, error: "Summary not found for this meeting" });
+        }
+
+        res.status(200).json({
+            success: true,
+            summary: {
+                title: summary.title,
+                content: summary.content,
+                status: summary.status,
+                updatedAt: summary.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error(`API Error in /api/meeting/${req.params.jobId}/summary:`, error);
+        res.status(500).json({ success: false, error: "Failed to fetch meeting summary" });
+    }
+});
+
 module.exports = router;

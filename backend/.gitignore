@@ -21,8 +21,6 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Developer scripts
 dev-scripts/
 
-# Security-sensitive prompts (do not commit)
 .secrets/
