@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "worker:summary": "node workers/summaryWorker.js",
     "test": "jest --coverage --detectOpenHandles"
   },
   "dependencies": {
