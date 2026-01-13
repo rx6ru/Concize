@@ -168,7 +168,8 @@ class ChatInterface {
         this.scrollToBottom();
 
         const API_URL = 'http://localhost:3000/api/chat/stream';
-
+        let accumulatedText = '';
+        
         try {
             const result = await chrome.storage.local.get('jobId');
             const jobId = result.jobId;
@@ -214,8 +215,6 @@ class ChatInterface {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
-            // Declared outside inner try so it's accessible in outer catch
-            let accumulatedText = '';
             let indicatorRemoved = false;
             let isErrorEvent = false; // Flag for multi-line SSE events
 
