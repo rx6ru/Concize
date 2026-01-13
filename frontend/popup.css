@@ -175,6 +175,11 @@ body {
     box-shadow: none;
 }
 
+.action-button:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
 .action-button svg {
     margin-right: 0.5rem;
 }

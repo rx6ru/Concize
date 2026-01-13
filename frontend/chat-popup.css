@@ -103,6 +103,11 @@ body {
     color: var(--text-primary);
 }
 
+.close-button:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
 .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -381,6 +386,11 @@ body {
     cursor: not-allowed;
     transform: none;
     background: var(--background-light);
+}
+
+.send-button:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
 }
 
 .send-icon {
