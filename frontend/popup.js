@@ -165,6 +165,7 @@ startButton.addEventListener("click", async () => {
         const startMeetingResponse = await fetch('http://localhost:3000/api/meeting/start', {
             method: 'POST',
             headers: {
+                // TODO: Use proper auth in production
                 'x-auth-code': 'lostnfound'
             },
         });
@@ -285,12 +286,12 @@ getTranscriptionButton.addEventListener("click", async () => {
             downloadButtonWrapper.classList.remove('hidden'); // Show download button
             showStatusMessage("Transcription loaded successfully.");
         } else {
-            fullTranscriptionText = "No transcription available for this session yet.";
-            transcriptionTextContent.textContent = fullTranscriptionText;
+            fullTranscriptionText = ''; // Keep empty to prevent downloading placeholder
+            transcriptionTextContent.textContent = "No transcription available for this session yet.";
             transcriptionDisplayArea.classList.remove('hidden');
+            downloadButtonWrapper.classList.add('hidden'); // Keep download hidden
             showStatusMessage("No transcription available.", true);
         }
-
     } catch (error) {
         console.error("Error fetching transcription:", error);
         showStatusMessage(`Failed to get transcription: ${error.message}`, true);
