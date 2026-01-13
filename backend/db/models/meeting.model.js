@@ -29,9 +29,9 @@ const meetingSchema = new mongoose.Schema({
 
 // Create and export the Mongoose model with dynamic collection name
 const collectionName = config.MONGO_COLLECTION || 'transcriptions';
-if (!collectionName) {
-    throw new Error('MONGO_COLLECTION must be defined in config');
-}
+// if (!collectionName) {
+//     throw new Error('MONGO_COLLECTION must be defined in config');
+// }
 const Meeting = mongoose.model('Meeting', meetingSchema, collectionName);
 
 module.exports = Meeting;

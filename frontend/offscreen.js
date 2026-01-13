@@ -25,7 +25,8 @@ chrome.runtime.onMessage.addListener(async (message) => {
         await stopRecording();
         break;
       default:
-        throw new Error(`Unrecognized message: ${message.type}`);
+        console.warn(`Unrecognized message: ${message.type}`);
+        break;
     }
   }
 });
@@ -193,7 +194,7 @@ async function getMediaStream(streamId) {
 
         activeStreams.push(tabStream, micStream);
 
-        const audioContext = new AudioContext();
+        audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
 
         const tabSource = audioContext.createMediaStreamSource(tabStream);
@@ -227,5 +228,9 @@ async function stopAllStreams() {
     stream.getTracks().forEach((track) => track.stop());
   });
   activeStreams = [];
+  if (audioContext) {
+    await audioContext.close();
+    audioContext = null;
+  }
    await new Promise(resolve => setTimeout(resolve, 100)); // Short delay to ensure tracks are released
 }
