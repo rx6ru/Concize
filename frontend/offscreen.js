@@ -10,6 +10,7 @@ let currentJobId;
 let stopTimeouts = [];
 let userStopped = false;
 let audioContext = null;
+let lastChunkSent = false;
 
 // Entry point for messages from other parts of the extension
 chrome.runtime.onMessage.addListener(async (message) => {
@@ -105,7 +106,8 @@ function runRecorderCycle(recorderName, stream) {
   };
 
   recorder.onstop = () => {
-    const isLast = userStopped;
+    const isLast = userStopped && !lastChunkSent;
+    if (isLast) lastChunkSent = true;
     console.log(`Recorder ${recorderName} stopped. isLast: ${isLast}`);
     sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }), isLast);
     dataBuffer.length = 0; // Clear buffer after sending
