@@ -1,0 +1,256 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+:root {
+    --background-dark: #121212;
+    --background-light: #1E1E1E;
+    --text-primary: #E0E0E0;
+    --text-secondary: #A0A0A0;
+    --accent-blue: #007BFF;
+    --accent-blue-dark: #0056b3;
+    --accent-red: #ef4444;
+    --accent-red-dark: #dc2626;
+    --accent-green: #28a745;
+    --accent-green-dark: #218838;
+    --accent-teal: #17a2b8;
+    --accent-teal-dark: #138496;
+    --accent-purple: #6f42c1;
+    --accent-purple-dark: #5a32a3;
+    --running-bg: #10B981;
+    --stopped-bg: #EF4444;
+    --recording-bg: #FBBF24;
+    --border-radius: 8px;
+    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --box-shadow-hover: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--background-dark);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    width: 320px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    background-color: var(--background-light);
+    border-radius: 12px;
+    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+}
+
+.logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 0.5rem;
+    object-fit: contain;
+    border-radius: 12px;
+}
+
+.status-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #1f2937;
+}
+
+.status-badge.running {
+    background-color: var(--running-bg);
+}
+
+.status-badge.stopped {
+    background-color: var(--stopped-bg);
+}
+
+.status-badge.recording {
+    background-color: var(--recording-bg);
+}
+
+.recording-controls {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent-red);
+}
+
+.recording-glyph {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--accent-red);
+}
+
+@keyframes blinker {
+    50% {
+        opacity: 0;
+    }
+}
+
+.blink {
+    animation: blinker 1s linear infinite;
+}
+
+.button-wrapper {
+    position: relative;
+    width: 100%;
+    height: 48px;
+    transition: all 0.2s ease-in-out;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    overflow: hidden;
+}
+
+.button-wrapper.start {
+    background: var(--accent-blue);
+}
+
+.button-wrapper.stop {
+    background: var(--accent-red);
+}
+
+.button-wrapper:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--box-shadow-hover);
+}
+
+.action-button {
+    background: transparent;
+    color: white;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    width: 100%;
+    height: 100%;
+    font-size: 1rem;
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.action-button.visible {
+    opacity: 1;
+    z-index: 1;
+}
+
+.action-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.action-button:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
+.action-button svg {
+    margin-right: 0.5rem;
+}
+
+.message-box {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    text-align: center;
+    width: 100%;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: none;
+}
+
+#statusMessage {
+    background-color: var(--accent-purple);
+    color: white;
+}
+
+#permissionStatus {
+    background-color: #fff3e0;
+    color: #ef6c00;
+}
+
+.transcription-box {
+    width: 100%;
+    padding: 1rem;
+    background-color: #1f2937;
+    border-radius: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.transcription-box h3 {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.transcription-box p {
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.hidden {
+    display: none;
+}
+
+#openChat {
+    background: var(--accent-purple);
+}
+
+#openChat:hover {
+    background: var(--accent-purple-dark);
+}
+
+#getTranscriptionButton {
+    background: var(--accent-green);
+}
+
+#getTranscriptionButton:hover {
+    background: var(--accent-green-dark);
+}
+
+#downloadTranscriptionButton {
+    background: var(--accent-teal);
+}
+
+#downloadTranscriptionButton:hover {
+    background: var(--accent-teal-dark);
+}

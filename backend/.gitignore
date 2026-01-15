@@ -1,0 +1,25 @@
+node_modules/
+
+.env
+.env.local
+.env.*.local
+
+dist/
+uploads/
+transcriptions/
+cred/
+
+coverage/
+
+*.log
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
+
+# Developer scripts
+dev-scripts/

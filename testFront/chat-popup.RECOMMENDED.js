@@ -10,7 +10,7 @@ class ChatInterface {
         this.closeButton = document.getElementById('closeButton');
         this.isStreaming = false;
         this.currentStreamingMessage = null;
-        this.chatHistory = []; 
+        this.chatHistory = [];
 
         this.init();
     }
@@ -156,8 +156,6 @@ class ChatInterface {
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
 
-        const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
-
         // 1. Setup Loading Indicator
         const indicator = document.createElement('div');
         indicator.className = 'streaming-indicator';
@@ -171,6 +169,7 @@ class ChatInterface {
 
         const API_URL = 'http://localhost:3000/api/chat/stream';
         let accumulatedText = '';
+        
         try {
             const result = await chrome.storage.local.get('jobId');
             const jobId = result.jobId;
@@ -202,30 +201,30 @@ class ChatInterface {
                 // Remove loading indicator immediately
                 indicator.remove();
 
-                // Display Error IN BUBBLE using CSS class
-                bubbleDiv.classList.add('error-bubble');
-                bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(errorMessage)}</p></div>`;
+                // Display Error IN BUBBLE as requested
+                // Using simple HTML styling for error visibility
+                bubbleDiv.innerHTML = `<div style="color: #ff6b6b; font-weight: 500;">
+                    ⚠️ ${this.escapeHtml(errorMessage)}
+                </div>`;
 
-                // Throwing here stops further execution and is caught by the outer catch block
+                // Throwing here stops further execution (goes to catch, but bubble is already handled)
                 throw new Error(errorMessage);
             }
 
             // --- STREAMING PHASE ---
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            
+
             let indicatorRemoved = false;
             let isErrorEvent = false; // Flag for multi-line SSE events
-            let buffer = '';
 
             try {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
 
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // Keep incomplete line in buffer
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
 
                     for (const line of lines) {
                         const trimmedLine = line.trim();
@@ -246,11 +245,13 @@ class ChatInterface {
                                 // Handle Error Data (Subsequent line to event: error)
                                 if (isErrorEvent) {
                                     const errMsg = jsonData.message || "Stream interrupted.";
+
                                     if (!indicatorRemoved) { indicator.remove(); indicatorRemoved = true; }
 
-                                    const errorHtml = `<div class="mid-stream-error">
-                                        ${errorIconSvg}
-                                        <div class="message-content"><b>Connection Lost:</b> ${this.escapeHtml(errMsg)}</div>
+                                    // Append Error to existing text (if any)
+                                    // This preserves partial correct answer before the error occurred
+                                    const errorHtml = `<br><br><div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px; color: #ff6b6b; font-size: 0.9em;">
+                                        ⚠️ <b>Connection Lost:</b> ${this.escapeHtml(errMsg)}
                                     </div>`;
 
                                     bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
@@ -269,6 +270,8 @@ class ChatInterface {
                                     accumulatedText += jsonData.text;
                                     bubbleDiv.innerHTML = marked.parse(accumulatedText);
                                     this.scrollToBottom();
+
+                                    // Optional: throttled scroll could replace the timeout loop if preferred
                                 }
                             } catch (e) {
                                 console.warn('Failed to parse JSON line:', trimmedLine, e);
@@ -279,40 +282,47 @@ class ChatInterface {
             } catch (streamError) {
                 // Handle Network Interruption mid-read
                 if (!indicatorRemoved) { indicator.remove(); indicatorRemoved = true; }
-                const errorHtml = `<div class="mid-stream-error">
-                    ${errorIconSvg}
-                    <div class="message-content"><b>Network Interrupted</b></div>
+                const errorHtml = `<br><br><div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px; color: #ff6b6b; font-size: 0.9em;">
+                    ⚠️ <b>Network Interrupted</b>
                 </div>`;
                 bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
                 throw streamError;
             }
 
-            // Only add to history and add copy button on full success
-            if (accumulatedText) {
-                this.chatHistory.push({ role: 'bot', content: accumulatedText });
-                const copyBtn = this.createCopyButton(accumulatedText);
-                bubbleDiv.appendChild(copyBtn);
-            }
+            this.chatHistory.push({ role: 'bot', content: accumulatedText });
+
+            const copyBtn = this.createCopyButton(accumulatedText);
+            bubbleDiv.appendChild(copyBtn);
 
         } catch (error) {
-            // console.error('Streaming error flow:', error);
+            console.error('Streaming error flow:', error);
 
             // Clean up indicator if still present
             if (indicator && indicator.parentNode) {
                 indicator.remove();
             }
-            
-            const hasContent = bubbleDiv.textContent.trim().length > 0 && !bubbleDiv.querySelector('.streaming-indicator');
 
-            // Fallback to display a generic error if the bubble is still empty
-            if (!hasContent && !bubbleDiv.innerHTML.includes('error-bubble') && !bubbleDiv.innerHTML.includes('mid-stream-error')) {
-                 bubbleDiv.classList.add('error-bubble');
-                //  bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(error.message)}</p></div>`;
-                 bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>Sorry, I'm having trouble connecting to the server. Please try again.</p></div>`;
+            // QA Fix: Save partial history if substantial
+            if (accumulatedText && accumulatedText.length > 5) {
+                this.chatHistory.push({ role: 'bot', content: accumulatedText });
+
+                // QA Fix: Add copy button even on error
+                if (!bubbleDiv.querySelector('.copy-btn')) {
+                    const copyBtn = this.createCopyButton(accumulatedText);
+                    bubbleDiv.appendChild(copyBtn);
+                }
             }
 
-            // DO NOT re-throw here, as this function handles all UI updates for errors.
-            // throw error; 
+            // QA Fix: Robust check for empty state
+            // If bubble is empty or only had indicator
+            const hasContent = bubbleDiv.textContent.trim().length > 0 && !bubbleDiv.querySelector('.streaming-indicator');
+
+            if (!hasContent && !bubbleDiv.innerHTML.includes('Error') && !bubbleDiv.innerHTML.includes('Connection failed')) {
+                bubbleDiv.innerHTML = `<div style="color: #ff6b6b; font-weight: 500;">⚠️ Connection failed: ${this.escapeHtml(error.message)}</div>`;
+            }
+
+            // Re-throw to inform main sendMessage catch (optional)
+            throw error;
         } finally {
             this.currentStreamingMessage = null;
         }
@@ -322,7 +332,7 @@ class ChatInterface {
         this.isStreaming = streaming;
         this.sendButton.disabled = streaming;
         this.messageInput.disabled = streaming;
-        
+
         if (streaming) {
             this.messageInput.placeholder = 'Receiving response...';
             this.messageInput.style.opacity = '0.5';

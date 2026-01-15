@@ -51,6 +51,16 @@ chrome.runtime.onMessage.addListener(async (message) => {
 
       case "recording-stopped":
         chrome.action.setIcon({ path: "icons/not-recording.png" });
+        {
+          // Check if an offscreen document exists before trying to close it.
+          const existingContexts = await chrome.runtime.getContexts({});
+          const offscreenDocument = existingContexts.find(
+              (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+          );
+          if (offscreenDocument) {
+              await chrome.offscreen.closeDocument();
+          }
+        }
         break;
 
       case "update-icon":

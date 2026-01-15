@@ -12,19 +12,20 @@ const {
   deleteAudioFile,
   initialiseCloudinary,
 } = require("../db/cloudinary-utils/audio.db"); // Cloudinary utils
+const { completeMeeting, completeMeetingWithErrors } = require("./meetingCompletion");
 const config = require("../utils/config");
 
-const audioQueue = "audio_queue";
+const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
 let globalConnection = null;
 let globalChannel = null;
+let isShuttingDown = false; // Flag to prevent "unexpected close" logs during graceful exit
 
-/**
- * @description Starts the persistent worker that consumes audio transcription jobs from the RabbitMQ queue.
- */
+
 const startWorker = async () => {
   try {
+    isShuttingDown = false; // Reset flag on start
     // Initialise Cloudinary once
     initialiseCloudinary();
 
@@ -33,10 +34,14 @@ const startWorker = async () => {
     globalChannel = await globalConnection.createChannel();
 
     globalConnection.on("close", (err) => {
-      console.error("Worker: RabbitMQ connection closed unexpectedly:", err);
+      if (!isShuttingDown) {
+        console.error("Worker: RabbitMQ connection closed unexpectedly:", err);
+      }
     });
     globalChannel.on("close", (err) => {
-      console.error("Worker: RabbitMQ channel closed unexpectedly:", err);
+      if (!isShuttingDown) {
+        console.error("Worker: RabbitMQ channel closed unexpectedly:", err);
+      }
     });
 
     await globalChannel.assertQueue(audioQueue, { durable: true });
@@ -51,7 +56,8 @@ const startWorker = async () => {
     globalChannel.consume(
       audioQueue,
       async (msg) => {
-        console.log("Worker: Received a message from the queue.");
+        console.log("\n\n\n----Worker: Received a message from the queue.-----\n\n\n");
+        console.log("------START OF ONE WORKER PROCESS------\n\n\n");
         if (msg === null) {
           console.log("Worker: Consumer cancelled. No message received.");
           return;
@@ -61,6 +67,7 @@ const startWorker = async () => {
         let fileId;
         let metadata = {};
         let jobId;
+        let chunkProcessedSuccessfully = false; // Track processing outcome for last chunk handling
 
         try {
           // Parse message
@@ -74,11 +81,11 @@ const startWorker = async () => {
 
           console.log(`Worker: Processing job - JobId: ${jobId}, FileId: ${fileId}`);
 
-          // Ensure meeting is still active
+          // Ensure meeting is still active (skip if already finalized)
           const meetingStatus = await getMeetingStatus(jobId);
-          if (meetingStatus === "completed") {
+          if (meetingStatus === "completed" || meetingStatus === "completed_with_errors") {
             console.log(
-              `Worker: Skipping job for jobId ${jobId}. Meeting is already completed.`
+              `Worker: Skipping job for jobId ${jobId}. Meeting is already finalized (${meetingStatus}).`
             );
             await deleteAudioFile(fileId);
             globalChannel.ack(msg);
@@ -149,8 +156,7 @@ const startWorker = async () => {
           }
 
           console.log(
-            `Worker: Transcription processed and embedded successfully for "${
-              metadata.originalFileName || "unknown"
+            `Worker: Transcription processed and embedded successfully for "${metadata.originalFileName || "unknown"
             }"`
           );
 
@@ -162,28 +168,31 @@ const startWorker = async () => {
 
           globalChannel.ack(msg);
           console.log(
-            `Worker: Acknowledged message for "${
-              metadata.originalFileName || "unknown"
+            `Worker: Acknowledged message for "${metadata.originalFileName || "unknown"
             }"`
           );
+
+          console.log("\n\n\n------END OF ONE WORKER PROCESS------\n\n\n");
+
+          chunkProcessedSuccessfully = true; // Mark as successful only if we reach this point
+
         } catch (error) {
           console.error(
-            `Worker: An error occurred during message processing for "${
-              metadata.originalFileName || "unknown"
-            }"`
+            `\n\n\nXXXXX----Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
+            }"----XXXXX\n\n\n`
           );
-          console.error("Worker: Error details:", error);
+          console.error("Worker: Error details:\n\n\n", error);
 
           // Delete from Cloudinary even if failure
           if (fileId) {
             try {
               await deleteAudioFile(fileId);
               console.log(
-                `Worker: Deleted failed job's audio file and metadata for ID: ${fileId}`
+                `-----Worker: Deleted failed job's audio file and metadata for ID: ${fileId}-----\n\n\n`
               );
             } catch (deleteError) {
               console.error(
-                `Worker: Failed to delete audio file and metadata for failed job:`,
+                `-----Worker: Failed to delete audio file and metadata for failed job:-----\n\n\n`,
                 deleteError
               );
             }
@@ -192,10 +201,25 @@ const startWorker = async () => {
           // Don't requeue failed messages to prevent infinite loops
           globalChannel.nack(msg, false, false);
           console.error(
-            `Worker: Nacked message for "${
-              metadata.originalFileName || "unknown"
+            `Worker: Nacked message for "${metadata.originalFileName || "unknown"
             }" (requeued: false)`
           );
+        }
+
+        // CRITICAL: Check for last chunk AFTER try-catch
+        // Call appropriate completion function based on processing outcome
+        if (messageContent && messageContent.isLastChunk && jobId) {
+          console.log(`Worker: Last chunk detected for jobId ${jobId}. Initiating meeting completion...`);
+          try {
+            if (chunkProcessedSuccessfully) {
+              await completeMeeting(jobId);
+            } else {
+              console.warn(`Worker: Last chunk failed processing. Marking meeting with errors.`);
+              await completeMeetingWithErrors(jobId);
+            }
+          } catch (completionError) {
+            console.error(`Worker: Failed to complete meeting for jobId ${jobId}:`, completionError);
+          }
         }
       },
       {
@@ -223,12 +247,26 @@ const startWorker = async () => {
 // Graceful shutdown handler
 const shutdown = async () => {
   console.log("Worker: Shutting down gracefully...");
+  isShuttingDown = true; // Mark as intentional shutdown
   try {
     if (globalChannel) {
-      await globalChannel.close();
+      try {
+        await globalChannel.close();
+      } catch (err) {
+        // Ignore errors if already closed or closing
+        if (err.message !== 'Channel closed' && err.message !== 'Channel closing') {
+          console.error("Worker: Error closing channel:", err.message);
+        }
+      }
     }
     if (globalConnection) {
-      await globalConnection.close();
+      try {
+        await globalConnection.close();
+      } catch (err) {
+        if (err.message !== 'Connection closed' && err.message !== 'Connection closing') {
+          console.error("Worker: Error closing connection:", err.message);
+        }
+      }
     }
     console.log("Worker: Shutdown complete.");
   } catch (error) {
@@ -236,10 +274,7 @@ const shutdown = async () => {
   }
 };
 
-// Handle process termination
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
+// Export the shutdown function so the main process can call it
 module.exports = {
   startWorker,
   shutdown,

@@ -8,6 +8,7 @@ const { getEmbedding } = require('./embedding/embeddingService'); // Reusing the
 const client = new QdrantClient({
     url: config.QDRANT_URL,
     apiKey: config.QDRANT_API_KEY,
+    timeout: 60000,
 });
 
 // Collection names from config
@@ -26,7 +27,7 @@ const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION;
 const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
     try {
         console.log(`Qdrant: Querying '${TRANSCRIPTION_COLLECTION_NAME}' for jobId: ${jobId} with prompt: "${userPrompt.substring(0, 50)}..."`);
-        
+
         const queryVector = await getEmbedding(userPrompt);
 
         if (!queryVector || queryVector.length === 0) {

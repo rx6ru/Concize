@@ -1,15 +1,10 @@
 // controllers/transcription.js
 
-const Groq = require("groq-sdk");
 const config = require("../utils/config");
+const groqService = require("../utils/llm/groqService");
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: config.GROQ_API_KEY,
-});
 
 /**
  * Transcribes audio using Groq's Whisper API
@@ -19,6 +14,9 @@ const groq = new Groq({
  */
 async function transcribe(audioBuffer, metadata = {}) {
   console.log("TRANSCRIPTION_LOG: Entering transcribe function.");
+
+  // Declare tempFilePath outside try so it's accessible in catch for cleanup
+  let tempFilePath = null;
 
   try {
     // Validate inputs
@@ -38,19 +36,22 @@ async function transcribe(audioBuffer, metadata = {}) {
     // Create a temporary file from the buffer
     const tempDir = os.tmpdir();
     const tempFileName = `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.webm`;
-    const tempFilePath = path.join(tempDir, tempFileName);
+    tempFilePath = path.join(tempDir, tempFileName);
 
     console.log(`TRANSCRIPTION_LOG: Writing buffer to temporary file: ${tempFilePath}`);
-    
+
     // Write buffer to temporary file
     fs.writeFileSync(tempFilePath, audioBuffer);
-    
+
     console.log(`TRANSCRIPTION_LOG: Temporary file created. Size: ${fs.statSync(tempFilePath).size} bytes`);
 
     // Create file stream for Groq API
     const fileStream = fs.createReadStream(tempFilePath);
 
     console.log(`TRANSCRIPTION_LOG: Calling Groq API for transcription with model: "whisper-large-v3"...`);
+
+    // Get rotated Groq client
+    const groq = groqService.getClient();
 
     // Call Groq transcription API
     const transcription = await groq.audio.transcriptions.create({
@@ -81,32 +82,26 @@ async function transcribe(audioBuffer, metadata = {}) {
     console.error("TRANSCRIPTION_ERROR: Groq Transcription API Error caught:");
     console.error("   Message:", error.message);
     console.error("   Error type:", error.constructor.name);
-    
+
     if (error.status) {
       console.error("   HTTP Status:", error.status);
     }
-    
+
     if (error.error) {
       console.error("   API Error Details:", error.error);
     }
-    
+
     console.error("   Error Stack:", error.stack);
 
-    // Clean up temporary file if it exists
-    const tempDir = os.tmpdir();
-    const possibleTempFiles = fs.readdirSync(tempDir).filter(file => 
-      file.startsWith('audio_') && file.endsWith('.webm')
-    );
-    
-    for (const tempFile of possibleTempFiles) {
+    // Clean up THIS request's temporary file only (not all audio_*.webm files)
+    if (tempFilePath) {
       try {
-        const tempFilePath = path.join(tempDir, tempFile);
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath);
-          console.log(`TRANSCRIPTION_LOG: Cleaned up temporary file: ${tempFile}`);
+          console.log(`TRANSCRIPTION_LOG: Cleaned up temporary file: ${tempFilePath}`);
         }
       } catch (cleanupError) {
-        console.warn(`TRANSCRIPTION_WARNING: Failed to clean up temp file ${tempFile}:`, cleanupError.message);
+        console.warn(`TRANSCRIPTION_WARNING: Failed to clean up temp file:`, cleanupError.message);
       }
     }
 
