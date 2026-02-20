@@ -1,19 +1,22 @@
 // embedChat.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const { getEmbedding } = require('./embeddingService'); // Reusing the existing embedding service
 const { v4: uuidv4 } = require('uuid');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('chatEmbedding');
 
 // Initialize Qdrant client
 const client = new QdrantClient({
-    url: config.QDRANT_URL,
-    apiKey: config.QDRANT_API_KEY,
+    url: config.database.QDRANT_URL,
+    apiKey: config.database.QDRANT_API_KEY,
     timeout: 60000,
 });
 
 // Define the collection name for chat embeddings
-const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION; // This will be a new env variable
+const CHAT_COLLECTION_NAME = config.database.CHAT_COLLECTION; // This will be a new env variable
 
 /**
  * Creates the Qdrant collection for chat embeddings if it doesn't already exist.
@@ -32,7 +35,7 @@ const createChatCollection = async () => {
                     distance: 'Cosine',
                 },
             });
-            console.log(`Qdrant: Collection '${CHAT_COLLECTION_NAME}' created successfully for chat embeddings.`);
+            logger.info(`Collection created successfully`, { collection: CHAT_COLLECTION_NAME });
 
             // Step 2: Now, add the index. This is the new, critical part.
             // The `createPayloadIndex` function tells Qdrant to build an index on a specific field within the payload.
@@ -40,13 +43,13 @@ const createChatCollection = async () => {
                 field_name: 'jobId',
                 field_schema: 'keyword'
             });
-            console.log(`Qdrant: Payload index created for 'jobId' in '${CHAT_COLLECTION_NAME}'.`);
+            logger.info(`Payload index created for 'jobId'`, { collection: CHAT_COLLECTION_NAME });
 
         } else {
-            console.log(`Qdrant: Collection '${CHAT_COLLECTION_NAME}' already exists for chat embeddings.`);
+            logger.info(`Collection already exists`, { collection: CHAT_COLLECTION_NAME });
         }
     } catch (err) {
-        console.error('Qdrant: Error creating or checking chat collection:', err);
+        logger.error('Error creating or checking chat collection', { error: err.message });
         throw err;
     }
 };
@@ -69,7 +72,7 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
         const vector = await getEmbedding(combinedChatText);
 
         if (!vector || vector.length === 0) {
-            console.error(`Qdrant: Skipping chat pair embedding due to failed embedding for jobId: ${jobId}, chatId: ${chatId}`);
+            logger.error(`Skipping chat pair embedding due to failed embedding`, { jobId, chatId });
             return { success: false, error: "Failed to generate embedding for chat pair." };
         }
 
@@ -90,11 +93,11 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
             points: [point],
         });
 
-        console.log(`Qdrant: Successfully upserted chat pair for jobId: ${jobId}, mongoId: ${chatId}`);
+        logger.info(`Successfully upserted chat pair`, { jobId, mongoId: chatId });
         return { success: true, result: result };
 
     } catch (err) {
-        console.error('Qdrant: Error during upsert operation for chat pair:', err);
+        logger.error('Error during upsert operation for chat pair', { error: err.message });
         return { success: false, error: err.message };
     }
 };

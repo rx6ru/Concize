@@ -2,10 +2,13 @@
 
 require('dotenv').config();
 const amqp = require('amqplib');
-const config = require('../configs');
+const config = require('../configs/appConfig');
 const { connectToMongo, getTranscription } = require('../db/mongoutils/transcription.db');
 const { completeSummary } = require('../db/mongoutils/summary.db');
 const { processSummaryUpdate } = require('../services/summaryService');
+const { createLogger } = require('../utils/logger');
+
+const logger = createLogger('summaryWorker');
 
 let channel, connection;
 
@@ -15,24 +18,24 @@ const startSummaryWorker = async () => {
         await connectToMongo();
 
         // 2. Connect to RabbitMQ
-        connection = await amqp.connect(config.CLOUDAMQP_URL);
+        connection = await amqp.connect(config.queues.CLOUDAMQP_URL);
         channel = await connection.createChannel();
 
         // Assert queue
-        await channel.assertQueue(config.SUMMARY_QUEUE, {
+        await channel.assertQueue(config.queues.SUMMARY_QUEUE, {
             durable: true // Ensure queue survives restarts
         });
 
-        console.log(`Summary Worker waiting for messages in ${config.SUMMARY_QUEUE}...`);
+        logger.info(`Summary Worker waiting for messages in ${config.queues.SUMMARY_QUEUE}`);
 
         channel.prefetch(1); // Process one at a time per consumer to maintain order affinity if scaled (though strict order logic is in DB)
 
         // 3. Consume
-        channel.consume(config.SUMMARY_QUEUE, async (msg) => {
+        channel.consume(config.queues.SUMMARY_QUEUE, async (msg) => {
             if (!msg) return;
 
             const { jobId, chunkIndex, isLastChunk } = JSON.parse(msg.content.toString());
-            console.log(`Summary Worker: Received chunk ${chunkIndex} for ${jobId}`);
+            logger.info('Received summary chunk', { jobId, chunkIndex, isLastChunk });
 
             try {
                 // Step A: Validate Chunk Exists in MongoDB
@@ -41,7 +44,7 @@ const startSummaryWorker = async () => {
                 const transcriptionDoc = await getTranscription(jobId);
 
                 if (!transcriptionDoc || !transcriptionDoc.transcriptionChunks || transcriptionDoc.transcriptionChunks.length <= chunkIndex) {
-                    console.warn(`Summary Worker: Chunk ${chunkIndex} not found in DB for ${jobId}. Requeuing with delay...`);
+                    logger.warn('Chunk not found in DB, requeuing with delay', { jobId, chunkIndex });
                     // Nack with requeue=true, but effectively we might want a delay. 
                     // RabbitMQ doesn't have built-in delay without plugins. 
                     // Simple hack: wait locally then nack(true) or just publish to a delay exchange (too complex for now).
@@ -62,14 +65,14 @@ const startSummaryWorker = async () => {
                 }
 
                 channel.ack(msg);
-                console.log(`Summary Worker: Finished chunk ${chunkIndex} for ${jobId}`);
+                logger.info('Finished processing chunk', { jobId, chunkIndex });
 
             } catch (error) {
-                console.error(`Summary Worker: Failed processing ${jobId} chunk ${chunkIndex}:`, error.message);
+                logger.error('Failed processing chunk', { jobId, chunkIndex, error: error.message });
 
                 // If it's an "Out of order" error, we definitely want to retry (requeue).
                 if (error.message.includes('Out of order')) {
-                    console.log("Summary Worker: Requeuing out-of-order chunk...");
+                    logger.info("Requeuing out-of-order chunk", { jobId, chunkIndex });
                     await new Promise(r => setTimeout(r, 2000)); // Simple backoff
                     channel.nack(msg, false, true);
                 } else {
@@ -82,26 +85,28 @@ const startSummaryWorker = async () => {
         });
 
     } catch (error) {
-        console.error('Summary Worker: Startup failed:', error);
+        logger.error('Summary Worker startup failed', { error: error.message });
         process.exit(1);
     }
 };
 
 // Graceful Shutdown
 const gracefulShutdown = async () => {
-    console.log('Summary Worker: Shutting down...');
+    logger.info('Summary Worker: Shutting down...');
     try {
         if (channel) await channel.close();
         if (connection) await connection.close();
-        console.log('Summary Worker: Resources closed.');
+        logger.info('Summary Worker: Resources closed.');
         process.exit(0);
     } catch (err) {
-        console.error('Summary Worker: Shutdown error:', err);
+        logger.error('Summary Worker: Shutdown error', { error: err.message });
         process.exit(1);
     }
 };
 
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
-
-startSummaryWorker();
+// Graceful Shutdown - Only attach if running directly (not imported)
+if (require.main === module) {
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
+    startWorker();
+}

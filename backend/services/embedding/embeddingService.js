@@ -1,11 +1,14 @@
 // embeddingService.js
 'use strict';
 
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const geminiService = require('../../utils/llm/geminiService'); // Key Rotation
+const { createLogger } = require('../../utils/logger');
 
-if (!config?.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {
-    console.warn('WARNING: GEMINI_API_KEYS not set in config. Embeddings will fail.');
+const logger = createLogger('embeddingService');
+
+if (!config?.inference?.geminiKeys || config.inference.geminiKeys.length === 0) {
+    logger.warn('GEMINI_API_KEYS not set in config. Embeddings will fail.');
 }
 
 // Preferred embedding model (Gemini Embedding)
@@ -113,7 +116,7 @@ const getEmbedding = async (text, opts = {}) => {
         : DEFAULT_OUTPUT_DIMENSIONALITY;
 
     try {
-        console.log(`EMBEDDING_LOG: Requesting embedding from model=${model} dim=${outputDimensionality}...`);
+        logger.debug(`Requesting embedding`, { model, outputDimensionality });
 
         // Get rotated client instance
         const aiInstance = geminiService.getClient();
@@ -140,15 +143,15 @@ const getEmbedding = async (text, opts = {}) => {
             const responseShape = (sdkResponse && typeof sdkResponse === 'object')
                 ? Object.keys(sdkResponse)
                 : String(sdkResponse);
-            console.error('EMBEDDING_ERROR: Received unexpected embedding response shape:', JSON.stringify(responseShape, null, 2));
+            logger.error('Unexpected embedding response shape', { responseShape });
             throw new Error('Embedding response did not contain a usable vector. Inspect logs for SDK response shape.');
         }
 
-        console.log('EMBEDDING_LOG: Embedding generated. Vector length =', vector.length);
+        logger.debug('Embedding generated', { vectorLength: vector.length });
         return vector;
 
     } catch (error) {
-        console.error('EMBEDDING_ERROR: Error generating embedding:', error && (error.message || error));
+        logger.error('Error generating embedding', { error: error && (error.message || error) });
         throw error;
     }
 };

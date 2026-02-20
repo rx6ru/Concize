@@ -1,13 +1,16 @@
 // queryVectordb.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const { getEmbedding } = require('../embedding/embeddingService');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('vectorSearchService');
 
 // Initialize Qdrant client
 const client = new QdrantClient({
-    url: config.QDRANT_URL,
-    apiKey: config.QDRANT_API_KEY,
+    url: config.database.QDRANT_URL,
+    apiKey: config.database.QDRANT_API_KEY,
     timeout: 60000,
 });
 
@@ -26,12 +29,12 @@ const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION;
  */
 const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
     try {
-        console.log(`Qdrant: Querying '${TRANSCRIPTION_COLLECTION_NAME}' for jobId: ${jobId} with prompt: "${userPrompt.substring(0, 50)}..."`);
+        logger.debug(`Querying transcriptions`, { collection: TRANSCRIPTION_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
         const queryVector = await getEmbedding(userPrompt);
 
         if (!queryVector || queryVector.length === 0) {
-            console.warn('Qdrant: Failed to generate embedding for user prompt. Skipping transcription query.');
+            logger.warn('Failed to generate embedding for user prompt. Skipping transcription query');
             return [];
         }
 
@@ -52,12 +55,12 @@ const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
             with_vectors: false, // Don't return the vectors, just the payload
         });
 
-        console.log(`Qdrant: Found ${searchResult.length} relevant transcription chunks.`);
+        logger.debug(`Found relevant transcription chunks`, { count: searchResult.length });
         // Extract and return only the payload from the search results
         return searchResult.map(hit => hit.payload);
 
     } catch (err) {
-        console.error('Qdrant: Error querying transcription collection:', err);
+        logger.error('Error querying transcription collection', { error: err.message });
         throw err;
     }
 };
@@ -73,12 +76,12 @@ const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
  */
 const queryChats = async (userPrompt, jobId, limit = 3) => {
     try {
-        console.log(`Qdrant: Querying '${CHAT_COLLECTION_NAME}' for jobId: ${jobId} with prompt: "${userPrompt.substring(0, 50)}..."`);
+        logger.debug(`Querying chat history`, { collection: CHAT_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
         const queryVector = await getEmbedding(userPrompt);
 
         if (!queryVector || queryVector.length === 0) {
-            console.warn('Qdrant: Failed to generate embedding for user prompt. Skipping chat history query.');
+            logger.warn('Failed to generate embedding for user prompt. Skipping chat history query');
             return [];
         }
 
@@ -99,12 +102,12 @@ const queryChats = async (userPrompt, jobId, limit = 3) => {
             with_vectors: false, // Don't return the vectors, just the payload
         });
 
-        console.log(`Qdrant: Found ${searchResult.length} relevant chat history entries.`);
+        logger.debug(`Found relevant chat history entries`, { count: searchResult.length });
         // Extract and return only the payload from the search results
         return searchResult.map(hit => hit.payload);
 
     } catch (err) {
-        console.error('Qdrant: Error querying chat collection:', err);
+        logger.error('Error querying chat collection', { error: err.message });
         throw err;
     }
 };

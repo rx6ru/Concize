@@ -1,5 +1,5 @@
 const Groq = require('groq-sdk');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const BaseKeyRotationService = require('./baseKeyRotation');
 
 class GroqService extends BaseKeyRotationService {

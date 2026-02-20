@@ -11,7 +11,7 @@
 //   const config = require('../configs');
 //   config.server.PORT
 
-const config = require('../configs');
+const config = require('../configs/appConfig');
 
 // Flatten all domain configs for backward compatibility
 module.exports = {

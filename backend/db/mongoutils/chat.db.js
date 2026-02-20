@@ -2,6 +2,9 @@
 
 const mongoose = require('mongoose');
 const Chat = require('../models/chat.model'); // Corrected path to the Chat model
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('chatDb');
 
 /**
  * Creates a new chat entry in the chats collection.
@@ -20,10 +23,10 @@ const createChatEntry = async (jobId, userChat) => {
             // aiChat is intentionally left blank for now
         });
         const savedChat = await newChat.save();
-        console.log(`Chat entry created for jobId: ${jobId}, chatId: ${savedChat._id}`);
+        logger.info(`Chat entry created`, { jobId, chatId: savedChat._id });
         return savedChat;
     } catch (error) {
-        console.error('Error creating chat entry:', error);
+        logger.error('Error creating chat entry', { jobId, error: error.message });
         throw error;
     }
 };
@@ -46,10 +49,10 @@ const updateChatEntry = async (chatId, aiChat) => {
         if (!updatedChat) {
             throw new Error('Chat document not found for update.');
         }
-        console.log(`Chat entry updated with AI response for chatId: ${chatId}`);
+        logger.info(`Chat entry updated with AI response`, { chatId });
         return updatedChat;
     } catch (error) {
-        console.error('Error updating chat entry:', error);
+        logger.error('Error updating chat entry', { chatId, error: error.message });
         throw error;
     }
 };
@@ -82,7 +85,7 @@ const getChatHistory = async (jobId, limit = 5, beforeChatId = null) => {
         // Reverse the order to display them in chronological order for the user.
         return chatHistory.reverse();
     } catch (error) {
-        console.error('Error retrieving chat history:', error);
+        logger.error('Error retrieving chat history', { jobId, error: error.message });
         // It's good practice to re-throw the error so the calling function can handle it.
         throw error;
     }

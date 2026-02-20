@@ -1,4 +1,7 @@
 const MeetingSummary = require('../models/meetingSummary.model');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('summaryDb');
 
 /**
  * Retrieves the meeting summary for a given job ID.
@@ -9,7 +12,7 @@ const getMeetingSummary = async (jobId) => {
     try {
         return await MeetingSummary.findOne({ jobId }).lean();
     } catch (error) {
-        console.error(`DB_ERROR: Failed to fetch summary for jobId ${jobId}:`, error);
+        logger.error(`Failed to fetch summary`, { jobId, error: error.message });
         throw error;
     }
 };
@@ -55,17 +58,17 @@ const startSummaryUpdate = async (jobId, chunkIndex) => {
             // Check if it's an out-of-order issue or just missing doc
             const existing = await MeetingSummary.findOne({ jobId });
             if (existing) {
-                console.warn(`SUMMARY_ORDER_WARN: Skipped chunk ${chunkIndex} for ${jobId}. Expected ${existing.lastProcessedChunkIndex + 1}.`);
+                logger.warn(`Skipped chunk: out of order`, { jobId, chunkIndex, expected: existing.lastProcessedChunkIndex + 1 });
                 throw new Error(`Out of order: chunk ${chunkIndex}, expected ${existing.lastProcessedChunkIndex + 1}`);
             } else if (chunkIndex > 0) {
-                console.warn(`SUMMARY_MISSING_WARN: Skipped chunk ${chunkIndex} for ${jobId}. Document does not exist and index > 0.`);
+                logger.warn(`Skipped chunk: missing doc`, { jobId, chunkIndex });
                 throw new Error(`Summary document indicates missing start for chunk ${chunkIndex}`);
             }
         }
 
         return summary;
     } catch (error) {
-        console.error(`DB_ERROR: Failed to start summary update for ${jobId} chunk ${chunkIndex}:`, error);
+        logger.error(`Failed to start summary update`, { jobId, chunkIndex, error: error.message });
         throw error;
     }
 };
@@ -90,9 +93,9 @@ const saveSummaryContent = async (jobId, updatedData, chunkIndex) => {
                 }
             }
         );
-        console.log(`SUMMARY_UPDATED: Job ${jobId} chunk ${chunkIndex} saved.`);
+        logger.info(`Summary chunk saved`, { jobId, chunkIndex });
     } catch (error) {
-        console.error(`DB_ERROR: Failed to save summary content for ${jobId}:`, error);
+        logger.error(`Failed to save summary content`, { jobId, error: error.message });
         throw error;
     }
 };
@@ -106,9 +109,9 @@ const completeSummary = async (jobId) => {
             { jobId },
             { $set: { status: 'complete', updatedAt: new Date() } }
         );
-        console.log(`SUMMARY_COMPLETE: Job ${jobId} finalized.`);
+        logger.info(`Summary finalized`, { jobId });
     } catch (error) {
-        console.error(`DB_ERROR: Failed to complete summary for ${jobId}:`, error);
+        logger.error(`Failed to complete summary`, { jobId, error: error.message });
         throw error;
     }
 };

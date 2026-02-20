@@ -3,7 +3,7 @@
 // https://inference-docs.cerebras.ai/resources/openai
 
 const Groq = require('groq-sdk');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const BaseKeyRotationService = require('./baseKeyRotation');
 
 class CerebrasService extends BaseKeyRotationService {

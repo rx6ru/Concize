@@ -1,4 +1,4 @@
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const BaseKeyRotationService = require('./baseKeyRotation');
 
 class GeminiService extends BaseKeyRotationService {

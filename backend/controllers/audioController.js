@@ -1,9 +1,11 @@
 // controllers/audioController.js
 
 const amqp = require('amqplib');
-const config = require('../configs');
+const config = require('../configs/appConfig');
+const { createLogger } = require('../utils/logger');
 const { storeAudioFile, deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
 
+const logger = createLogger('audioController');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('@ffprobe-installer/ffprobe').path;
@@ -11,8 +13,8 @@ const ffprobePath = require('@ffprobe-installer/ffprobe').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
 
-const audioQueue = config.AUDIO_QUEUE;
-const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
+const audioQueue = config.queues.AUDIO_QUEUE;
+const CLOUDAMQP_URL = config.queues.CLOUDAMQP_URL;
 
 /**
  * Extracts audio metadata (format, duration) from a buffer using ffprobe.
@@ -73,21 +75,20 @@ const handleAudioUpload = async (req, res) => {
 
     // --- Input and Session Validation ---
     if (!audioFile) {
-        console.error('Validation Error: No audio file provided.');
+        logger.warn('No audio file provided');
         return res.status(400).send('No audio file provided.');
     }
     if (!jobId) {
-        console.error('Validation Error: No meeting session found.');
+        logger.warn('No meeting session found — missing jobId cookie');
         return res.status(400).send('No meeting session found. Please start a meeting first.');
     }
 
-    console.log(`1: File received for jobId ${jobId}.`);
-    console.log(`2: File size: ${audioFile.buffer.length} bytes.`);
+    logger.info('Audio file received', { jobId, size: audioFile.buffer.length });
 
     // --- Metadata Extraction ---
     let metadata;
     try {
-        console.log("3: Extracting metadata with ffprobe...");
+        logger.debug('Extracting metadata with ffprobe', { jobId });
         metadata = await getMetadataFromBuffer(audioFile.buffer);
 
         let formatNames = [];
@@ -97,37 +98,34 @@ const handleAudioUpload = async (req, res) => {
                 .map(f => f.trim().toLowerCase());
         }
 
-        console.log(
-            "4: Metadata extraction succeeded. Formats:",
-            formatNames,
-            "Duration:",
-            metadata.format.duration
-        );
+        logger.info('Metadata extraction succeeded', {
+            jobId, formats: formatNames, duration: metadata.format.duration
+        });
 
         metadata.format.formatNames = formatNames;
     } catch (err) {
-        console.error('An error occurred during metadata parsing:', err);
+        logger.error('Metadata parsing failed', { jobId, error: err.message });
         return res.status(500).send('Failed to process audio file metadata.');
     }
 
     // --- Validation Checks ---
-    console.log("5: Running validation checks...");
+    logger.debug('Running validation checks', { jobId });
     const validation = validateAudio(audioFile.buffer, metadata);
     if (!validation.valid) {
-        console.error(`Validation failed: ${validation.error}`);
+        logger.warn('Audio validation failed', { jobId, reason: validation.error });
         return res.status(400).send(validation.error);
     }
-    console.log("10: All validations passed.");
+    logger.info('All validations passed', { jobId });
 
     // --- Upload to Cloudinary ---
-    console.log("11: Starting Cloudinary upload...");
+    logger.info('Starting Cloudinary upload', { jobId });
     let fileId;
     try {
         const uploadResult = await storeAudioFile(audioFile.buffer, audioFile.originalname, jobId);
         fileId = uploadResult.public_id;
-        console.log(`12: File uploaded to Cloudinary successfully with ID: ${fileId}`);
+        logger.info('File uploaded to Cloudinary', { jobId, fileId });
     } catch (uploadErr) {
-        console.error('Failed to upload to Cloudinary:', uploadErr);
+        logger.error('Cloudinary upload failed', { jobId, error: uploadErr.message });
         return res.status(500).send('Failed to upload audio file.');
     }
 
@@ -137,14 +135,14 @@ const handleAudioUpload = async (req, res) => {
 
     try {
         conn = await amqp.connect(CLOUDAMQP_URL);
-        console.log("13: RabbitMQ connection established successfully!");
+        logger.debug('RabbitMQ connection established', { jobId });
         ch = await conn.createConfirmChannel();
-        console.log("14: Confirm channel created successfully!");
+        logger.debug('Confirm channel created', { jobId });
 
         await ch.assertQueue(audioQueue, { durable: true });
 
         const isLastChunk = req.headers['x-last-chunk'] === 'true';
-        console.log(`14.5: Last chunk flag detected: ${isLastChunk}`);
+        logger.debug('Last chunk flag', { jobId, isLastChunk });
 
         const message = {
             jobId: jobId,
@@ -160,27 +158,26 @@ const handleAudioUpload = async (req, res) => {
             },
         };
 
-        console.log("15: Message prepared and sending to queue.");
+        logger.debug('Sending message to queue', { jobId, fileId });
 
         ch.sendToQueue(audioQueue, Buffer.from(JSON.stringify(message)), { persistent: true });
         await ch.waitForConfirms();
 
-        console.log(`Audio file with ID "${fileId}" for jobId ${jobId} confirmed by RabbitMQ and pushed to queue.`);
+        logger.info('Audio pushed to transcription queue', { jobId, fileId });
 
         res.status(202).json({
             message: 'Audio file received and pushed to queue for transcription.'
         });
 
     } catch (queueErr) {
-        console.error('Error with RabbitMQ or message confirmation:', queueErr);
+        logger.error('RabbitMQ publish failed', { jobId, error: queueErr.message });
 
-        // Clean up uploaded file if queue fails
         if (fileId) {
             try {
                 await deleteAudioFile(fileId);
-                console.log('Cleaned up uploaded file due to queue failure');
+                logger.info('Cleaned up uploaded file after queue failure', { jobId, fileId });
             } catch (cleanupErr) {
-                console.error('Failed to clean up file:', cleanupErr);
+                logger.error('Failed to clean up file after queue failure', { jobId, fileId, error: cleanupErr.message });
             }
         }
 
@@ -189,10 +186,10 @@ const handleAudioUpload = async (req, res) => {
         }
     } finally {
         if (ch) {
-            await ch.close().catch(e => console.error("Error closing channel:", e));
+            await ch.close().catch(e => logger.error('Error closing channel', { error: e.message }));
         }
         if (conn) {
-            await conn.close().catch(e => console.error("Error closing connection:", e));
+            await conn.close().catch(e => logger.error('Error closing connection', { error: e.message }));
         }
     }
 };

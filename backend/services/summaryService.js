@@ -2,6 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { getSummaryInference } = require('../utils/llm/inferenceProvider');
 const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
+const { createLogger } = require('../utils/logger');
+
+const logger = createLogger('summaryService');
 
 // Load prompt template from secure module
 const { getSummaryPrompt } = require('../.secrets/meetingSummary');
@@ -22,7 +25,7 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
     try {
         // Get inference client routed by config
         const { client, model, taskConfig } = getSummaryInference();
-        console.log(`[Inference] Summary using ${taskConfig.provider} → ${model}`);
+        logger.debug('Generating summary', { provider: taskConfig.provider, model });
 
         const completion = await client.chat.completions.create({
             messages: [
@@ -48,7 +51,7 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
         return parsed;
 
     } catch (error) {
-        console.error("LLM_SUMMARY_ERROR:", error);
+        logger.error("LLM_SUMMARY_ERROR", { error: error.message });
         throw error;
     }
 };

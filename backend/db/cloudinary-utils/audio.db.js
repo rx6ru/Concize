@@ -2,15 +2,19 @@
 const cloudinary = require("cloudinary").v2;
 const axios = require('axios');
 const path = require('path');
+const config = require('../../configs/appConfig');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('cloudinaryUtils');
 
 // Initialize Cloudinary once
 const initialiseCloudinary = () => {
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    cloud_name: config.storage.CLOUDINARY_CLOUD_NAME,
+    api_key: config.storage.CLOUDINARY_API_KEY,
+    api_secret: config.storage.CLOUDINARY_API_SECRET,
   });
-  console.log("✅ Cloudinary initialized.");
+  logger.info("Cloudinary initialized");
 };
 
 // Upload audio
@@ -28,10 +32,10 @@ const storeAudioFile = (audioData, fileName, jobId) => {
       },
       (error, result) => {
         if (error) {
-          console.error("❌ Cloudinary upload failed:", error);
+          logger.error("Cloudinary upload failed", { error });
           return reject(error);
         }
-        console.log(`✅ Uploaded: ${result.secure_url}`);
+        logger.info(`Uploaded audio file`, { url: result.secure_url, publicId: result.public_id });
         resolve({
           public_id: result.public_id,
           url: result.secure_url,
@@ -46,11 +50,11 @@ const storeAudioFile = (audioData, fileName, jobId) => {
 // Fetch audio as Buffer from Cloudinary
 const fetchAudioFile = async (publicId, resourceType = "video") => {
   if (!publicId) throw new Error("A publicId is required to fetch the audio file.");
-  
+
   // Use the exact publicId as stored - it already includes the folder prefix
   const url = cloudinary.url(publicId, { resource_type: resourceType, secure: true });
-  console.log(`Fetching audio from Cloudinary URL: ${url}`);
-  
+  logger.debug(`Fetching audio from Cloudinary`, { url, publicId });
+
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
@@ -59,13 +63,18 @@ const fetchAudioFile = async (publicId, resourceType = "video") => {
     return Buffer.from(response.data);
   } catch (error) {
     console.error('Error downloading audio from Cloudinary:', error);
-    
+
     // Enhanced error logging
     if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response headers:', error.response.headers);
+      logger.error('Error downloading audio', {
+        status: error.response.status,
+        headers: error.response.headers,
+        publicId
+      });
+    } else {
+      logger.error('Error downloading audio', { error: error.message, publicId });
     }
-    
+
     throw new Error(`Failed to fetch audio file: ${error.message}`);
   }
 };
@@ -74,10 +83,10 @@ const fetchAudioFile = async (publicId, resourceType = "video") => {
 const deleteAudioFile = async (publicId) => {
   try {
     const result = await cloudinary.uploader.destroy(publicId, { resource_type: "video" });
-    console.log(`Cloudinary delete response for ${publicId}:`, result);
+    logger.info(`Cloudinary delete response`, { publicId, result });
     return result;
   } catch (error) {
-    console.error("❌ Delete failed:", error);
+    logger.error("Delete failed", { publicId, error });
     throw error;
   }
 };

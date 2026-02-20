@@ -1,5 +1,8 @@
 // services/meetingService.js
 const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
+const { createLogger } = require('../utils/logger');
+
+const logger = createLogger('meetingService');
 
 /**
  * Marks a meeting as completed in the database.
@@ -10,18 +13,18 @@ const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
  * @returns {Promise<boolean>} - True if successful, false otherwise.
  */
 const completeMeeting = async (jobId) => {
-    console.log(`COMPLETION_LOG: Attempting to mark meeting ${jobId} as completed...`);
+    logger.info(`Attempting to mark meeting as completed`, { jobId });
     try {
         const result = await updateMeetingStatus(jobId, 'completed');
         if (result) {
-            console.log(`COMPLETION_LOG: Successfully marked meeting ${jobId} as completed.`);
+            logger.info(`Successfully marked meeting as completed`, { jobId });
             return true;
         } else {
-            console.warn(`COMPLETION_LOG: Failed to mark meeting ${jobId} as completed. Meeting might not exist.`);
+            logger.warn(`Failed to mark meeting as completed - might not exist`, { jobId });
             return false;
         }
     } catch (error) {
-        console.error(`COMPLETION_ERROR: Error finalizing meeting ${jobId}:`, error);
+        logger.error(`Error finalizing meeting`, { jobId, error: error.message });
         return false;
     }
 };
@@ -35,18 +38,18 @@ const completeMeeting = async (jobId) => {
  * @returns {Promise<boolean>} - True if successful, false otherwise.
  */
 const completeMeetingWithErrors = async (jobId) => {
-    console.warn(`COMPLETION_WARN: Marking meeting ${jobId} as completed_with_errors...`);
+    logger.warn(`Marking meeting as completed_with_errors`, { jobId });
     try {
         const result = await updateMeetingStatus(jobId, 'completed_with_errors');
         if (result) {
-            console.warn(`COMPLETION_WARN: Meeting ${jobId} marked as completed_with_errors. Some data may be missing.`);
+            logger.warn(`Meeting marked as completed_with_errors. Some data may be missing.`, { jobId });
             return true;
         } else {
-            console.error(`COMPLETION_ERROR: Failed to mark meeting ${jobId} as completed_with_errors.`);
+            logger.error(`Failed to mark meeting as completed_with_errors`, { jobId });
             return false;
         }
     } catch (error) {
-        console.error(`COMPLETION_ERROR: Error finalizing meeting ${jobId} with errors:`, error);
+        logger.error(`Error finalizing meeting with errors`, { jobId, error: error.message });
         return false;
     }
 };

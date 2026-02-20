@@ -7,6 +7,9 @@ const { queryTranscriptions, queryChats } = require('../services/retrieval/vecto
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('../services/embedding/chatEmbedding');
 const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { createLogger } = require('../utils/logger');
+
+const logger = createLogger('chatLLM');
 
 // Security modules
 const {
@@ -181,10 +184,10 @@ ${userPrompt}`;
         // Step 2: Create chat entry in DB
         const newChat = await createChatEntry(jobId, userPrompt);
         chatId = newChat._id;
-        console.log(`Chat entry created with ID: ${chatId}`);
+        logger.info('Chat entry created', { chatId, jobId });
 
     } catch (phase1Error) {
-        console.error("LLM_PRE_STREAM_ERROR:", phase1Error);
+        logger.error('LLM_PRE_STREAM_ERROR', { jobId, error: phase1Error.message });
         const { status, message, code } = mapErrorToResponse(phase1Error);
 
         // Return Category B (JSON Error)
@@ -239,7 +242,7 @@ ${userPrompt}`;
         // Retry loop
         for (let attempt = 0; attempt < 3; attempt++) {
             if (res.writableEnded || !res.writable) {
-                console.warn("Client disconnected, aborting LLM retry loop.");
+                logger.warn('Client disconnected, aborting LLM retry loop', { jobId });
                 break;
             }
 
@@ -249,7 +252,12 @@ ${userPrompt}`;
 
                 // Get inference client routed by config
                 const { client, model, taskConfig } = getChatInference();
-                console.log(`[Inference] Attempt ${attempt + 1} using ${taskConfig.provider} → ${model}`);
+                logger.info('Inference attempt started', {
+                    attempt: attempt + 1,
+                    provider: taskConfig.provider,
+                    model,
+                    jobId
+                });
 
                 const stream = await client.chat.completions.create({
                     messages: [
@@ -282,14 +290,14 @@ ${userPrompt}`;
                 if (currentResponseChunk.trim()) {
                     fullResponseText = currentResponseChunk;
                     responseValid = true;
-                    console.log(`LLM Response received on attempt ${attempt + 1}.`);
+                    logger.info('LLM Response received', { attempt: attempt + 1, jobId });
                     break;
                 } else {
-                    console.log(`LLM returned empty response on attempt ${attempt + 1}. Retrying...`);
+                    logger.warn('LLM returned empty response. Retrying...', { attempt: attempt + 1, jobId });
                 }
 
             } catch (llmError) {
-                console.error(`LLM_STREAM_ERROR on attempt ${attempt + 1}:`, llmError);
+                logger.error('LLM_STREAM_ERROR', { attempt: attempt + 1, jobId, error: llmError.message });
 
                 // Ensure heartbeat cleared
                 clearHeartbeat();
@@ -304,7 +312,7 @@ ${userPrompt}`;
 
                 // Delay before retry
                 if (attempt === 1) {
-                    console.log("LLM: Waiting 5 seconds before final retry...");
+                    logger.info('LLM: Waiting 5 seconds before final retry...', { jobId });
                     await new Promise(resolve => setTimeout(resolve, 5000));
                 }
             }
@@ -315,13 +323,13 @@ ${userPrompt}`;
             try {
                 if (chatId) {
                     await updateChatEntry(chatId, fullResponseText);
-                    console.log("Chat history successfully updated in MongoDB.");
+                    logger.debug("Chat history updated in MongoDB", { chatId });
 
                     await upsertChatPair(jobId, userPrompt, fullResponseText, chatId);
-                    console.log("Chat pair embedded successfully.");
+                    logger.debug("Chat pair embedded successfully", { chatId });
                 }
             } catch (dbError) {
-                console.error("MONGODB_UPDATE_ERROR:", dbError);
+                logger.error("MONGODB_UPDATE_ERROR", { jobId, chatId, error: dbError.message });
             }
 
             // End the stream
@@ -329,12 +337,12 @@ ${userPrompt}`;
                 res.write('data: {"event": "stream_end"}\n\n');
                 res.end();
             }
-            console.log("LLM: Streaming complete.");
+            logger.info("LLM: Streaming complete", { jobId, chatId });
 
         } else {
             // No valid response after retries (Mid-stream failure)
             clearHeartbeat();
-            console.log("LLM failed to generate a response after all attempts.");
+            logger.error("LLM failed to generate a response after all attempts", { jobId });
             if (res.writable && !res.writableEnded) {
                 res.write(`data: ${JSON.stringify({ text: "I apologize, but I couldn't generate a response at this time. Please try again later." })}\n\n`);
                 res.write('data: {"event": "stream_end"}\n\n');
@@ -343,7 +351,7 @@ ${userPrompt}`;
         }
 
     } catch (error) {
-        console.error("LLM_STREAM_ERROR (Phase 2):", error);
+        logger.error("LLM_STREAM_ERROR (Phase 2)", { jobId, error: error.message });
 
         // Ensure heartbeat cleared
         clearHeartbeat();
@@ -370,7 +378,7 @@ ${userPrompt}`;
                 res.write(`data: ${JSON.stringify({ code, message })}\n\n`);
                 res.end();
             } catch (writeErr) {
-                console.error("Failed to write error chunk to stream:", writeErr.message);
+                logger.error("Failed to write error chunk to stream", { jobId, error: writeErr.message });
                 // Force close if writing fails
                 try { res.end(); } catch (_) { }
             }

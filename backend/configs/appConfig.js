@@ -9,6 +9,10 @@
 
 require('dotenv').config();
 
+// Logger must be required AFTER dotenv to pick up LOG_LEVEL
+const { createLogger } = require('../utils/logger');
+const logger = createLogger('config');
+
 const server = require('./server');
 const database = require('./database');
 const storage = require('./storage');
@@ -54,26 +58,27 @@ if (!database.MONGODB_URL) {
     warnings.push('MONGODB_URL is not set.');
 }
 
-if (!storage.CLOUDAMQP_URL) {
-    warnings.push('CLOUDAMQP_URL is not set.');
+if (!queues.CLOUDAMQP_URL) {
+    warnings.push('CLOUDAMQP_URL is not set in queues config.');
 }
 
 // Print validation results
 if (errors.length > 0) {
-    errors.forEach(e => console.error(`[CONFIG ERROR] ${e}`));
+    errors.forEach(e => logger.error(e));
     throw new Error(`Config validation failed:\n  - ${errors.join('\n  - ')}`);
 }
 
 if (warnings.length > 0) {
-    warnings.forEach(w => console.warn(`[CONFIG WARNING] ${w}`));
+    warnings.forEach(w => logger.warn(w));
 }
 
 // Log active inference routing
-console.log('[CONFIG] Inference routing:');
-console.log(`  Chat:    ${inference.chat.provider} → ${inference.chat.model}`);
-console.log(`  Clean:   ${inference.clean.provider} → ${inference.clean.model}`);
-console.log(`  Summary: ${inference.summary.provider} → ${inference.summary.model}`);
-console.log(`  Transcription: groq → whisper-large-v3 (fixed)`);
+logger.info('Inference routing configuration', {
+    chat: `${inference.chat.provider} -> ${inference.chat.model}`,
+    clean: `${inference.clean.provider} -> ${inference.clean.model}`,
+    summary: `${inference.summary.provider} -> ${inference.summary.model}`,
+    transcription: 'groq -> whisper-large-v3 (fixed)'
+});
 
 const config = Object.freeze({
     server,

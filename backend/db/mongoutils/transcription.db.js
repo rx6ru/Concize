@@ -2,22 +2,23 @@
 
 const mongoose = require('mongoose');
 const Meeting = require('../models/meeting.model'); // Import the Mongoose model
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('transcriptionDb');
 
 /**
  * Connects to the MongoDB database using the URI from the config.
  */
 async function connectToMongo() {
     try {
-        await mongoose.connect(config.MONGODB_URL, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
+        await mongoose.connect(config.database.MONGODB_URL, {
             dbName: 'concize' // Explicitly set the database name here
         });
-        console.log('Connected to MongoDB via Mongoose.');
+        logger.info('Connected to MongoDB via Mongoose');
     } catch (err) {
-        console.error('Error connecting to MongoDB:', err);
-        process.exit(1); // Exit process with failure
+        logger.error('Error connecting to MongoDB', { error: err.message });
+        throw err; // Allow caller to handle shutdown
     }
 }
 
@@ -32,10 +33,10 @@ async function createTranscription(jobId) {
             jobId: jobId,
         });
         await newMeeting.save();
-        console.log(`New transcription document created for jobId: ${jobId}`);
+        logger.info(`New transcription document created`, { jobId });
         return true;
     } catch (err) {
-        console.error('Error creating transcription document:', err);
+        logger.error('Error creating transcription document', { jobId, error: err.message });
         return false;
     }
 }
@@ -57,14 +58,14 @@ async function appendTranscription(jobId, newText) {
 
         if (result) {
             const chunkIndex = result.transcriptionChunks.length - 1;
-            console.log(`Successfully appended text for jobId: ${jobId}, chunkIndex: ${chunkIndex}`);
+            logger.info(`Successfully appended text`, { jobId, chunkIndex });
             return { success: true, chunkIndex };
         }
 
-        console.warn(`Failed to append text for jobId: ${jobId}. Unknown error.`);
+        logger.warn(`Failed to append text - unknown error`, { jobId });
         return { success: false, chunkIndex: -1 };
     } catch (err) {
-        console.error('Error appending transcription text:', err);
+        logger.error('Error appending transcription text', { jobId, error: err.message });
         return { success: false, chunkIndex: -1, error: err };
     }
 }
@@ -84,7 +85,7 @@ async function updateMeetingStatus(jobId, newStatus) {
         );
         return !!result; // Return true if a document was found and updated
     } catch (err) {
-        console.error('Error updating meeting status:', err);
+        logger.error('Error updating meeting status', { jobId, newStatus, error: err.message });
         return false;
     }
 }
@@ -99,7 +100,7 @@ async function getMeetingStatus(jobId) {
         const meeting = await Meeting.findOne({ jobId: jobId }, { status: 1, _id: 0 });
         return meeting ? meeting.status : null;
     } catch (err) {
-        console.error('Error fetching meeting status:', err);
+        logger.error('Error fetching meeting status', { jobId, error: err.message });
         return null;
     }
 }
@@ -113,13 +114,13 @@ async function getTranscription(jobId) {
     try {
         const document = await Meeting.findOne({ jobId: jobId }, { _id: 0, jobId: 0, __v: 0 });
         if (document) {
-            console.log(`Found transcription document for jobId: ${jobId}`);
+            logger.debug(`Found transcription document`, { jobId });
         } else {
-            console.warn(`No transcription document found for jobId: ${jobId}`);
+            logger.warn(`No transcription document found`, { jobId });
         }
         return document;
     } catch (err) {
-        console.error('Error fetching transcription document:', err);
+        logger.error('Error fetching transcription document', { jobId, error: err.message });
         return null;
     }
 }

@@ -3,21 +3,25 @@
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-// We now import the correct function to initialize our Cloudinary service
+const { createLogger } = require("./utils/logger");
+const requestLogger = require("./middlewares/requestLogger");
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
 const { connectToMongo } = require("./db/mongoutils/transcription.db");
+const { performSystemCheck } = require("./utils/systemCheck");
 const { startWorker, shutdown: workerShutdown } = require("./workers/transcriptionWorker");
 const v1Routes = require("./routes/v1");
 const tempAuthCheck = require("./middlewares/tempAuthCheck");
+
+const logger = createLogger('server');
 
 // Initialize Cloudinary before starting the server.
 // This is a crucial step for our audio storage and retrieval functions.
 try {
   initialiseCloudinary();
-  console.log('Cloudinary: SDK and services initialized successfully.');
+  logger.info('Cloudinary SDK and services initialized successfully');
 } catch (error) {
-  console.error('Cloudinary: Failed to initialize SDK:', error);
-  process.exit(1); // Exit the process if initialization fails
+  logger.error('Failed to initialize Cloudinary SDK', { error: error.message });
+  process.exit(1);
 }
 
 const app = express();
@@ -54,12 +58,17 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestLogger);
 
 // Apply temporary authentication middleware globally
 app.use(tempAuthCheck);
 
 // Connect to MongoDB once when the server starts.
-connectToMongo();
+// Note: Actual connection is awaited in the startup sequence below
+connectToMongo().catch(err => {
+  logger.error('Initial MongoDB connection failed', { error: err.message });
+  process.exit(1);
+});
 
 // --- Versioned API ---
 app.use("/api/v1", v1Routes);
@@ -74,16 +83,36 @@ app.use("/api", (req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
 
-  // Start the worker once when the server boots up.
+// Startup Sequence
+const startServer = async () => {
   try {
-    await startWorker();
+    // 1. Run System Checks
+    await performSystemCheck();
+
+    // 2. Start HTTP Server
+    const serverInstance = app.listen(PORT, async () => {
+      logger.info(`Server is running on port ${PORT}`);
+
+      // 3. Start Background Worker
+      try {
+        await startWorker();
+      } catch (error) {
+        logger.error('Failed to start persistent worker', { error: error.message });
+        // Decide if this should be fatal or not. For now, log and continue.
+      }
+    });
+
+    // assign to global variable for shutdown handling
+    global.server = serverInstance;
+
   } catch (error) {
-    console.error('Worker: Failed to start persistent worker:', error);
+    logger.error('❌ system check failed. Server will not start.', { error: error.message });
+    process.exit(1);
   }
-});
+};
+
+startServer();
 
 
 // Graceful Shutdown Logic
@@ -93,37 +122,41 @@ let forceExitTimer = null;
 const gracefulShutdown = async () => {
   // Prevent multiple invocations (e.g., Ctrl+C pressed twice)
   if (isShuttingDown) {
-    console.log('Shutdown already in progress...');
+    logger.warn('Shutdown already in progress');
     return;
   }
   isShuttingDown = true;
 
-  console.log('Received kill signal, shutting down gracefully...');
+  logger.info('Received kill signal, shutting down gracefully');
 
   // Force close if it takes too long (e.g. hung connections)
   forceExitTimer = setTimeout(() => {
-    console.error('Could not close connections in time, forcefully shutting down');
+    logger.error('Could not close connections in time, forcefully shutting down');
     process.exit(1);
   }, 10000);
 
   // 1. Close the server (stops accepting new requests)
-  server.close(async () => {
-    console.log('HTTP server closed.');
+  if (global.server) {
+    global.server.close(async () => {
+      logger.info('HTTP server closed');
 
-    // 2. Close Worker (RabbitMQ)
-    try {
-      await workerShutdown();
-    } catch (err) {
-      console.error('Error during worker shutdown:', err);
-    }
+      // 2. Close Worker (RabbitMQ)
+      try {
+        await workerShutdown();
+      } catch (err) {
+        logger.error('Error during worker shutdown', { error: err.message });
+      }
 
-    // 3. Clear force timer and exit cleanly
-    if (forceExitTimer) {
-      clearTimeout(forceExitTimer);
-    }
-    console.log('Process termination complete.');
+      // 3. Clear force timer and exit cleanly
+      if (forceExitTimer) {
+        clearTimeout(forceExitTimer);
+      }
+      logger.info('Process termination complete');
+      process.exit(0);
+    });
+  } else {
     process.exit(0);
-  });
+  }
 };
 
 process.on('SIGTERM', gracefulShutdown);

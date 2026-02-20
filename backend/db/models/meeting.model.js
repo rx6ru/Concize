@@ -1,6 +1,6 @@
 // meeting.model.js
 const mongoose = require('mongoose');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 
 // Define the schema for a meeting transcription
 const meetingSchema = new mongoose.Schema({
@@ -28,7 +28,7 @@ const meetingSchema = new mongoose.Schema({
 });
 
 // Create and export the Mongoose model with dynamic collection name
-const collectionName = config.MONGO_COLLECTION || 'transcriptions';
+const collectionName = config.database.MONGO_COLLECTION || 'transcriptions';
 // if (!collectionName) {
 //     throw new Error('MONGO_COLLECTION must be defined in config');
 // }

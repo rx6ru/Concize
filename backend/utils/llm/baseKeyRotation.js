@@ -1,3 +1,6 @@
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('keyRotation');
+
 class BaseKeyRotationService {
     constructor(keys, name) {
         this.keys = keys || [];
@@ -5,9 +8,9 @@ class BaseKeyRotationService {
         this.name = name;
 
         if (!this.keys || this.keys.length === 0) {
-            console.warn(`WARNING: No API keys configured for ${this.name}`);
+            logger.warn(`No API keys configured for ${this.name}`);
         } else {
-            console.log(`[${this.name}] Initialized key rotation with ${this.keys.length} keys.`);
+            logger.info(`Initialized key rotation`, { service: this.name, keyCount: this.keys.length });
         }
     }
 
@@ -20,7 +23,7 @@ class BaseKeyRotationService {
         // Only log rotation if there are multiple keys
         if (this.keys.length > 1) {
             const nextIndex = (this.currentIndex + 1) % this.keys.length;
-            console.log(`[${this.name}] Using key index ${this.currentIndex}. Next: ${nextIndex}`);
+            logger.debug(`Rotating key`, { service: this.name, current: this.currentIndex, next: nextIndex });
         }
 
         this.currentIndex = (this.currentIndex + 1) % this.keys.length;

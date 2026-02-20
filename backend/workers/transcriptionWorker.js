@@ -13,10 +13,13 @@ const {
     initialiseCloudinary,
 } = require("../db/cloudinary-utils/audio.db"); // Cloudinary utils
 const { completeMeeting, completeMeetingWithErrors } = require("../services/meetingService");
-const config = require("../configs");
+const config = require("../configs/appConfig");
+const { createLogger } = require("../utils/logger");
 
-const audioQueue = config.AUDIO_QUEUE;
-const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
+const logger = createLogger('transcriptionWorker');
+
+const audioQueue = config.queues.AUDIO_QUEUE;
+const CLOUDAMQP_URL = config.queues.CLOUDAMQP_URL;
 
 let globalConnection = null;
 let globalChannel = null;
@@ -29,37 +32,35 @@ const startWorker = async () => {
         // Initialise Cloudinary once
         initialiseCloudinary();
 
-        console.log("Worker: Attempting to connect to RabbitMQ...");
+        logger.info("Attempting to connect to RabbitMQ");
         globalConnection = await amqp.connect(CLOUDAMQP_URL);
         globalChannel = await globalConnection.createChannel();
 
         globalConnection.on("close", (err) => {
             if (!isShuttingDown) {
-                console.error("Worker: RabbitMQ connection closed unexpectedly:", err);
+                logger.error("RabbitMQ connection closed unexpectedly", { error: err ? err.message : 'Unknown' });
             }
         });
         globalChannel.on("close", (err) => {
             if (!isShuttingDown) {
-                console.error("Worker: RabbitMQ channel closed unexpectedly:", err);
+                logger.error("RabbitMQ channel closed unexpectedly", { error: err ? err.message : 'Unknown' });
             }
         });
 
         await globalChannel.assertQueue(audioQueue, { durable: true });
 
-        console.log("Worker: Initializing Qdrant collections...");
+        logger.info("Initializing Qdrant collections");
         await createTranCollection();
         await createChatCollection();
 
-        console.log("Worker: Connected to RabbitMQ and waiting for audio transcription jobs...");
+        logger.info("Connected to RabbitMQ, waiting for jobs");
         globalChannel.prefetch(1);
 
         globalChannel.consume(
             audioQueue,
             async (msg) => {
-                console.log("\n\n\n----Worker: Received a message from the queue.-----\n\n\n");
-                console.log("------START OF ONE WORKER PROCESS------\n\n\n");
                 if (msg === null) {
-                    console.log("Worker: Consumer cancelled. No message received.");
+                    logger.warn("Consumer cancelled, no message received");
                     return;
                 }
 
@@ -73,46 +74,42 @@ const startWorker = async () => {
                     // Parse message
                     const messageString = msg.content.toString();
                     messageContent = JSON.parse(messageString);
-                    console.log("Worker: Message content parsed successfully.");
 
                     jobId = messageContent.jobId;
                     fileId = messageContent.fileId; // Cloudinary publicId
                     metadata = messageContent.metadata || {};
 
-                    console.log(`Worker: Processing job - JobId: ${jobId}, FileId: ${fileId}`);
+                    logger.info('Processing job', { jobId, fileId });
 
                     // Ensure meeting is still active (skip if already finalized)
                     const meetingStatus = await getMeetingStatus(jobId);
                     if (meetingStatus === "completed" || meetingStatus === "completed_with_errors") {
-                        console.log(
-                            `Worker: Skipping job for jobId ${jobId}. Meeting is already finalized (${meetingStatus}).`
-                        );
+                        logger.info('Skipping job, meeting finalized', { jobId, status: meetingStatus });
                         await deleteAudioFile(fileId);
                         globalChannel.ack(msg);
                         return;
                     }
 
-                    console.log(
-                        `Worker: Received job for audio file with ID: ${fileId} for jobId: ${jobId}`
-                    );
-
                     // Fetch audio file from Cloudinary → returns Buffer
-                    console.log(`Worker: Fetching audio file from Cloudinary...`);
+                    logger.debug('Fetching audio file from Cloudinary', { fileId });
                     const audioBuffer = await fetchAudioFile(fileId);
-                    console.log(
-                        `Worker: Audio buffer fetched from Cloudinary. Size: ${audioBuffer.length} bytes. Original file: ${metadata.originalFileName || 'unknown'}`
-                    );
+                    logger.debug('Audio buffer fetched', {
+                        fileId,
+                        size: audioBuffer.length,
+                        originalName: metadata.originalFileName
+                    });
 
                     // Transcribe
-                    console.log(
-                        `Worker: Processing transcription for: ${metadata.originalFileName || "unknown file"}`
-                    );
+                    logger.info('Starting transcription', { originalName: metadata.originalFileName || 'unknown' });
                     const transcribeResult = await transcribe(audioBuffer, metadata);
                     if (!transcribeResult.success) {
                         throw new Error(`Transcription failed: ${transcribeResult.error}`);
                     }
                     const transcribedText = transcribeResult.transcription;
-                    console.log(`Worker: Transcription completed. Text length: ${transcribedText?.length || 0} characters`);
+                    logger.info('Transcription completed', {
+                        length: transcribedText?.length || 0,
+                        jobId
+                    });
 
 
                     // Save transcription
@@ -123,9 +120,7 @@ const startWorker = async () => {
                                 `Failed to append transcription to MongoDB for jobId: ${jobId}`
                             );
                         }
-                        console.log(
-                            `Worker: Transcription appended to MongoDB for jobId: ${jobId}`
-                        );
+                        logger.debug('Transcription appended to MongoDB', { jobId });
 
                         // --- NEW: Publish to Summary Queue ---
                         try {
@@ -135,28 +130,24 @@ const startWorker = async () => {
                                     chunkIndex: appendResult.chunkIndex,
                                     isLastChunk: messageContent.isLastChunk
                                 })));
-                                console.log(`Worker: Published to summaryQueue for jobId ${jobId}, chunk ${appendResult.chunkIndex}`);
+                                logger.debug('Published to summaryQueue', { jobId, chunk: appendResult.chunkIndex });
                             }
                         } catch (pubError) {
-                            console.error(`Worker: Failed to publish to summaryQueue for ${jobId}:`, pubError);
+                            logger.error('Failed to publish to summaryQueue', { jobId, error: pubError.message });
                         }
 
                     } else {
-                        console.warn(
-                            `Worker: No text to append for jobId: ${jobId}. Skipping database update.`
-                        );
+                        logger.warn('No text to append, skipping DB update', { jobId });
                     }
 
                     // Clean & Embed
                     if (transcribedText && transcribedText.trim().length > 0) {
-                        console.log(`Worker: Cleaning transcription text...`);
+                        logger.debug('Cleaning transcription text', { jobId });
                         const cleanedChunks = await clean(transcribedText);
-                        console.log(
-                            `Worker: Cleaned transcript into ${cleanedChunks.length} structured chunks.`
-                        );
+                        logger.debug('Cleaned transcript', { chunks: cleanedChunks.length, jobId });
 
                         if (cleanedChunks.length > 0) {
-                            console.log(`Worker: Embedding transcription chunks...`);
+                            logger.debug('Embedding chunks', { jobId });
                             const embedResult = await upsertTranscriptionChunks(
                                 jobId,
                                 cleanedChunks,
@@ -167,74 +158,57 @@ const startWorker = async () => {
                                     `Embedding and upsert failed: ${embedResult.error}`
                                 );
                             }
-                            console.log(`Worker: Embedding completed successfully.`);
+                            logger.debug('Embedding completed', { jobId });
                         }
                     }
 
-                    console.log(
-                        `Worker: Transcription processed and embedded successfully for "${metadata.originalFileName || "unknown"
-                        }"`
-                    );
+                    logger.info('Transcription job success', { jobId, originalName: metadata.originalFileName });
 
                     // Delete from Cloudinary
                     await deleteAudioFile(fileId);
-                    console.log(
-                        `Worker: Deleted processed audio file and metadata for ID: ${fileId}`
-                    );
+                    logger.info('Deleted processed audio file', { fileId });
 
                     globalChannel.ack(msg);
-                    console.log(
-                        `Worker: Acknowledged message for "${metadata.originalFileName || "unknown"
-                        }"`
-                    );
+                    logger.debug('Acknowledged message', { jobId });
 
-                    console.log("\n\n\n------END OF ONE WORKER PROCESS------\n\n\n");
-
-                    chunkProcessedSuccessfully = true; // Mark as successful only if we reach this point
+                    chunkProcessedSuccessfully = true;
 
                 } catch (error) {
-                    console.error(
-                        `\n\n\nXXXXX----Worker: An error occurred during message processing for "${metadata.originalFileName || "unknown"
-                        }"----XXXXX\n\n\n`
-                    );
-                    console.error("Worker: Error details:\n\n\n", error);
+                    logger.error('Worker processing error', {
+                        jobId,
+                        fileId,
+                        originalName: metadata.originalFileName,
+                        error: error.message
+                    });
 
                     // Delete from Cloudinary even if failure
                     if (fileId) {
                         try {
                             await deleteAudioFile(fileId);
-                            console.log(
-                                `-----Worker: Deleted failed job's audio file and metadata for ID: ${fileId}-----\n\n\n`
-                            );
+                            logger.info('Deleted failed job audio file', { fileId });
                         } catch (deleteError) {
-                            console.error(
-                                `-----Worker: Failed to delete audio file and metadata for failed job:-----\n\n\n`,
-                                deleteError
-                            );
+                            logger.error('Failed to delete audio file for failed job', { fileId, error: deleteError.message });
                         }
                     }
 
                     // Don't requeue failed messages to prevent infinite loops
                     globalChannel.nack(msg, false, false);
-                    console.error(
-                        `Worker: Nacked message for "${metadata.originalFileName || "unknown"
-                        }" (requeued: false)`
-                    );
+                    logger.warn('Nacked message (no requeue)', { jobId });
                 }
 
                 // CRITICAL: Check for last chunk AFTER try-catch
                 // Call appropriate completion function based on processing outcome
                 if (messageContent && messageContent.isLastChunk && jobId) {
-                    console.log(`Worker: Last chunk detected for jobId ${jobId}. Initiating meeting completion...`);
+                    logger.info('Last chunk detected, initiating meeting completion', { jobId });
                     try {
                         if (chunkProcessedSuccessfully) {
                             await completeMeeting(jobId);
                         } else {
-                            console.warn(`Worker: Last chunk failed processing. Marking meeting with errors.`);
+                            logger.warn('Last chunk failed processing, marking meeting with errors', { jobId });
                             await completeMeetingWithErrors(jobId);
                         }
                     } catch (completionError) {
-                        console.error(`Worker: Failed to complete meeting for jobId ${jobId}:`, completionError);
+                        logger.error('Failed to complete meeting', { jobId, error: completionError.message });
                     }
                 }
             },
@@ -243,17 +217,14 @@ const startWorker = async () => {
             }
         );
 
-        console.log("Worker: Persistent worker started successfully.");
+        logger.info("Worker: Persistent worker started successfully.");
     } catch (error) {
-        console.error("Worker: Initialization or connection error:", error);
+        logger.error("Worker initialization error", { error: error.message });
         if (globalConnection) {
             try {
                 await globalConnection.close();
             } catch (e) {
-                console.error(
-                    "Worker: Error closing connection during error:",
-                    e
-                );
+                logger.error("Error closing connection during error", { error: e.message });
             }
         }
         throw error; // Re-throw to allow restart logic
@@ -262,7 +233,7 @@ const startWorker = async () => {
 
 // Graceful shutdown handler
 const shutdown = async () => {
-    console.log("Worker: Shutting down gracefully...");
+    logger.info("Worker: Shutting down gracefully...");
     isShuttingDown = true; // Mark as intentional shutdown
     try {
         if (globalChannel) {
@@ -271,7 +242,7 @@ const shutdown = async () => {
             } catch (err) {
                 // Ignore errors if already closed or closing
                 if (err.message !== 'Channel closed' && err.message !== 'Channel closing') {
-                    console.error("Worker: Error closing channel:", err.message);
+                    logger.error("Error closing channel", { error: err.message });
                 }
             }
         }
@@ -280,13 +251,13 @@ const shutdown = async () => {
                 await globalConnection.close();
             } catch (err) {
                 if (err.message !== 'Connection closed' && err.message !== 'Connection closing') {
-                    console.error("Worker: Error closing connection:", err.message);
+                    logger.error("Error closing connection", { error: err.message });
                 }
             }
         }
-        console.log("Worker: Shutdown complete.");
+        logger.info("Worker shutdown complete");
     } catch (error) {
-        console.error("Worker: Error during shutdown:", error);
+        logger.error("Error during shutdown", { error: error.message });
     }
 };
 
@@ -295,3 +266,10 @@ module.exports = {
     startWorker,
     shutdown,
 };
+
+// Graceful shutdown handler - Only attach if running directly
+if (require.main === module) {
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    startWorker();
+}

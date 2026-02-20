@@ -5,8 +5,24 @@ jest.mock('../db/mongoutils/transcription.db', () => ({
     updateMeetingStatus: jest.fn(),
 }));
 
+// Mock logger
+const mockLogger = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+};
+jest.mock('../utils/logger', () => ({
+    createLogger: () => mockLogger,
+}));
+
+// Mock transcription.db.js BEFORE requiring the controller
+const mockDb = {
+    updateMeetingStatus: jest.fn(),
+};
+jest.mock('../db/mongoutils/transcription.db', () => mockDb);
+
 const { completeMeeting, completeMeetingWithErrors } = require('../services/meetingService');
-const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
 
 describe('meetingCompletion Controller', () => {
     beforeEach(() => {
@@ -16,17 +32,17 @@ describe('meetingCompletion Controller', () => {
 
     describe('completeMeeting()', () => {
         it('should call updateMeetingStatus with jobId and "completed"', async () => {
-            updateMeetingStatus.mockResolvedValue(true);
+            mockDb.updateMeetingStatus.mockResolvedValue(true);
             const jobId = 'test-job-123';
 
             await completeMeeting(jobId);
 
-            expect(updateMeetingStatus).toHaveBeenCalledTimes(1);
-            expect(updateMeetingStatus).toHaveBeenCalledWith(jobId, 'completed');
+            expect(mockDb.updateMeetingStatus).toHaveBeenCalledTimes(1);
+            expect(mockDb.updateMeetingStatus).toHaveBeenCalledWith(jobId, 'completed');
         });
 
         it('should return true when updateMeetingStatus succeeds', async () => {
-            updateMeetingStatus.mockResolvedValue(true);
+            mockDb.updateMeetingStatus.mockResolvedValue(true);
             const jobId = 'test-job-456';
 
             const result = await completeMeeting(jobId);
@@ -35,7 +51,7 @@ describe('meetingCompletion Controller', () => {
         });
 
         it('should return false when updateMeetingStatus fails', async () => {
-            updateMeetingStatus.mockResolvedValue(false);
+            mockDb.updateMeetingStatus.mockResolvedValue(false);
             const jobId = 'non-existent-job';
 
             const result = await completeMeeting(jobId);
@@ -44,31 +60,31 @@ describe('meetingCompletion Controller', () => {
         });
 
         it('should return false and log error when updateMeetingStatus throws', async () => {
-            const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
-            updateMeetingStatus.mockRejectedValue(new Error('Database error'));
-            const jobId = 'error-job';
+            mockDb.updateMeetingStatus.mockRejectedValue(new Error('Update failed'));
 
-            const result = await completeMeeting(jobId);
+            const result = await completeMeeting('job-123');
 
             expect(result).toBe(false);
-            expect(consoleSpy).toHaveBeenCalled();
-            consoleSpy.mockRestore();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.stringContaining('Error finalizing meeting'),
+                expect.objectContaining({ error: 'Update failed' })
+            );
         });
     });
 
     describe('completeMeetingWithErrors()', () => {
         it('should call updateMeetingStatus with jobId and "completed_with_errors"', async () => {
-            updateMeetingStatus.mockResolvedValue(true);
+            mockDb.updateMeetingStatus.mockResolvedValue(true);
             const jobId = 'failed-job-123';
 
             await completeMeetingWithErrors(jobId);
 
-            expect(updateMeetingStatus).toHaveBeenCalledTimes(1);
-            expect(updateMeetingStatus).toHaveBeenCalledWith(jobId, 'completed_with_errors');
+            expect(mockDb.updateMeetingStatus).toHaveBeenCalledTimes(1);
+            expect(mockDb.updateMeetingStatus).toHaveBeenCalledWith(jobId, 'completed_with_errors');
         });
 
         it('should return true when updateMeetingStatus succeeds', async () => {
-            updateMeetingStatus.mockResolvedValue(true);
+            mockDb.updateMeetingStatus.mockResolvedValue(true);
             const jobId = 'failed-job-456';
 
             const result = await completeMeetingWithErrors(jobId);
@@ -77,7 +93,7 @@ describe('meetingCompletion Controller', () => {
         });
 
         it('should return false when updateMeetingStatus fails', async () => {
-            updateMeetingStatus.mockResolvedValue(false);
+            mockDb.updateMeetingStatus.mockResolvedValue(false);
             const jobId = 'non-existent-failed-job';
 
             const result = await completeMeetingWithErrors(jobId);
@@ -86,15 +102,15 @@ describe('meetingCompletion Controller', () => {
         });
 
         it('should return false and log error when updateMeetingStatus throws', async () => {
-            const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
-            updateMeetingStatus.mockRejectedValue(new Error('Database error'));
-            const jobId = 'error-job';
+            mockDb.updateMeetingStatus.mockRejectedValue(new Error('Update failed'));
 
-            const result = await completeMeetingWithErrors(jobId);
+            const result = await completeMeetingWithErrors('job-123');
 
             expect(result).toBe(false);
-            expect(consoleSpy).toHaveBeenCalled();
-            consoleSpy.mockRestore();
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.stringContaining('Error finalizing meeting with errors'),
+                expect.objectContaining({ error: 'Update failed' })
+            );
         });
     });
 });

@@ -1,17 +1,20 @@
 // services/embedding/transcriptionEmbedding.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const { getEmbedding } = require('./embeddingService');
 const { v4: uuidv4 } = require('uuid');
+const { createLogger } = require('../../utils/logger');
+
+const logger = createLogger('transcriptionEmbedding');
 
 const client = new QdrantClient({
-    url: config.QDRANT_URL,
-    apiKey: config.QDRANT_API_KEY,
+    url: config.database.QDRANT_URL,
+    apiKey: config.database.QDRANT_API_KEY,
     timeout: 60000,
 });
 
-const COLLECTION_NAME = config.TRANSCRIPTION_COLLECTION;
+const COLLECTION_NAME = config.database.TRANSCRIPTION_COLLECTION;
 
 /**
  * Creates the Qdrant collection for transcriptions if it doesn't already exist.
@@ -29,20 +32,20 @@ const createTranCollection = async () => {
                     distance: 'Cosine',
                 },
             });
-            console.log(`Qdrant: Collection '${COLLECTION_NAME}' created successfully for transcriptions.`);
+            logger.info(`Collection created successfully`, { collection: COLLECTION_NAME });
 
             // CRITICAL FIX: Add a payload index on the 'jobId' field for efficient filtering.
             await client.createPayloadIndex(COLLECTION_NAME, {
                 field_name: 'jobId',
                 field_schema: 'keyword'
             });
-            console.log(`Qdrant: Payload index created for 'jobId' in '${COLLECTION_NAME}'.`);
+            logger.info(`Payload index created for 'jobId'`, { collection: COLLECTION_NAME });
 
         } else {
-            console.log(`Qdrant: Collection '${COLLECTION_NAME}' already exists for transcriptions.`);
+            logger.info(`Collection already exists`, { collection: COLLECTION_NAME });
         }
     } catch (err) {
-        console.error('Qdrant: Error creating or checking transcription collection:', err);
+        logger.error('Error creating or checking transcription collection', { error: err.message });
         throw err;
     }
 };
@@ -61,7 +64,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
         await createTranCollection();
 
         if (!chunks || chunks.length === 0) {
-            console.warn("No chunks to upsert.");
+            logger.warn("No chunks to upsert");
             return { success: true, result: null };
         }
 
@@ -70,7 +73,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
             const vector = await getEmbedding(chunk.refined_text);
 
             if (!vector || vector.length === 0) {
-                console.error(`Skipping chunk due to failed embedding: ${chunk.refined_text}`);
+                logger.error(`Skipping chunk due to failed embedding`, { chunkText: chunk.refined_text });
                 continue;
             }
 
@@ -88,7 +91,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
         }
 
         if (points.length === 0) {
-            console.warn("No points were successfully prepared for upsert.");
+            logger.warn("No points were successfully prepared for upsert");
             return { success: false, error: "No valid points to upsert." };
         }
 
@@ -97,11 +100,11 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
             points: points,
         });
 
-        console.log(`Qdrant: Successfully upserted ${points.length} transcription chunks for jobId: ${jobId}.`);
+        logger.info(`Successfully upserted transcription chunks`, { count: points.length, jobId });
         return { success: true, result: result };
 
     } catch (err) {
-        console.error('Qdrant: Error during upsert operation for transcription chunks:', err);
+        logger.error('Error during upsert operation for transcription chunks', { error: err.message });
         return { success: false, error: err.message };
     }
 };

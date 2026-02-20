@@ -1,8 +1,11 @@
 // controllers/meetingController.js
 
 const crypto = require('crypto');
+const { createLogger } = require('../utils/logger');
 const { createTranscription } = require('../db/mongoutils/transcription.db');
 const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+
+const logger = createLogger('meetingController');
 
 /**
  * Initiates a new meeting session.
@@ -13,14 +16,14 @@ const { getMeetingSummary } = require('../db/mongoutils/summary.db');
  * @param {Object} res - Express response.
  */
 const startMeeting = async (req, res) => {
-    console.log('API Request: /api/v1/meeting/start received.');
+    logger.info('Meeting start requested');
     try {
         const jobId = crypto.randomUUID();
 
         const dbResult = await createTranscription(jobId);
 
         if (!dbResult) {
-            console.error('API Error: Failed to create transcription document.');
+            logger.error('Failed to create transcription document', { jobId });
             return res.status(500).json({
                 success: false,
                 message: 'Failed to initialize transcription session in the database.'
@@ -32,7 +35,7 @@ const startMeeting = async (req, res) => {
             secure: process.env.NODE_ENV === 'production'
         });
 
-        console.log(`New transcription session started with jobId: ${jobId}`);
+        logger.info('Meeting session started', { jobId });
         res.status(200).json({
             success: true,
             jobId: jobId,
@@ -40,7 +43,7 @@ const startMeeting = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('API Error in /api/v1/meeting/start:', error);
+        logger.error('Failed to start meeting', { error: error.message });
         res.status(500).json({
             success: false,
             message: 'An unexpected error occurred while trying to start a new meeting.'
@@ -79,7 +82,7 @@ const fetchMeetingSummary = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`API Error in /api/v1/meeting/${req.params.jobId}/summary:`, error);
+        logger.error('Failed to fetch meeting summary', { jobId: req.params.jobId, error: error.message });
         res.status(500).json({ success: false, error: "Failed to fetch meeting summary" });
     }
 };

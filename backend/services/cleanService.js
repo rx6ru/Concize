@@ -2,11 +2,13 @@
 const fs = require('fs');
 const path = require('path');
 const { getCleanInference } = require('../utils/llm/inferenceProvider');
+const { createLogger } = require('../utils/logger');
 
 // Load system prompt from secure module
 const { TRANSCRIPT_CLEAN_PROMPT } = require('../.secrets/transcriptClean');
 const SYSTEM_PROMPT = TRANSCRIPT_CLEAN_PROMPT;
 
+const logger = createLogger('cleanService');
 
 /**
  * Processes a raw text transcript, refining it and converting it into a
@@ -20,11 +22,11 @@ const clean = async (text) => {
     const MAX_RETRIES = 3; // Define the maximum number of retry attempts
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            console.log(`CLEANING_LOG: Attempt ${attempt} of ${MAX_RETRIES} to clean transcription.`);
+            logger.info("Attempting to clean transcription", { attempt, maxRetries: MAX_RETRIES });
 
             // Get inference client routed by config
             const { client, model, taskConfig } = getCleanInference();
-            console.log(`[Inference] Clean using ${taskConfig.provider} → ${model}`);
+            logger.debug('Cleaning using model', { provider: taskConfig.provider, model });
 
             const chatCompletion = await client.chat.completions.create({
                 "messages": [
@@ -55,7 +57,7 @@ const clean = async (text) => {
                 // Fall back to regex extraction if full parse fails
                 const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
                 if (!jsonMatch) {
-                    console.warn(`CLEANING_LOG: No valid JSON array found on attempt ${attempt}. Retrying...`);
+                    logger.warn("No valid JSON array found in response", { attempt });
                     continue;
                 }
                 parsedJson = JSON.parse(jsonMatch[0]);
@@ -63,18 +65,18 @@ const clean = async (text) => {
 
             // Validate that parsedJson is an array
             if (!Array.isArray(parsedJson)) {
-                console.warn(`CLEANING_LOG: Response is not a JSON array on attempt ${attempt}. Retrying...`);
+                logger.warn("Response is not a JSON array", { attempt });
                 continue;
             }
 
-            console.log(`CLEANING_LOG: Parsed ${parsedJson.length} structured chunks successfully on attempt ${attempt}.`);
+            logger.info("Transcription cleaned successfully", { chunks: parsedJson.length, attempt });
             return parsedJson;
 
         } catch (e) {
-            console.error(`CLEANING_LOG: Error during transcription cleaning on attempt ${attempt}:`, e.message);
+            logger.error("Error during transcription cleaning", { attempt, error: e.message });
             // If it's a parsing error or a Groq API error, we retry.
             if (attempt === MAX_RETRIES) {
-                console.error('CLEANING_LOG: Max retries reached. Failing.');
+                logger.error("Max retries reached. Failing.");
                 throw e; // Rethrow the original error after all retries are exhausted
             }
         }

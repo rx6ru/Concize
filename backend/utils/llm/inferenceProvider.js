@@ -6,7 +6,7 @@
 //   const { client, model, taskConfig } = getChatInference();
 //   const stream = await client.chat.completions.create({ model, ... });
 
-const config = require('../../configs');
+const config = require('../../configs/appConfig');
 const groqService = require('./groqService');
 const cerebrasService = require('./cerebrasService');
 
