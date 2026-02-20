@@ -1,7 +1,7 @@
 // embeddingService.js
 'use strict';
 
-const config = require('../../utils/config');
+const config = require('../../configs');
 const geminiService = require('../../utils/llm/geminiService'); // Key Rotation
 
 if (!config?.GEMINI_API_KEYS || config.GEMINI_API_KEYS.length === 0) {

@@ -11,25 +11,25 @@ jest.mock('../db/mongoutils/transcription.db', () => ({
 }));
 
 const { createTranscription } = require('../db/mongoutils/transcription.db');
-const meetingRoutes = require('../routes/meetingRoutes');
+const meetingRoutes = require('../routes/v1/meetingRoutes');
 
 // Setup test app
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-app.use('/api/meeting', meetingRoutes);
+app.use('/api/v1/meeting', meetingRoutes);
 
 describe('Meeting Routes', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    describe('POST /api/meeting/start', () => {
+    describe('POST /api/v1/meeting/start', () => {
         it('should return a jobId and set a cookie on success', async () => {
             createTranscription.mockResolvedValue(true);
 
             const response = await request(app)
-                .post('/api/meeting/start')
+                .post('/api/v1/meeting/start')
                 .send();
 
             expect(response.status).toBe(200);
@@ -43,7 +43,7 @@ describe('Meeting Routes', () => {
             createTranscription.mockResolvedValue(false);
 
             const response = await request(app)
-                .post('/api/meeting/start')
+                .post('/api/v1/meeting/start')
                 .send();
 
             expect(response.status).toBe(500);
@@ -53,7 +53,7 @@ describe('Meeting Routes', () => {
         it('should call createTranscription with the generated jobId', async () => {
             createTranscription.mockResolvedValue(true);
 
-            await request(app).post('/api/meeting/start').send();
+            await request(app).post('/api/v1/meeting/start').send();
 
             expect(createTranscription).toHaveBeenCalledTimes(1);
             expect(createTranscription).toHaveBeenCalledWith(expect.any(String));
@@ -71,8 +71,8 @@ jest.mock('../db/mongoutils/summary.db', () => ({
 const { getMeetingSummary } = require('../db/mongoutils/summary.db');
 
 describe('Meeting Routes (Expanded)', () => {
-    // Tests for GET /api/meeting/:jobId/summary
-    describe('GET /api/meeting/:jobId/summary', () => {
+    // Tests for GET /api/v1/meeting/:jobId/summary
+    describe('GET /api/v1/meeting/:jobId/summary', () => {
 
         it('should return 200 and summary data when found', async () => {
             const mockSummary = {
@@ -83,7 +83,7 @@ describe('Meeting Routes (Expanded)', () => {
             };
             getMeetingSummary.mockResolvedValue(mockSummary);
 
-            const response = await request(app).get('/api/meeting/job-123/summary');
+            const response = await request(app).get('/api/v1/meeting/job-123/summary');
 
             expect(response.status).toBe(200);
             expect(response.body.success).toBe(true);
@@ -94,7 +94,7 @@ describe('Meeting Routes (Expanded)', () => {
         it('should return 404 when summary not found', async () => {
             getMeetingSummary.mockResolvedValue(null);
 
-            const response = await request(app).get('/api/meeting/job-123/summary');
+            const response = await request(app).get('/api/v1/meeting/job-123/summary');
 
             expect(response.status).toBe(404);
             expect(response.body.success).toBe(false);
@@ -104,7 +104,7 @@ describe('Meeting Routes (Expanded)', () => {
         it('should return 500 on database error', async () => {
             getMeetingSummary.mockRejectedValue(new Error('DB Error'));
 
-            const response = await request(app).get('/api/meeting/job-123/summary');
+            const response = await request(app).get('/api/v1/meeting/job-123/summary');
 
             expect(response.status).toBe(500);
             expect(response.body.success).toBe(false);

@@ -1,6 +1,6 @@
 // meeting.model.js
 const mongoose = require('mongoose');
-const config = require('../../utils/config');
+const config = require('../../configs');
 
 // Define the schema for a meeting transcription
 const meetingSchema = new mongoose.Schema({

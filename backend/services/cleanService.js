@@ -1,8 +1,7 @@
 // clean.js
 const fs = require('fs');
 const path = require('path');
-const config = require('../utils/config');
-const groqService = require('../utils/llm/groqService');
+const { getCleanInference } = require('../utils/llm/inferenceProvider');
 
 // Load system prompt from secure module
 const { TRANSCRIPT_CLEAN_PROMPT } = require('../.secrets/transcriptClean');
@@ -23,9 +22,11 @@ const clean = async (text) => {
         try {
             console.log(`CLEANING_LOG: Attempt ${attempt} of ${MAX_RETRIES} to clean transcription.`);
 
-            // Get rotated Groq client
-            const groq = groqService.getClient();
-            const chatCompletion = await groq.chat.completions.create({
+            // Get inference client routed by config
+            const { client, model, taskConfig } = getCleanInference();
+            console.log(`[Inference] Clean using ${taskConfig.provider} → ${model}`);
+
+            const chatCompletion = await client.chat.completions.create({
                 "messages": [
                     {
                         "role": "system",
@@ -36,13 +37,11 @@ const clean = async (text) => {
                         "content": text
                     }
                 ],
-                // Model from centralized config
-                "model": config.GROQ_CHAT_MODEL,
-                "temperature": 1,
-                "max_completion_tokens": 8192,
+                "model": model,
+                "temperature": taskConfig.temperature,
+                "max_completion_tokens": taskConfig.maxTokens,
                 "top_p": 1,
                 "stream": false,
-                "reasoning_effort": "medium",
                 "stop": null
             });
 

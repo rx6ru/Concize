@@ -1,7 +1,7 @@
-// db/mongoutils/embedTranscriptions.js
+// services/embedding/transcriptionEmbedding.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../../utils/config');
+const config = require('../../configs');
 const { getEmbedding } = require('./embeddingService');
 const { v4: uuidv4 } = require('uuid');
 

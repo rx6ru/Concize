@@ -2,10 +2,10 @@
 
 require('dotenv').config();
 const amqp = require('amqplib');
-const config = require('../utils/config');
+const config = require('../configs');
 const { connectToMongo, getTranscription } = require('../db/mongoutils/transcription.db');
 const { completeSummary } = require('../db/mongoutils/summary.db');
-const { processSummaryUpdate } = require('../controllers/summaryService');
+const { processSummaryUpdate } = require('../services/summaryService');
 
 let channel, connection;
 

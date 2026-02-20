@@ -16,7 +16,7 @@ jest.mock('../.secrets/transcriptClean', () => ({
 }));
 
 const groqService = require('../utils/llm/groqService');
-const { clean } = require('../controllers/clean.js');
+const { clean } = require('../services/cleanService');
 
 describe('clean.js', () => {
     beforeEach(() => {

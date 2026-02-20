@@ -1,4 +1,4 @@
-const { getEmbedding } = require('../controllers/embedding/embeddingService');
+const { getEmbedding } = require('../services/embedding/embeddingService');
 const geminiService = require('../utils/llm/geminiService');
 
 // Mock geminiService

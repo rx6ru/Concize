@@ -1,7 +1,7 @@
 // embedChat.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../../utils/config'); // Adjust path based on your project structure
+const config = require('../../configs');
 const { getEmbedding } = require('./embeddingService'); // Reusing the existing embedding service
 const { v4: uuidv4 } = require('uuid');
 

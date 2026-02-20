@@ -1,6 +1,6 @@
-// controllers/transcription.js
+// services/transcriptionService.js
 
-const config = require("../utils/config");
+const config = require("../configs");
 const groqService = require("../utils/llm/groqService");
 const fs = require('fs');
 const path = require('path');

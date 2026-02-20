@@ -1,15 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const config = require('../utils/config');
-const geminiService = require('../utils/llm/geminiService');
-const groqService = require('../utils/llm/groqService');
+const { getSummaryInference } = require('../utils/llm/inferenceProvider');
 const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
 
 // Load prompt template from secure module
 const { getSummaryPrompt } = require('../.secrets/meetingSummary');
-
-// Use Groq by default for summarization (fast), fallback logic can be added later
-const MODEL_ID = 'llama-3.1-8b-instant'; // Fast, cheap, good instruction following
 
 /**
  * Generates an incremental update to the meeting summary.
@@ -25,13 +20,15 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
 
     // 2. Call LLM
     try {
-        const groq = await groqService.getClient();
+        // Get inference client routed by config
+        const { client, model, taskConfig } = getSummaryInference();
+        console.log(`[Inference] Summary using ${taskConfig.provider} → ${model}`);
 
-        const completion = await groq.chat.completions.create({
+        const completion = await client.chat.completions.create({
             messages: [
                 { role: 'user', content: prompt }
             ],
-            model: MODEL_ID,
+            model: model,
             response_format: { type: 'json_object' } // Enforce JSON
         });
 

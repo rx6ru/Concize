@@ -1,4 +1,4 @@
-// controllers/meetingCompletion.js
+// services/meetingService.js
 const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
 
 /**

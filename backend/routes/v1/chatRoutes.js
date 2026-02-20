@@ -2,10 +2,10 @@
 
 const express = require('express');
 const router = express.Router();
-const { getLLMStreamResponse } = require('../controllers/chatLLM'); // Import the LLM streaming function
+const { getLLMStreamResponse } = require('../../controllers/chatLLM'); // Import the LLM streaming function
 
 /**
- * @route POST /api/chat/stream
+ * @route POST /api/v1/chat/stream
  * @desc Handles incoming chat messages and streams the AI's response.
  * @access Public (or add authentication middleware)
  */

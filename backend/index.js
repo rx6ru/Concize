@@ -7,10 +7,7 @@ const cookieParser = require("cookie-parser");
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
 const { connectToMongo } = require("./db/mongoutils/transcription.db");
 const { startWorker, shutdown: workerShutdown } = require("./workers/transcriptionWorker");
-const audioRoutes = require("./routes/audioRoutes");
-const meetingRoutes = require("./routes/meetingRoutes");
-const transcRoutes = require("./routes/transcRoutes");
-const chatRoutes = require("./routes/chatRoutes");
+const v1Routes = require("./routes/v1");
 const tempAuthCheck = require("./middlewares/tempAuthCheck");
 
 // Initialize Cloudinary before starting the server.
@@ -64,10 +61,17 @@ app.use(tempAuthCheck);
 // Connect to MongoDB once when the server starts.
 connectToMongo();
 
-app.use("/api/audios", audioRoutes);
-app.use("/api/meeting/", meetingRoutes);
-app.use("/api/transcription", transcRoutes);
-app.use("/api/chat/", chatRoutes);
+// --- Versioned API ---
+app.use("/api/v1", v1Routes);
+
+// Backward compatibility: redirect unversioned /api/* → /api/v1/*
+// 307 preserves the HTTP method (POST stays POST)
+app.use("/api", (req, res, next) => {
+  if (!req.path.startsWith('/v1')) {
+    return res.redirect(307, `/api/v1${req.path}`);
+  }
+  next();
+});
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, async () => {

@@ -5,7 +5,7 @@ jest.mock('../db/mongoutils/transcription.db', () => ({
     updateMeetingStatus: jest.fn(),
 }));
 
-const { completeMeeting, completeMeetingWithErrors } = require('../controllers/meetingCompletion');
+const { completeMeeting, completeMeetingWithErrors } = require('../services/meetingService');
 const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
 
 describe('meetingCompletion Controller', () => {

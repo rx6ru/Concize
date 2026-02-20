@@ -6,14 +6,21 @@ jest.mock('../db/mongoutils/summary.db', () => ({
     saveSummaryContent: jest.fn(),
 }));
 
-// Mock Groq service
-jest.mock('../utils/llm/groqService', () => ({
-    getClient: jest.fn(),
-}));
+// Mock inference provider
+const mockClient = {
+    chat: {
+        completions: {
+            create: jest.fn(),
+        },
+    },
+};
 
-// Mock config
-jest.mock('../utils/config', () => ({
-    GROQ_CHAT_MODEL: 'mock-model',
+jest.mock('../utils/llm/inferenceProvider', () => ({
+    getSummaryInference: jest.fn().mockReturnValue({
+        client: mockClient,
+        model: 'mock-summary-model',
+        taskConfig: { provider: 'groq', model: 'mock-summary-model' },
+    }),
 }));
 
 // Mock secure prompt module
@@ -22,8 +29,7 @@ jest.mock('../.secrets/meetingSummary', () => ({
 }));
 
 const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
-const groqService = require('../utils/llm/groqService');
-const { processSummaryUpdate } = require('../controllers/summaryService');
+const { processSummaryUpdate } = require('../services/summaryService');
 
 describe('summaryService.js', () => {
     beforeEach(() => {
@@ -45,21 +51,10 @@ describe('summaryService.js', () => {
             lastProcessedChunkIndex: 2,
         };
 
-        const mockGroqClient = {
-            chat: {
-                completions: {
-                    create: jest.fn(),
-                },
-            },
-        };
-
-        beforeEach(() => {
-            groqService.getClient.mockResolvedValue(mockGroqClient);
-        });
 
         it('should process a chunk successfully', async () => {
             startSummaryUpdate.mockResolvedValue(mockSummaryDoc);
-            mockGroqClient.chat.completions.create.mockResolvedValue({
+            mockClient.chat.completions.create.mockResolvedValue({
                 choices: [{
                     message: {
                         content: JSON.stringify({
@@ -74,7 +69,7 @@ describe('summaryService.js', () => {
             await processSummaryUpdate('test-job', 'New transcript chunk', 3);
 
             expect(startSummaryUpdate).toHaveBeenCalledWith('test-job', 3);
-            expect(mockGroqClient.chat.completions.create).toHaveBeenCalled();
+            expect(mockClient.chat.completions.create).toHaveBeenCalled();
             expect(saveSummaryContent).toHaveBeenCalledWith(
                 'test-job',
                 { title: 'Updated Title', summary: 'Updated summary with new info' },
@@ -89,13 +84,13 @@ describe('summaryService.js', () => {
             // This tests that behavior
             await processSummaryUpdate('test-job', 'Text', 3);
 
-            expect(mockGroqClient.chat.completions.create).not.toHaveBeenCalled();
+            expect(mockClient.chat.completions.create).not.toHaveBeenCalled();
             expect(saveSummaryContent).not.toHaveBeenCalled();
         });
 
         it('should throw error if LLM returns invalid JSON', async () => {
             startSummaryUpdate.mockResolvedValue(mockSummaryDoc);
-            mockGroqClient.chat.completions.create.mockResolvedValue({
+            mockClient.chat.completions.create.mockResolvedValue({
                 choices: [{
                     message: {
                         content: 'Not valid JSON',
@@ -108,7 +103,7 @@ describe('summaryService.js', () => {
 
         it('should throw error if LLM response is missing title or summary', async () => {
             startSummaryUpdate.mockResolvedValue(mockSummaryDoc);
-            mockGroqClient.chat.completions.create.mockResolvedValue({
+            mockClient.chat.completions.create.mockResolvedValue({
                 choices: [{
                     message: {
                         content: JSON.stringify({ title: 'Only Title' }), // Missing summary
@@ -121,7 +116,7 @@ describe('summaryService.js', () => {
 
         it('should throw error if LLM returns empty response', async () => {
             startSummaryUpdate.mockResolvedValue(mockSummaryDoc);
-            mockGroqClient.chat.completions.create.mockResolvedValue({
+            mockClient.chat.completions.create.mockResolvedValue({
                 choices: [{
                     message: {
                         content: '',

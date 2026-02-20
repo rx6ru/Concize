@@ -1,8 +1,8 @@
 // queryVectordb.js
 
 const { QdrantClient } = require('@qdrant/js-client-rest');
-const config = require('../utils/config'); // Adjust path based on your project structure
-const { getEmbedding } = require('./embedding/embeddingService'); // Reusing the existing embedding service
+const config = require('../../configs');
+const { getEmbedding } = require('../embedding/embeddingService');
 
 // Initialize Qdrant client
 const client = new QdrantClient({

@@ -1,26 +1,46 @@
 // tests/verify_error_categories.js
 const { getLLMStreamResponse } = require('../controllers/chatLLM');
 const { createChatEntry } = require('../db/mongoutils/chat.db');
-const { queryTranscriptions, queryChats } = require('../controllers/queryVectordb');
+const { queryTranscriptions, queryChats } = require('../services/retrieval/vectorSearchService');
 const EventEmitter = require('events');
 
 // Mock dependencies
-jest.mock('../db/mongoutils/chat.db');
-jest.mock('../controllers/queryVectordb');
-jest.mock('../utils/llm/groqService', () => ({
-    getClient: jest.fn().mockReturnValue({
-        chat: {
-            completions: {
-                create: jest.fn().mockResolvedValue({
-                    // Async Iterable Stream
-                    [Symbol.asyncIterator]: async function* () {
-                        yield { choices: [{ delta: { content: "Mock Response" } }] };
-                    }
-                })
-            }
+jest.mock('../db/mongoutils/chat.db', () => ({
+    createChatEntry: jest.fn().mockResolvedValue({ _id: 'chat123' }),
+    updateChatEntry: jest.fn().mockResolvedValue(),
+}));
+jest.mock('../services/retrieval/vectorSearchService');
+jest.mock('../services/embedding/chatEmbedding', () => ({
+    upsertChatPair: jest.fn().mockResolvedValue(),
+}));
+jest.mock('../db/mongoutils/summary.db', () => ({
+    getMeetingSummary: jest.fn().mockResolvedValue({ title: 'Test', content: 'Test meeting summary' }),
+}));
+jest.mock('../utils/llmSecurity', () => ({
+    validateInput: jest.fn().mockReturnValue({ blocked: false }),
+    isRelevantToMeeting: jest.fn().mockResolvedValue({ relevant: true }),
+    recordViolation: jest.fn(),
+}));
+jest.mock('../.secrets/systemPrompt', () => ({
+    SECURE_SYSTEM_PROMPT: 'Mock system prompt',
+}));
+jest.mock('../utils/llm/inferenceProvider', () => ({
+    getChatInference: jest.fn().mockReturnValue({
+        client: {
+            chat: {
+                completions: {
+                    create: jest.fn().mockResolvedValue({
+                        // Async Iterable Stream
+                        [Symbol.asyncIterator]: async function* () {
+                            yield { choices: [{ delta: { content: "Mock Response" } }] };
+                        }
+                    })
+                }
+            },
         },
-        apiKey: 'mock-groq-key'
-    })
+        model: 'mock-chat-model',
+        taskConfig: { provider: 'groq', model: 'mock-chat-model', temperature: 0.4, maxTokens: 6000 },
+    }),
 }));
 
 // Mock Response Object

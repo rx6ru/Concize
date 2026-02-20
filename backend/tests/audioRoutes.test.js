@@ -24,7 +24,7 @@ jest.mock("amqplib", () => ({
   }),
 }));
 
-jest.mock("../utils/config", () => ({
+jest.mock("../configs", () => ({
   CLOUDAMQP_URL: "amqp://mock-url",
   AUDIO_QUEUE: "test_audio_queue",
 }));
@@ -47,23 +47,23 @@ jest.mock("fluent-ffmpeg", () => {
 });
 
 const { storeAudioFile } = require("../db/cloudinary-utils/audio.db");
-const audioRoutes = require("../routes/audioRoutes");
+const audioRoutes = require("../routes/v1/audioRoutes");
 
 // Setup test app
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-app.use("/api/audios", audioRoutes);
+app.use("/api/v1/audios", audioRoutes);
 
 describe("Audio Routes", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe("POST /api/audios", () => {
+  describe("POST /api/v1/audios", () => {
     it("should return 400 if no audio file is provided", async () => {
       const response = await request(app)
-        .post("/api/audios")
+        .post("/api/v1/audios")
         .set("Cookie", "jobId=test-job-123")
         .send();
 
@@ -76,7 +76,7 @@ describe("Audio Routes", () => {
       const testBuffer = Buffer.from("test audio data");
 
       const response = await request(app)
-        .post("/api/audios")
+        .post("/api/v1/audios")
         .attach("audio", testBuffer, "test.webm");
 
       expect(response.status).toBe(400);
@@ -88,7 +88,7 @@ describe("Audio Routes", () => {
       const testBuffer = Buffer.from("test audio data");
 
       const response = await request(app)
-        .post("/api/audios")
+        .post("/api/v1/audios")
         .set("Cookie", "jobId=test-job-with-last-chunk")
         .set("x-last-chunk", "true")
         .attach("audio", testBuffer, "test.webm");
@@ -112,7 +112,7 @@ describe("Audio Routes", () => {
       const testBuffer = Buffer.from("test audio data");
 
       const response = await request(app)
-        .post("/api/audios")
+        .post("/api/v1/audios")
         .set("Cookie", "jobId=test-job-queue-fail")
         .attach("audio", testBuffer, "test.webm");
 

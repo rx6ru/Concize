@@ -1,19 +1,19 @@
 // workers/transcriptionWorker.js
 
 const amqp = require("amqplib");
-const { transcribe } = require("../controllers/transcription");
-const { clean } = require("../controllers/clean");
-const { upsertTranscriptionChunks } = require("../controllers/embedding/embedTranscriptions");
-const { createTranCollection } = require("../controllers/embedding/embedTranscriptions");
-const { createChatCollection } = require("../controllers/embedding/embedChat");
+const { transcribe } = require("../services/transcriptionService");
+const { clean } = require("../services/cleanService");
+const { upsertTranscriptionChunks } = require("../services/embedding/transcriptionEmbedding");
+const { createTranCollection } = require("../services/embedding/transcriptionEmbedding");
+const { createChatCollection } = require("../services/embedding/chatEmbedding");
 const { appendTranscription, getMeetingStatus } = require("../db/mongoutils/transcription.db");
 const {
     fetchAudioFile,
     deleteAudioFile,
     initialiseCloudinary,
 } = require("../db/cloudinary-utils/audio.db"); // Cloudinary utils
-const { completeMeeting, completeMeetingWithErrors } = require("../controllers/meetingCompletion");
-const config = require("../utils/config");
+const { completeMeeting, completeMeetingWithErrors } = require("../services/meetingService");
+const config = require("../configs");
 
 const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;

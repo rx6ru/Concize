@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const config = require('../utils/config');
+const config = require('../configs');
 
 const tempAuthCheck = (req, res, next) => {
     const clientIP = req.ip || req.connection?.remoteAddress || 'unknown';

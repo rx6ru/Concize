@@ -1,10 +1,7 @@
-// audioRoutes.js
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
+// controllers/audioController.js
+
 const amqp = require('amqplib');
-const config = require('../utils/config');
-// Updated import to use the new Cloudinary upload function.
+const config = require('../configs');
 const { storeAudioFile, deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
 
 const ffmpeg = require('fluent-ffmpeg');
@@ -17,13 +14,11 @@ ffmpeg.setFfprobePath(ffprobePath);
 const audioQueue = config.AUDIO_QUEUE;
 const CLOUDAMQP_URL = config.CLOUDAMQP_URL;
 
-// Configure Multer to store the file in memory as a Buffer.
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
-});
-
-// --- Helper: Extract metadata with ffprobe ---
+/**
+ * Extracts audio metadata (format, duration) from a buffer using ffprobe.
+ * @param {Buffer} buffer - The raw audio buffer.
+ * @returns {Promise<Object>} ffprobe metadata object.
+ */
 function getMetadataFromBuffer(buffer) {
     return new Promise((resolve, reject) => {
         const { Readable } = require('stream');
@@ -38,7 +33,41 @@ function getMetadataFromBuffer(buffer) {
     });
 }
 
-router.post('/', upload.single('audio'), async (req, res) => {
+/**
+ * Validates the audio file against size and duration constraints.
+ * @param {Buffer} buffer - The audio buffer.
+ * @param {Object} metadata - The ffprobe metadata object.
+ * @returns {{ valid: boolean, error?: string }} Validation result.
+ */
+function validateAudio(buffer, metadata) {
+    if (buffer.length > 25 * 1024 * 1024) {
+        return { valid: false, error: 'Audio file is too large (max 25MB).' };
+    }
+
+    if (!metadata || !metadata.format || !metadata.format.duration) {
+        return { valid: false, error: 'Could not determine audio file duration.' };
+    }
+
+    if (metadata.format.duration > 15 * 60) {
+        return { valid: false, error: 'Audio file is too long (max 15 minutes).' };
+    }
+
+    return { valid: true };
+}
+
+/**
+ * Handles the full audio upload pipeline:
+ *   1. Validate input & session
+ *   2. Extract metadata (ffprobe)
+ *   3. Validate size/duration
+ *   4. Upload to Cloudinary
+ *   5. Publish message to RabbitMQ
+ *   6. Cleanup on failure
+ *
+ * @param {Object} req - Express request (expects req.file from multer, req.cookies.jobId).
+ * @param {Object} res - Express response.
+ */
+const handleAudioUpload = async (req, res) => {
     const audioFile = req.file;
     const { jobId } = req.cookies;
 
@@ -55,12 +84,12 @@ router.post('/', upload.single('audio'), async (req, res) => {
     console.log(`1: File received for jobId ${jobId}.`);
     console.log(`2: File size: ${audioFile.buffer.length} bytes.`);
 
+    // --- Metadata Extraction ---
     let metadata;
     try {
         console.log("3: Extracting metadata with ffprobe...");
         metadata = await getMetadataFromBuffer(audioFile.buffer);
 
-        // ✅ Handle multiple format names
         let formatNames = [];
         if (metadata.format && metadata.format.format_name) {
             formatNames = metadata.format.format_name
@@ -75,7 +104,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
             metadata.format.duration
         );
 
-        metadata.format.formatNames = formatNames; // store parsed formats
+        metadata.format.formatNames = formatNames;
     } catch (err) {
         console.error('An error occurred during metadata parsing:', err);
         return res.status(500).send('Failed to process audio file metadata.');
@@ -83,29 +112,17 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     // --- Validation Checks ---
     console.log("5: Running validation checks...");
-    if (audioFile.buffer.length > 25 * 1024 * 1024) {
-        console.error("6: File size too large.");
-        return res.status(400).send('Audio file is too large (max 25MB).');
+    const validation = validateAudio(audioFile.buffer, metadata);
+    if (!validation.valid) {
+        console.error(`Validation failed: ${validation.error}`);
+        return res.status(400).send(validation.error);
     }
-    console.log("7: Size check passed.");
+    console.log("10: All validations passed.");
 
-    if (!metadata || !metadata.format || !metadata.format.duration) {
-        console.error("8: Failed to get duration from metadata.");
-        return res.status(400).send('Could not determine audio file duration.');
-    }
-
-    if (metadata.format.duration > 15 * 60) {
-        console.error("9: File duration too long.");
-        return res.status(400).send('Audio file is too long (max 15 minutes).');
-    }
-    console.log("10: Duration check passed. All validations complete.");
-
-    // --- Upload to Cloudinary and Push to Queue ---
-    console.log("11: Validations passed. Starting Cloudinary upload...");
-
+    // --- Upload to Cloudinary ---
+    console.log("11: Starting Cloudinary upload...");
     let fileId;
     try {
-        // Use the new function to upload to Cloudinary instead of Firebase.
         const uploadResult = await storeAudioFile(audioFile.buffer, audioFile.originalname, jobId);
         fileId = uploadResult.public_id;
         console.log(`12: File uploaded to Cloudinary successfully with ID: ${fileId}`);
@@ -114,6 +131,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
         return res.status(500).send('Failed to upload audio file.');
     }
 
+    // --- Publish to RabbitMQ ---
     let conn;
     let ch;
 
@@ -130,12 +148,12 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
         const message = {
             jobId: jobId,
-            fileId: fileId, // Use the public_id directly
-            isLastChunk: isLastChunk, // Pass the flag to the worker
+            fileId: fileId,
+            isLastChunk: isLastChunk,
             metadata: {
                 originalFileName: audioFile.originalname,
                 mimetype: audioFile.mimetype,
-                formatNames: metadata.format.formatNames, // ✅ use array of formats
+                formatNames: metadata.format.formatNames,
                 size: audioFile.buffer.length,
                 duration: metadata.format.duration,
                 uploadTimestamp: new Date().toISOString(),
@@ -177,6 +195,6 @@ router.post('/', upload.single('audio'), async (req, res) => {
             await conn.close().catch(e => console.error("Error closing connection:", e));
         }
     }
-});
+};
 
-module.exports = router;
+module.exports = { handleAudioUpload };

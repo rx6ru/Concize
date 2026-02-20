@@ -1,12 +1,11 @@
-// db/mongoutils/chatLLM.js
+// controllers/chatLLM.js
 
 const fs = require('fs');
 const path = require('path');
-const config = require('../utils/config');
-const groqService = require('../utils/llm/groqService');
-const { queryTranscriptions, queryChats } = require('./queryVectordb');
+const { getChatInference } = require('../utils/llm/inferenceProvider');
+const { queryTranscriptions, queryChats } = require('../services/retrieval/vectorSearchService');
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
-const { upsertChatPair } = require('./embedding/embedChat');
+const { upsertChatPair } = require('../services/embedding/chatEmbedding');
 const { getMeetingSummary } = require('../db/mongoutils/summary.db');
 
 // Security modules
@@ -17,8 +16,7 @@ const {
 } = require('../utils/llmSecurity');
 const { SECURE_SYSTEM_PROMPT } = require('../.secrets/systemPrompt');
 
-// Model id from centralized config
-const MODEL_ID = config.GROQ_CHAT_MODEL;
+
 
 // Use hardened system prompt
 const SYSTEM_PROMPT = SECURE_SYSTEM_PROMPT;
@@ -249,18 +247,18 @@ ${userPrompt}`;
             try {
 
 
-                // Get rotated Groq client for this attempt
-                const groq = groqService.getClient();
-                console.log(`[Groq] Attempt ${attempt + 1} using key index ${groqService.currentIndex} (approx)`);
+                // Get inference client routed by config
+                const { client, model, taskConfig } = getChatInference();
+                console.log(`[Inference] Attempt ${attempt + 1} using ${taskConfig.provider} → ${model}`);
 
-                const stream = await groq.chat.completions.create({
+                const stream = await client.chat.completions.create({
                     messages: [
                         { role: 'system', content: SYSTEM_PROMPT },
                         { role: 'user', content: contentsPrompt }
                     ],
-                    model: MODEL_ID,
-                    temperature: 0.4,
-                    max_completion_tokens: 6000,
+                    model: model,
+                    temperature: taskConfig.temperature,
+                    max_completion_tokens: taskConfig.maxTokens,
                     stream: true,
                 });
 
