@@ -27,7 +27,7 @@ const errors = [];
 
 // Critical: Must have at least one set of LLM keys
 if (inference.groqKeys.length === 0 && inference.cerebrasKeys.length === 0) {
-    warnings.push('No Groq or Cerebras API keys configured. LLM features will not work.');
+    warnings.push('No Groq or Cerebras API keys configured. LLM features will fail at runtime.');
 }
 
 // Validate that keys exist for configured providers
@@ -37,7 +37,7 @@ const tasksUsingGroq = ['chat', 'clean', 'summary']
     .filter(task => inference[task].provider === 'groq');
 
 if (tasksUsingCerebras.length > 0 && inference.cerebrasKeys.length === 0) {
-    errors.push(
+    warnings.push(
         `Tasks [${tasksUsingCerebras.join(', ')}] are configured to use Cerebras, ` +
         `but no CEREBRAS_API_KEYS are set.`
     );
@@ -56,7 +56,7 @@ if (inference.groqKeys.length === 0) {
 
 // Sarvam keys needed if transcription provider is sarvam
 if (inference.transcription.provider === 'sarvam' && inference.sarvamKeys.length === 0) {
-    errors.push('TRANSCRIPTION_PROVIDER is set to sarvam, but no SARVAM_API_KEYS are set.');
+    warnings.push('TRANSCRIPTION_PROVIDER is set to sarvam, but no SARVAM_API_KEYS are set. Transcriptions will fail.');
 }
 
 if (inference.geminiKeys.length === 0) {

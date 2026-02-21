@@ -94,8 +94,24 @@ const startSummaryWorker = async () => {
 const gracefulShutdown = async () => {
     logger.info('Summary Worker: Shutting down...');
     try {
-        if (channel) await channel.close();
-        if (connection) await connection.close();
+        if (channel) {
+            try {
+                await channel.close();
+            } catch (err) {
+                if (err.message !== 'Channel closed' && err.message !== 'Channel closing') {
+                    logger.error('Error closing channel', { error: err.message });
+                }
+            }
+        }
+        if (connection) {
+            try {
+                await connection.close();
+            } catch (err) {
+                if (err.message !== 'Connection closed' && err.message !== 'Connection closing') {
+                    logger.error('Error closing connection', { error: err.message });
+                }
+            }
+        }
         logger.info('Summary Worker: Resources closed.');
         process.exit(0);
     } catch (err) {
@@ -108,5 +124,5 @@ const gracefulShutdown = async () => {
 if (require.main === module) {
     process.on('SIGINT', gracefulShutdown);
     process.on('SIGTERM', gracefulShutdown);
-    startWorker();
+    startSummaryWorker();
 }
