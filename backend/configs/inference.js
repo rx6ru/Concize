@@ -40,28 +40,28 @@ const sarvamKeys = parseKeys('SARVAM_API_KEYS', 'SARVAM_API_KEY');
 
 // --- Per-task provider + model routing ---
 const chat = {
-    provider: validateProvider(process.env.CHAT_PROVIDER || 'groq', 'chat'),
-    model: process.env.CHAT_MODEL || 'openai/gpt-oss-120b',
+    provider: validateProvider(process.env.CHAT_PROVIDER || 'cerebras', 'chat'),
+    model: process.env.CHAT_MODEL || 'llama3.1-8b',
     temperature: 0.4,
     maxTokens: 6000,
 };
 
 const clean = {
-    provider: validateProvider(process.env.CLEAN_PROVIDER || 'groq', 'clean'),
-    model: process.env.CLEAN_MODEL || 'openai/gpt-oss-120b',
+    provider: validateProvider(process.env.CLEAN_PROVIDER || 'cerebras', 'clean'),
+    model: process.env.CLEAN_MODEL || 'llama3.1-8b',
     temperature: 1,
     maxTokens: 8192,
 };
 
 const summary = {
-    provider: validateProvider(process.env.SUMMARY_PROVIDER || 'groq', 'summary'),
-    model: process.env.SUMMARY_MODEL || 'llama-3.1-8b-instant',
+    provider: validateProvider(process.env.SUMMARY_PROVIDER || 'cerebras', 'summary'),
+    model: process.env.SUMMARY_MODEL || 'llama3.1-8b',
 };
 
-// Transcription — now configurable (defaults to Groq whisper-large-v3-turbo)
+// Transcription — now configurable (defaults to Sarvam)
 const transcription = {
-    provider: validateProvider(process.env.TRANSCRIPTION_PROVIDER || 'groq', 'transcription'),
-    model: process.env.TRANSCRIPTION_MODEL || 'whisper-large-v3-turbo',
+    provider: validateProvider(process.env.TRANSCRIPTION_PROVIDER || 'sarvam', 'transcription'),
+    model: process.env.TRANSCRIPTION_MODEL || 'saaras:v1',
 };
 
 // --- Transcription quality filters (tunable via env) ---
