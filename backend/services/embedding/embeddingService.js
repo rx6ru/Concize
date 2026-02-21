@@ -156,4 +156,30 @@ const getEmbedding = async (text, opts = {}) => {
     }
 };
 
-module.exports = { getEmbedding };
+/**
+ * Wraps getEmbedding with exponential backoff retry for rate-limit (429) errors.
+ * @param {string} text
+ * @param {Object} [opts]
+ * @param {number} [maxRetries=3]
+ * @returns {Promise<number[]>}
+ */
+const getEmbeddingWithRetry = async (text, opts = {}, maxRetries = 3) => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await getEmbedding(text, opts);
+        } catch (err) {
+            const isRateLimited = err.status === 429 || err.code === 429 ||
+                (err.message && err.message.includes('429'));
+
+            if (isRateLimited && attempt < maxRetries - 1) {
+                const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                logger.warn('Embedding rate limited, retrying', { attempt: attempt + 1, delay });
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+            throw err;
+        }
+    }
+};
+
+module.exports = { getEmbedding, getEmbeddingWithRetry };

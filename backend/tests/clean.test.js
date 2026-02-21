@@ -1,65 +1,120 @@
 // tests/clean.test.js
 
-// Mock config
-jest.mock('../utils/config', () => ({
-    GROQ_CHAT_MODEL: 'mock-model',
+const mockCreate = jest.fn();
+
+// Mock logger
+jest.mock('../utils/logger', () => ({
+    createLogger: () => ({
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+    }),
 }));
 
-// Mock Groq service
-jest.mock('../utils/llm/groqService', () => ({
-    getClient: jest.fn(),
+// Mock inference provider — uses the shared mockCreate
+jest.mock('../utils/llm/inferenceProvider', () => ({
+    getCleanInference: jest.fn(() => ({
+        client: {
+            chat: { completions: { create: mockCreate } },
+        },
+        model: 'mock-model',
+        taskConfig: { provider: 'groq', temperature: 1, maxTokens: 8192 },
+    })),
 }));
 
-// Mock secure prompt module
-jest.mock('../.secrets/transcriptClean', () => ({
-    TRANSCRIPT_CLEAN_PROMPT: 'Mock System Prompt',
+// Mock prompt registry
+jest.mock('../.secrets/promptRegistry', () => ({
+    getPrompt: jest.fn(() => 'Mock System Prompt'),
 }));
 
-const groqService = require('../utils/llm/groqService');
+const { getPrompt } = require('../.secrets/promptRegistry');
 const { clean } = require('../services/cleanService');
 
-describe('clean.js', () => {
+describe('cleanService', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        jest.spyOn(console, 'log').mockImplementation(() => { });
-        jest.spyOn(console, 'warn').mockImplementation(() => { });
-        jest.spyOn(console, 'error').mockImplementation(() => { });
     });
 
-    afterEach(() => {
-        jest.restoreAllMocks();
-    });
-
-    it('should use the secure prompt and return parsed JSON', async () => {
-        const mockGroqClient = {
-            chat: {
-                completions: {
-                    create: jest.fn(),
-                },
-            },
-        };
-        groqService.getClient.mockReturnValue(mockGroqClient);
-
+    it('should use the prompt registry and return parsed narrative JSON', async () => {
         const mockResponse = [
-            { summary: 'Test summary', refined_text: '- Test line' }
+            {
+                summary: 'Test summary',
+                narrative: 'The team discussed testing and agreed on a plan.',
+                mentionedNames: ['Alice'],
+            },
         ];
 
-        mockGroqClient.chat.completions.create.mockResolvedValue({
+        mockCreate.mockResolvedValue({
+            choices: [{ message: { content: JSON.stringify(mockResponse) } }],
+        });
+
+        const result = await clean('Raw text', { hasSpeakers: false, provider: 'groq' });
+
+        expect(result).toHaveLength(1);
+        expect(result[0].narrative).toBe('The team discussed testing and agreed on a plan.');
+        expect(result[0].summary).toBe('Test summary');
+        expect(result[0].mentionedNames).toEqual(['Alice']);
+        expect(getPrompt).toHaveBeenCalledWith('clean', { hasSpeakers: false, provider: 'groq' });
+    });
+
+    it('should pass hasSpeakers context to prompt registry', async () => {
+        mockCreate.mockResolvedValue({
             choices: [{
                 message: {
-                    content: JSON.stringify(mockResponse),
+                    content: JSON.stringify([{
+                        summary: 'Speaker-aware test',
+                        narrative: 'Rahul discussed the budget.',
+                        mentionedNames: ['Rahul'],
+                    }]),
+                },
+            }],
+        });
+
+        await clean('Speaker 0: Hello', { hasSpeakers: true, provider: 'sarvam' });
+
+        expect(getPrompt).toHaveBeenCalledWith('clean', { hasSpeakers: true, provider: 'sarvam' });
+    });
+
+    it('should handle backward-compatible refined_text field', async () => {
+        mockCreate.mockResolvedValue({
+            choices: [{
+                message: {
+                    content: JSON.stringify([{
+                        summary: 'Old format',
+                        refined_text: '- Old style output',
+                    }]),
                 },
             }],
         });
 
         const result = await clean('Raw text');
 
-        expect(result).toEqual(mockResponse);
-        expect(mockGroqClient.chat.completions.create).toHaveBeenCalledWith(expect.objectContaining({
-            messages: expect.arrayContaining([
-                { role: 'system', content: 'Mock System Prompt' },
-                { role: 'user', content: 'Raw text' }
-            ])
-        }));
+        expect(result[0].narrative).toBe('- Old style output');
+        expect(result[0].mentionedNames).toEqual([]);
+    });
+
+    it('should retry on invalid JSON responses', async () => {
+        // First attempt: invalid JSON
+        mockCreate
+            .mockResolvedValueOnce({
+                choices: [{ message: { content: 'not json at all' } }],
+            })
+            // Second attempt: valid JSON
+            .mockResolvedValueOnce({
+                choices: [{
+                    message: {
+                        content: JSON.stringify([{
+                            summary: 'Retried OK',
+                            narrative: 'Good response after retry.',
+                            mentionedNames: [],
+                        }]),
+                    },
+                }],
+            });
+
+        const result = await clean('Raw text');
+        expect(result[0].summary).toBe('Retried OK');
+        expect(mockCreate).toHaveBeenCalledTimes(2);
     });
 });

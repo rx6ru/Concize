@@ -142,7 +142,8 @@ const handleAudioUpload = async (req, res) => {
         await ch.assertQueue(audioQueue, { durable: true });
 
         const isLastChunk = req.headers['x-last-chunk'] === 'true';
-        logger.debug('Last chunk flag', { jobId, isLastChunk });
+        const audioOffset = parseFloat(req.headers['x-audio-offset'] || '0');
+        logger.debug('Chunk headers', { jobId, isLastChunk, audioOffset });
 
         const message = {
             jobId: jobId,
@@ -155,6 +156,7 @@ const handleAudioUpload = async (req, res) => {
                 size: audioFile.buffer.length,
                 duration: metadata.format.duration,
                 uploadTimestamp: new Date().toISOString(),
+                audioOffset: audioOffset,
             },
         };
 

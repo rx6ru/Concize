@@ -19,6 +19,7 @@ const storage = require('./storage');
 const auth = require('./auth');
 const inference = require('./inference');
 const queues = require('./queues');
+const chunking = require('./chunking');
 
 // --- Startup Validation ---
 const warnings = [];
@@ -42,12 +43,20 @@ if (tasksUsingCerebras.length > 0 && inference.cerebrasKeys.length === 0) {
     );
 }
 
-// Groq is always needed for transcription, plus any tasks configured for it
+// Groq keys needed for transcription (if provider is groq) plus any LLM tasks
 if (inference.groqKeys.length === 0) {
-    const groqTasks = [...tasksUsingGroq, 'transcription (Whisper)'];
-    warnings.push(
-        `No GROQ_API_KEYS set. Required for: [${groqTasks.join(', ')}].`
-    );
+    const groqNeeds = [...tasksUsingGroq];
+    if (inference.transcription.provider === 'groq') groqNeeds.push('transcription (Whisper)');
+    if (groqNeeds.length > 0) {
+        warnings.push(
+            `No GROQ_API_KEYS set. Required for: [${groqNeeds.join(', ')}].`
+        );
+    }
+}
+
+// Sarvam keys needed if transcription provider is sarvam
+if (inference.transcription.provider === 'sarvam' && inference.sarvamKeys.length === 0) {
+    errors.push('TRANSCRIPTION_PROVIDER is set to sarvam, but no SARVAM_API_KEYS are set.');
 }
 
 if (inference.geminiKeys.length === 0) {
@@ -77,7 +86,7 @@ logger.info('Inference routing configuration', {
     chat: `${inference.chat.provider} -> ${inference.chat.model}`,
     clean: `${inference.clean.provider} -> ${inference.clean.model}`,
     summary: `${inference.summary.provider} -> ${inference.summary.model}`,
-    transcription: 'groq -> whisper-large-v3 (fixed)'
+    transcription: `${inference.transcription.provider} -> ${inference.transcription.model}`,
 });
 
 const config = Object.freeze({
@@ -87,6 +96,7 @@ const config = Object.freeze({
     auth,
     inference,
     queues,
+    chunking,
 });
 
 module.exports = config;

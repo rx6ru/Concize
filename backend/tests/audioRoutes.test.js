@@ -24,9 +24,11 @@ jest.mock("amqplib", () => ({
   }),
 }));
 
-jest.mock("../configs", () => ({
-  CLOUDAMQP_URL: "amqp://mock-url",
-  AUDIO_QUEUE: "test_audio_queue",
+jest.mock("../configs/appConfig", () => ({
+  queues: {
+    CLOUDAMQP_URL: "amqp://mock-url",
+    AUDIO_QUEUE: "test_audio_queue",
+  }
 }));
 
 // Mock fluent-ffmpeg and ffprobe

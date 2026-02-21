@@ -1,0 +1,144 @@
+Date : 2026-02-21 14:19:38
+Directory : /home/rxbru/myspace/Projects/Concice/Concize
+Total : 92 files,  16054 codes, 1179 comments, 1408 blanks, all 18641 lines
+
+Languages
++----------------+------------+------------+------------+------------+------------+
+| language       | files      | code       | comment    | blank      | total      |
++----------------+------------+------------+------------+------------+------------+
+| JavaScript JSX |         82 |      7,646 |      1,161 |      1,258 |     10,065 |
+| JSON           |          3 |      7,520 |          0 |          2 |      7,522 |
+| PostCSS        |          2 |        620 |          2 |         99 |        721 |
+| HTML           |          4 |        179 |         16 |         17 |        212 |
+| Markdown       |          1 |         89 |          0 |         32 |        121 |
++----------------+------------+------------+------------+------------+------------+
+
+Directories
++----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                               | files      | code       | comment    | blank      | total      |
++----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                  |         92 |     16,054 |      1,179 |      1,408 |     18,641 |
+| . (Files)                                                                                          |          1 |         89 |          0 |         32 |        121 |
+| backend                                                                                            |         78 |     12,134 |      1,051 |      1,101 |     14,286 |
+| backend (Files)                                                                                    |          4 |      7,602 |         27 |         31 |      7,660 |
+| backend/configs                                                                                    |          8 |        160 |         54 |         47 |        261 |
+| backend/controllers                                                                                |          3 |        468 |        101 |        112 |        681 |
+| backend/db                                                                                         |          7 |        398 |        114 |         58 |        570 |
+| backend/db/cloudinary-utils                                                                        |          1 |         79 |          8 |         12 |         99 |
+| backend/db/models                                                                                  |          3 |         87 |         12 |         11 |        110 |
+| backend/db/mongoutils                                                                              |          3 |        232 |         94 |         35 |        361 |
+| backend/middlewares                                                                                |          2 |         59 |         15 |         19 |         93 |
+| backend/routes                                                                                     |          5 |         60 |         35 |         25 |        120 |
+| backend/routes/v1                                                                                  |          5 |         60 |         35 |         25 |        120 |
+| backend/services                                                                                   |         14 |      1,131 |        379 |        279 |      1,789 |
+| backend/services (Files)                                                                           |          6 |        492 |        156 |        117 |        765 |
+| backend/services/embedding                                                                         |          3 |        301 |        107 |         75 |        483 |
+| backend/services/retrieval                                                                         |          1 |         78 |         23 |         18 |        119 |
+| backend/services/transcription                                                                     |          4 |        260 |         93 |         69 |        422 |
+| backend/tests                                                                                      |         19 |      1,506 |         79 |        353 |      1,938 |
+| backend/utils                                                                                      |         14 |        498 |        215 |        123 |        836 |
+| backend/utils (Files)                                                                              |          3 |        104 |         46 |         25 |        175 |
+| backend/utils/llm                                                                                  |          6 |        152 |         50 |         33 |        235 |
+| backend/utils/llmSecurity                                                                          |          5 |        242 |        119 |         65 |        426 |
+| backend/workers                                                                                    |          2 |        252 |         32 |         54 |        338 |
+| frontend                                                                                           |         13 |      3,831 |        128 |        275 |      4,234 |
++----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++----------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| filename                                                                                           | language       | code       | comment    | blank      | total      |
++----------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| /home/rxbru/myspace/Projects/Concice/Concize/README.md                                             | Markdown       |         89 |          0 |         32 |        121 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/appConfig.js                          | JavaScript JSX |         69 |         16 |         18 |        103 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/auth.js                               | JavaScript JSX |          6 |          2 |          3 |         11 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/chunking.js                           | JavaScript JSX |          6 |          8 |          5 |         19 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/database.js                           | JavaScript JSX |          9 |          2 |          3 |         14 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/inference.js                          | JavaScript JSX |         54 |         20 |         11 |         85 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/queues.js                             | JavaScript JSX |          6 |          2 |          3 |         11 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/server.js                             | JavaScript JSX |          5 |          2 |          2 |          9 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/configs/storage.js                            | JavaScript JSX |          5 |          2 |          2 |          9 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/controllers/audioController.js                | JavaScript JSX |        136 |         29 |         33 |        198 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/controllers/chatLLM.js                        | JavaScript JSX |        272 |         57 |         63 |        392 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/controllers/meetingController.js              | JavaScript JSX |         60 |         15 |         16 |         91 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/cloudinary-utils/audio.db.js               | JavaScript JSX |         79 |          8 |         12 |         99 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/models/chat.model.js                       | JavaScript JSX |         21 |          5 |          4 |         30 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/models/meeting.model.js                    | JavaScript JSX |         27 |          7 |          4 |         38 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/models/meetingSummary.model.js             | JavaScript JSX |         39 |          0 |          3 |         42 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/mongoutils/chat.db.js                      | JavaScript JSX |         56 |         33 |         11 |        100 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/mongoutils/summary.db.js                   | JavaScript JSX |         84 |         29 |         12 |        125 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/db/mongoutils/transcription.db.js             | JavaScript JSX |         92 |         32 |         12 |        136 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/jest.config.js                                | JavaScript JSX |         14 |          0 |          1 |         15 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/middlewares/requestLogger.js                  | JavaScript JSX |         23 |         11 |          9 |         43 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/middlewares/tempAuthCheck.js                  | JavaScript JSX |         36 |          4 |         10 |         50 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/package-lock.json                             | JSON           |      7,436 |          0 |          1 |      7,437 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/package.json                                  | JSON           |         44 |          0 |          0 |         44 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/routes/v1/audioRoutes.js                      | JavaScript JSX |         10 |          8 |          3 |         21 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/routes/v1/chatRoutes.js                       | JavaScript JSX |         18 |         10 |          7 |         35 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/routes/v1/index.js                            | JavaScript JSX |          6 |          3 |          4 |         13 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/routes/v1/meetingRoutes.js                    | JavaScript JSX |          6 |          9 |          4 |         19 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/routes/v1/transcRoutes.js                     | JavaScript JSX |         20 |          5 |          7 |         32 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/server.js                                     | JavaScript JSX |        108 |         27 |         29 |        164 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/chunkOrchestrator.js                 | JavaScript JSX |        111 |         25 |         21 |        157 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/cleanService.js                      | JavaScript JSX |         70 |         14 |         18 |        102 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/embedding/chatEmbedding.js           | JavaScript JSX |         71 |         22 |         16 |        109 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/embedding/embeddingService.js        | JavaScript JSX |        107 |         50 |         29 |        186 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/embedding/transcriptionEmbedding.js  | JavaScript JSX |        123 |         35 |         30 |        188 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/meetingService.js                    | JavaScript JSX |         36 |         17 |          5 |         58 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/preChunker.js                        | JavaScript JSX |        117 |         52 |         29 |        198 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/retrieval/vectorSearchService.js     | JavaScript JSX |         78 |         23 |         18 |        119 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/summaryService.js                    | JavaScript JSX |         52 |         18 |         16 |         86 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/transcription/groqNormalizer.js      | JavaScript JSX |         52 |         21 |         15 |         88 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/transcription/sarvamBatchProvider.js | JavaScript JSX |        101 |         25 |         23 |        149 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/transcription/sarvamNormalizer.js    | JavaScript JSX |         63 |         14 |         17 |         94 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/transcription/transcriptionResult.js | JavaScript JSX |         44 |         33 |         14 |         91 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/services/transcriptionService.js              | JavaScript JSX |        106 |         30 |         28 |        164 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/audioRoutes.test.js                     | JavaScript JSX |         91 |         10 |         23 |        124 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/baseKeyRotation.test.js                 | JavaScript JSX |         22 |          0 |          6 |         28 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/clean.test.js                           | JavaScript JSX |         96 |          6 |         19 |        121 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/cloudAMQP.js                            | JavaScript JSX |         16 |          1 |          5 |         22 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/groqNormalizer.test.js                  | JavaScript JSX |        106 |          1 |         20 |        127 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/integration_rotation.test.js            | JavaScript JSX |         20 |          1 |          5 |         26 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/llmSecurity.test.js                     | JavaScript JSX |        126 |          4 |         23 |        153 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/meetingCompletion.test.js               | JavaScript JSX |         82 |          5 |         30 |        117 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/meetingRoutes.test.js                   | JavaScript JSX |         80 |          6 |         29 |        115 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/preChunker.test.js                      | JavaScript JSX |        121 |         10 |         22 |        153 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/qdrant_connectivity.js                  | JavaScript JSX |         32 |          2 |          7 |         41 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/sarvamNormalizer.test.js                | JavaScript JSX |        112 |          2 |         21 |        135 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/summary.db.test.js                      | JavaScript JSX |        142 |          5 |         31 |        178 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/summaryService.test.js                  | JavaScript JSX |        108 |          6 |         24 |        138 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/testAuth.js                             | JavaScript JSX |         81 |          3 |         14 |         98 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/testConsumer.js                         | JavaScript JSX |         32 |          6 |         11 |         49 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/transcription.db.test.js                | JavaScript JSX |        123 |          4 |         42 |        169 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/verify_error_categories.test.js         | JavaScript JSX |         94 |          7 |         16 |        117 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/tests/verify_groq_models.js                   | JavaScript JSX |         22 |          0 |          5 |         27 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/config.js                               | JavaScript JSX |         11 |         19 |          3 |         33 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/baseKeyRotation.js                  | JavaScript JSX |         27 |          1 |          7 |         35 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/cerebrasService.js                  | JavaScript JSX |         23 |          9 |          5 |         37 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/geminiService.js                    | JavaScript JSX |         20 |          5 |          4 |         29 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/groqService.js                      | JavaScript JSX |         20 |          5 |          4 |         29 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/inferenceProvider.js                | JavaScript JSX |         46 |         21 |          7 |         74 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llm/sarvamService.js                    | JavaScript JSX |         16 |          9 |          6 |         31 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llmSecurity/index.js                    | JavaScript JSX |         17 |          9 |          8 |         34 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llmSecurity/inputGuardrails.js          | JavaScript JSX |         33 |         22 |          8 |         63 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llmSecurity/outputGuardrails.js         | JavaScript JSX |         61 |         20 |         14 |         95 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llmSecurity/relevanceFilter.js          | JavaScript JSX |         78 |         42 |         18 |        138 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/llmSecurity/securityMonitor.js          | JavaScript JSX |         53 |         26 |         17 |         96 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/logger.js                               | JavaScript JSX |         31 |         14 |          9 |         54 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/utils/systemCheck.js                          | JavaScript JSX |         62 |         13 |         13 |         88 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/workers/summaryWorker.js                      | JavaScript JSX |         71 |         20 |         22 |        113 |
+| /home/rxbru/myspace/Projects/Concice/Concize/backend/workers/transcriptionWorker.js                | JavaScript JSX |        181 |         12 |         32 |        225 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/chat-popup.css                               | PostCSS        |        400 |          2 |         62 |        464 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/chat-popup.html                              | HTML           |         47 |          2 |          4 |         53 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/chat-popup.js                                | JavaScript JSX |        263 |         25 |         59 |        347 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/manifest.json                                | JSON           |         40 |          0 |          1 |         41 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/marked.min.js                                | JavaScript JSX |      2,210 |          9 |          3 |      2,222 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/offscreen.html                               | HTML           |          9 |          0 |          1 |         10 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/offscreen.js                                 | JavaScript JSX |        185 |         18 |         34 |        237 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/permission.html                              | HTML           |         48 |          0 |          1 |         49 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/permission.js                                | JavaScript JSX |         16 |          0 |          3 |         19 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/popup.css                                    | PostCSS        |        220 |          0 |         37 |        257 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/popup.html                                   | HTML           |         75 |         14 |         11 |        100 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/popup.js                                     | JavaScript JSX |        256 |         52 |         51 |        359 |
+| /home/rxbru/myspace/Projects/Concice/Concize/frontend/service-worker.js                            | JavaScript JSX |         62 |          6 |          8 |         76 |
+| Total                                                                                              |                |     16,054 |      1,179 |      1,408 |     18,641 |
++----------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+

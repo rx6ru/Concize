@@ -1,8 +1,8 @@
 // configs/inference.js
 // LLM inference provider and model configuration
-// Supports per-task provider (groq | cerebras) and model selection
+// Supports per-task provider (groq | cerebras | sarvam) and model selection
 
-const VALID_PROVIDERS = ['groq', 'cerebras'];
+const VALID_PROVIDERS = ['groq', 'cerebras', 'sarvam'];
 
 /**
  * Parses comma-separated API keys from environment variables.
@@ -36,6 +36,7 @@ function validateProvider(provider, taskName) {
 const groqKeys = parseKeys('GROQ_API_KEYS', 'GROQ_API_KEY');
 const cerebrasKeys = parseKeys('CEREBRAS_API_KEYS', 'CEREBRAS_API_KEY');
 const geminiKeys = parseKeys('GEMINI_API_KEYS', 'GEMINI_API_KEY');
+const sarvamKeys = parseKeys('SARVAM_API_KEYS', 'SARVAM_API_KEY');
 
 // --- Per-task provider + model routing ---
 const chat = {
@@ -57,19 +58,27 @@ const summary = {
     model: process.env.SUMMARY_MODEL || 'llama-3.1-8b-instant',
 };
 
-// Transcription is always Groq Whisper — not configurable
-const transcription = Object.freeze({
-    provider: 'groq',
-    model: 'whisper-large-v3',
-});
+// Transcription — now configurable (defaults to Groq whisper-large-v3-turbo)
+const transcription = {
+    provider: validateProvider(process.env.TRANSCRIPTION_PROVIDER || 'groq', 'transcription'),
+    model: process.env.TRANSCRIPTION_MODEL || 'whisper-large-v3-turbo',
+};
+
+// --- Transcription quality filters (tunable via env) ---
+const transcriptionFilters = {
+    silenceThreshold: parseFloat(process.env.SILENCE_THRESHOLD || '0.5'),
+    confidenceFloor: parseFloat(process.env.CONFIDENCE_FLOOR || '-0.5'),
+};
 
 module.exports = {
     groqKeys,
     cerebrasKeys,
     geminiKeys,
+    sarvamKeys,
     chat,
     clean,
     summary,
     transcription,
+    transcriptionFilters,
     VALID_PROVIDERS,
 };

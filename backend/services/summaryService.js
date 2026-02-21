@@ -1,29 +1,34 @@
-const fs = require('fs');
-const path = require('path');
+// services/summaryService.js
+// Generates incremental meeting summaries using the prompt registry.
+
+'use strict';
+
 const { getSummaryInference } = require('../utils/llm/inferenceProvider');
 const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
+const { getPrompt } = require('../.secrets/promptRegistry');
 const { createLogger } = require('../utils/logger');
 
 const logger = createLogger('summaryService');
-
-// Load prompt template from secure module
-const { getSummaryPrompt } = require('../.secrets/meetingSummary');
 
 /**
  * Generates an incremental update to the meeting summary.
  * @param {string} currentSummary - The existing summary text (or empty string).
  * @param {string} newTranscript - The new chunk of transcription.
  * @param {number} wordLimit - The target word count.
+ * @param {{ hasSpeakers?: boolean }} [context] - Context for prompt selection.
  * @returns {Promise<Object>} The updated title and summary text.
  */
-const generateIncrementalSummary = async (currentSummary, newTranscript, wordLimit) => {
-    // 1. Construct prompt
+const generateIncrementalSummary = async (currentSummary, newTranscript, wordLimit, context = {}) => {
+    // Resolve the correct prompt template via the registry
+    const getSummaryPrompt = getPrompt('summary', context);
+
+    if (typeof getSummaryPrompt !== 'function') {
+        throw new Error('Summary prompt did not resolve to a template function');
+    }
+
     const prompt = getSummaryPrompt(currentSummary, newTranscript, wordLimit);
 
-
-    // 2. Call LLM
     try {
-        // Get inference client routed by config
         const { client, model, taskConfig } = getSummaryInference();
         logger.debug('Generating summary', { provider: taskConfig.provider, model });
 
@@ -32,63 +37,49 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
                 { role: 'user', content: prompt }
             ],
             model: model,
-            response_format: { type: 'json_object' } // Enforce JSON
+            response_format: { type: 'json_object' },
         });
 
         const result = completion.choices[0]?.message?.content;
-
         if (!result) {
-            throw new Error("Empty response from LLM");
+            throw new Error('Empty response from LLM');
         }
 
-        // 3. Parse JSON
         const parsed = JSON.parse(result);
-
         if (!parsed.summary || !parsed.title) {
-            throw new Error("Invalid structure from LLM. Missing title or summary.");
+            throw new Error('Invalid structure from LLM. Missing title or summary.');
         }
 
         return parsed;
-
     } catch (error) {
-        logger.error("LLM_SUMMARY_ERROR", { error: error.message });
+        logger.error('LLM_SUMMARY_ERROR', { error: error.message });
         throw error;
     }
 };
 
 /**
  * Orchestrates the full update process for a chunk.
- * @param {string} jobId 
- * @param {string} rawText 
- * @param {number} chunkIndex 
+ * @param {string} jobId
+ * @param {string} rawText
+ * @param {number} chunkIndex
+ * @param {{ hasSpeakers?: boolean }} [context]
  */
-const processSummaryUpdate = async (jobId, rawText, chunkIndex) => {
+const processSummaryUpdate = async (jobId, rawText, chunkIndex, context = {}) => {
     try {
-        // 1. Lock/Start update (Ordering check)
         const summaryDoc = await startSummaryUpdate(jobId, chunkIndex);
+        if (!summaryDoc) return;
 
-        if (!summaryDoc) {
-            // This might happen if 'startSummaryUpdate' throws or returns null logic changes.
-            // With current db logic, it throws if out of order.
-            return;
-        }
-
-        // 2. Generate
         const updatedData = await generateIncrementalSummary(
             summaryDoc.content,
             rawText,
-            summaryDoc.wordLimit
+            summaryDoc.wordLimit,
+            context,
         );
 
-        // 3. Save
         await saveSummaryContent(jobId, updatedData, chunkIndex);
-
     } catch (error) {
-        // Re-throw to let the worker handle retry/dead-letter
         throw error;
     }
 };
 
-module.exports = {
-    processSummaryUpdate
-};
+module.exports = { processSummaryUpdate };

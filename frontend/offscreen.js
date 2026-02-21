@@ -11,6 +11,7 @@ let stopTimeouts = [];
 let userStopped = false;
 let audioContext = null;
 let lastChunkSent = false;
+let globalStartTimeMs = 0;
 
 // Entry point for messages from other parts of the extension
 chrome.runtime.onMessage.addListener(async (message) => {
@@ -45,9 +46,12 @@ async function startRecording(streamId) {
     return; // Error already handled in getMediaStream
   }
 
+  // Anchor the global meeting start time
+  globalStartTimeMs = Date.now();
+
   // Start the first recorder cycle
   runRecorderCycle('A', mediaStream);
-  
+
   window.location.hash = "recording";
   chrome.runtime.sendMessage({
     type: "update-icon",
@@ -60,7 +64,7 @@ async function startRecording(streamId) {
 async function stopRecording() {
   console.log("Stopping recording process...");
   userStopped = true;
-  
+
   // Stop all running recorders
   if (recorderA?.state === 'recording') {
     recorderA.stop();
@@ -82,7 +86,7 @@ async function stopRecording() {
     target: "service-worker",
     recording: false,
   });
-   chrome.runtime.sendMessage({
+  chrome.runtime.sendMessage({
     type: "recording-stopped",
     target: "service-worker",
   });
@@ -93,7 +97,7 @@ async function stopRecording() {
 function runRecorderCycle(recorderName, stream) {
   console.log(`Starting cycle for recorder ${recorderName}`);
   const isRecorderA = recorderName === 'A';
-  
+
   // 1. Create and start the recorder
   const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
   let dataBuffer = isRecorderA ? dataA : dataB;
@@ -105,11 +109,14 @@ function runRecorderCycle(recorderName, stream) {
     }
   };
 
+  // Capture the moment this specific chunk begins recording
+  const chunkStartTimeMs = Date.now() - globalStartTimeMs;
+
   recorder.onstop = () => {
     const isLast = userStopped && !lastChunkSent;
     if (isLast) lastChunkSent = true;
-    console.log(`Recorder ${recorderName} stopped. isLast: ${isLast}`);
-    sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }), isLast);
+    console.log(`Recorder ${recorderName} stopped. isLast: ${isLast}, offsetMs: ${chunkStartTimeMs}`);
+    sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }), isLast, chunkStartTimeMs);
     dataBuffer.length = 0; // Clear buffer after sending
     if (isRecorderA) recorderA = null;
     else recorderB = null;
@@ -117,9 +124,9 @@ function runRecorderCycle(recorderName, stream) {
 
   if (isRecorderA) recorderA = recorder;
   else recorderB = recorder;
-  
+
   recorder.start();
-  console.log(`Recorder ${recorderName} started.`);
+  console.log(`Recorder ${recorderName} started. Offset: ${chunkStartTimeMs}ms`);
 
   // 2. Schedule the *other* recorder to start with an overlap
   const nextRecorderName = isRecorderA ? 'B' : 'A';
@@ -138,12 +145,14 @@ function runRecorderCycle(recorderName, stream) {
 }
 
 // Handles sending the audio blob to the backend
-async function sendAudioChunk(audioBlob, isLastChunk = false) {
+async function sendAudioChunk(audioBlob, isLastChunk = false, chunkStartTimeMs = 0) {
   if (audioBlob.size === 0) {
     console.log("Skipping empty audio chunk.");
     return;
   }
-  console.log(`Preparing to send audio chunk of size ${audioBlob.size}, isLast: ${isLastChunk}`);
+
+  const offsetSeconds = (chunkStartTimeMs / 1000).toFixed(3);
+  console.log(`Preparing to send audio chunk of size ${audioBlob.size}, isLast: ${isLastChunk}, offset: M${offsetSeconds}s`);
 
   const formData = new FormData();
   formData.append('audio', audioBlob, `recording-${new Date().toISOString()}.webm`);
@@ -158,7 +167,8 @@ async function sendAudioChunk(audioBlob, isLastChunk = false) {
       headers: {
         'x-auth-code': 'lostnfound',
         'Cookie': `jobId=${currentJobId}`,
-        'x-last-chunk': isLastChunk.toString()
+        'x-last-chunk': isLastChunk.toString(),
+        'x-audio-offset': offsetSeconds.toString()
       },
       body: formData,
     });
@@ -180,46 +190,46 @@ async function sendAudioChunk(audioBlob, isLastChunk = false) {
 
 // Helper to get the combined tab and mic stream
 async function getMediaStream(streamId) {
-    await stopAllStreams();
-    try {
-        const tabStream = await navigator.mediaDevices.getUserMedia({
-            audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
-            video: false,
-        });
+  await stopAllStreams();
+  try {
+    const tabStream = await navigator.mediaDevices.getUserMedia({
+      audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
+      video: false,
+    });
 
-        const micStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: false,
-        });
+    const micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    });
 
-        activeStreams.push(tabStream, micStream);
+    activeStreams.push(tabStream, micStream);
 
-        audioContext = new AudioContext();
-        const destination = audioContext.createMediaStreamDestination();
+    audioContext = new AudioContext();
+    const destination = audioContext.createMediaStreamDestination();
 
-        const tabSource = audioContext.createMediaStreamSource(tabStream);
-        const tabGain = audioContext.createGain();
-        tabGain.gain.value = 1.0;
-        tabSource.connect(tabGain).connect(destination);
-        
-        const micSource = audioContext.createMediaStreamSource(micStream);
-        const micGain = audioContext.createGain();
-        micGain.gain.value = 1.5;
-        micSource.connect(micGain).connect(destination);
+    const tabSource = audioContext.createMediaStreamSource(tabStream);
+    const tabGain = audioContext.createGain();
+    tabGain.gain.value = 1.0;
+    tabSource.connect(tabGain).connect(destination);
 
-        // This is a mixed stream, but we also need to connect tab audio to speakers
-        tabGain.connect(audioContext.destination);
+    const micSource = audioContext.createMediaStreamSource(micStream);
+    const micGain = audioContext.createGain();
+    micGain.gain.value = 1.5;
+    micSource.connect(micGain).connect(destination);
 
-        return destination.stream;
-    } catch (error) {
-        console.error("Error getting media stream:", error);
-        chrome.runtime.sendMessage({
-            type: "recording-error",
-            target: "popup",
-            error: `Stream setup failed: ${error.message}`,
-        });
-        return null;
-    }
+    // This is a mixed stream, but we also need to connect tab audio to speakers
+    tabGain.connect(audioContext.destination);
+
+    return destination.stream;
+  } catch (error) {
+    console.error("Error getting media stream:", error);
+    chrome.runtime.sendMessage({
+      type: "recording-error",
+      target: "popup",
+      error: `Stream setup failed: ${error.message}`,
+    });
+    return null;
+  }
 }
 
 // Helper to stop all active stream tracks
@@ -232,5 +242,5 @@ async function stopAllStreams() {
     await audioContext.close();
     audioContext = null;
   }
-   await new Promise(resolve => setTimeout(resolve, 100)); // Short delay to ensure tracks are released
+  await new Promise(resolve => setTimeout(resolve, 100)); // Short delay to ensure tracks are released
 }
