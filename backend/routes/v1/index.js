@@ -8,5 +8,6 @@ router.use('/audios', require('./audioRoutes'));
 router.use('/meeting', require('./meetingRoutes'));
 router.use('/transcription', require('./transcRoutes'));
 router.use('/chat', require('./chatRoutes'));
+router.use('/health', require('./healthRoutes'));
 
 module.exports = router;
