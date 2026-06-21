@@ -111,8 +111,9 @@ const mapErrorToResponse = (error) => {
  * @param {Object} res - Express response object (SSE)
  * @param {string} userPrompt - The user's message/query
  * @param {string} jobId - Meeting/session id
+ * @param {string} ownerId - Owning user id (tenant scoping for retrieval + embedding)
  */
-const getLLMStreamResponse = async (res, userPrompt, jobId) => {
+const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
     let chatId = null;
     let fullResponseText = '';
     let heartbeatInterval = null;
@@ -149,8 +150,8 @@ const getLLMStreamResponse = async (res, userPrompt, jobId) => {
     try {
         // Step 1: Gather context (Parallel)
         const [transcriptionContext, chatHistory, meetingSummary] = await Promise.all([
-            queryTranscriptions(userPrompt, jobId, 5),
-            queryChats(userPrompt, jobId, 3),
+            queryTranscriptions(userPrompt, jobId, ownerId, 5),
+            queryChats(userPrompt, jobId, ownerId, 3),
             getMeetingSummary(jobId)
         ]);
 
@@ -325,7 +326,7 @@ ${userPrompt}`;
                     await updateChatEntry(chatId, fullResponseText);
                     logger.debug("Chat history updated in MongoDB", { chatId });
 
-                    await upsertChatPair(jobId, userPrompt, fullResponseText, chatId);
+                    await upsertChatPair(jobId, userPrompt, fullResponseText, chatId, ownerId);
                     logger.debug("Chat pair embedded successfully", { chatId });
                 }
             } catch (dbError) {

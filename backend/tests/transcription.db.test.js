@@ -1,168 +1,95 @@
 // tests/transcription.db.test.js
+// Exercises the REAL SQL of the Postgres transcription DB layer against pg-mem,
+// loading the actual db/schema.sql so the queries are validated end-to-end (no live DB).
 
-// Create mock save function
-const mockSave = jest.fn();
+const fs = require('fs');
+const path = require('path');
+const { newDb } = require('pg-mem');
 
-// Mock the Meeting model as a constructor function
-jest.mock('../db/models/meeting.model', () => {
-    const MockMeeting = jest.fn().mockImplementation(() => ({
-        save: mockSave,
-    }));
-    MockMeeting.findOne = jest.fn();
-    MockMeeting.findOneAndUpdate = jest.fn();
-    return MockMeeting;
-});
+// Build an in-memory Postgres, load the real schema, and inject its Pool into db/pg.js.
+const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8');
+let mem;
 
-// Mock config to prevent actual env access
-jest.mock('../utils/config', () => ({
-    MONGODB_URL: 'mongodb://mock-url',
-}));
+jest.mock('../configs/appConfig', () => ({ database: { POSTGRES_URL: 'postgres://mem' } }));
 
-const Meeting = require('../db/models/meeting.model');
+const { _setPoolForTesting, closePool } = require('../db/pg');
 const {
     createTranscription,
+    getMeetingOwner,
     appendTranscription,
+    getTranscription,
     updateMeetingStatus,
     getMeetingStatus,
-    getTranscription,
 } = require('../db/mongoutils/transcription.db');
 
-describe('transcription.db.js', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        mockSave.mockReset();
-    });
+beforeEach(() => {
+    mem = newDb();
+    mem.public.none(schema);
+    const { Pool } = mem.adapters.createPg();
+    _setPoolForTesting(new Pool());
+});
 
-    describe('createTranscription()', () => {
-        it('should create a new meeting document and return true', async () => {
-            mockSave.mockResolvedValue(true);
+afterEach(async () => { await closePool(); });
 
-            const result = await createTranscription('test-job-123');
-
-            expect(mockSave).toHaveBeenCalled();
-            expect(result).toBe(true);
+describe('transcription.db (Postgres)', () => {
+    describe('createTranscription / getMeetingOwner', () => {
+        it('creates a meeting with an owner and resolves the owner', async () => {
+            expect(await createTranscription('job-1', 'user-A')).toBe(true);
+            expect(await getMeetingOwner('job-1')).toBe('user-A');
         });
 
-        it('should return false if save throws an error', async () => {
-            mockSave.mockRejectedValue(new Error('DB Error'));
-            jest.spyOn(console, 'error').mockImplementation(() => { });
-
-            const result = await createTranscription('error-job');
-
-            expect(result).toBe(false);
-        });
-    });
-
-    describe('appendTranscription()', () => {
-        it('should append text and return success with chunkIndex', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue({
-                jobId: 'test-job-456',
-                transcriptionChunks: ['First chunk', 'Hello world']
-            });
-
-            const result = await appendTranscription('test-job-456', 'Hello world');
-
-            expect(Meeting.findOneAndUpdate).toHaveBeenCalledWith(
-                { jobId: 'test-job-456' },
-                { $push: { transcriptionChunks: 'Hello world' } },
-                { new: true, upsert: true }
-            );
-            expect(result).toEqual({ success: true, chunkIndex: 1 });
+        it('returns null owner for a non-existent meeting', async () => {
+            expect(await getMeetingOwner('ghost')).toBeNull();
         });
 
-        it('should return chunkIndex 0 for first chunk', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue({
-                jobId: 'new-job',
-                transcriptionChunks: ['First chunk only']
-            });
-
-            const result = await appendTranscription('new-job', 'First chunk only');
-
-            expect(result).toEqual({ success: true, chunkIndex: 0 });
-        });
-
-        it('should return { success: false, chunkIndex: -1 } if no document is updated', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue(null);
-
-            const result = await appendTranscription('missing-job', 'Text');
-
-            expect(result).toEqual({ success: false, chunkIndex: -1 });
-        });
-
-        it('should return { success: false, chunkIndex: -1, error } on DB error', async () => {
-            const dbError = new Error('DB connection failed');
-            Meeting.findOneAndUpdate.mockRejectedValue(dbError);
-            jest.spyOn(console, 'error').mockImplementation(() => { });
-
-            const result = await appendTranscription('error-job', 'Text');
-
-            expect(result.success).toBe(false);
-            expect(result.chunkIndex).toBe(-1);
-            expect(result.error).toEqual(dbError);
+        it('returns false when creating a duplicate jobId', async () => {
+            await createTranscription('job-dup', 'user-A');
+            expect(await createTranscription('job-dup', 'user-B')).toBe(false);
         });
     });
 
-    describe('updateMeetingStatus()', () => {
-        it('should update status and return true', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue({ status: 'completed' });
+    describe('appendTranscription', () => {
+        beforeEach(async () => { await createTranscription('job-1', 'user-A'); });
 
-            const result = await updateMeetingStatus('job-789', 'completed');
-
-            expect(Meeting.findOneAndUpdate).toHaveBeenCalledWith(
-                { jobId: 'job-789' },
-                { status: 'completed' },
-                { new: true }
-            );
-            expect(result).toBe(true);
+        it('assigns sequential chunk indexes starting at 0', async () => {
+            expect(await appendTranscription('job-1', 'first')).toEqual({ success: true, chunkIndex: 0 });
+            expect(await appendTranscription('job-1', 'second')).toEqual({ success: true, chunkIndex: 1 });
+            expect(await appendTranscription('job-1', 'third')).toEqual({ success: true, chunkIndex: 2 });
         });
 
-        it('should return false if document not found', async () => {
-            Meeting.findOneAndUpdate.mockResolvedValue(null);
-
-            const result = await updateMeetingStatus('non-existent', 'completed');
-
-            expect(result).toBe(false);
+        it('fails (no crash) when the meeting does not exist (FK)', async () => {
+            const res = await appendTranscription('ghost', 'x');
+            expect(res.success).toBe(false);
+            expect(res.chunkIndex).toBe(-1);
         });
     });
 
-    describe('getMeetingStatus()', () => {
-        it('should return the status of a meeting', async () => {
-            Meeting.findOne.mockResolvedValue({ status: 'in-progress' });
+    describe('getTranscription', () => {
+        it('returns status + ordered chunks', async () => {
+            await createTranscription('job-1', 'user-A');
+            await appendTranscription('job-1', 'a');
+            await appendTranscription('job-1', 'b');
 
-            const result = await getMeetingStatus('job-status-test');
-
-            expect(Meeting.findOne).toHaveBeenCalledWith(
-                { jobId: 'job-status-test' },
-                { status: 1, _id: 0 }
-            );
-            expect(result).toBe('in-progress');
+            const doc = await getTranscription('job-1');
+            expect(doc.status).toBe('in-progress');
+            expect(doc.transcriptionChunks).toEqual(['a', 'b']);
         });
 
-        it('should return null if meeting not found', async () => {
-            Meeting.findOne.mockResolvedValue(null);
-
-            const result = await getMeetingStatus('missing-job');
-
-            expect(result).toBeNull();
+        it('returns null when the meeting is missing', async () => {
+            expect(await getTranscription('ghost')).toBeNull();
         });
     });
 
-    describe('getTranscription()', () => {
-        it('should return the transcription document', async () => {
-            const mockDoc = { transcriptionChunks: ['Hello', 'World'], status: 'completed' };
-            Meeting.findOne.mockResolvedValue(mockDoc);
-
-            const result = await getTranscription('job-trans-test');
-
-            expect(result).toEqual(mockDoc);
+    describe('status', () => {
+        it('updates and reads status', async () => {
+            await createTranscription('job-1', 'user-A');
+            expect(await getMeetingStatus('job-1')).toBe('in-progress');
+            expect(await updateMeetingStatus('job-1', 'completed')).toBe(true);
+            expect(await getMeetingStatus('job-1')).toBe('completed');
         });
 
-        it('should return null if transcription not found', async () => {
-            Meeting.findOne.mockResolvedValue(null);
-
-            const result = await getTranscription('missing-job');
-
-            expect(result).toBeNull();
+        it('updateMeetingStatus returns false for a missing meeting', async () => {
+            expect(await updateMeetingStatus('ghost', 'completed')).toBe(false);
         });
     });
 });

@@ -1,30 +1,46 @@
 // db/mongoutils/chat.db.js
+//
+// Chat persistence on Supabase Postgres.
+// (Path retained to limit churn; the "mongoutils" name is a misnomer post-migration.)
 
-const mongoose = require('mongoose');
-const Chat = require('../models/chat.model'); // Corrected path to the Chat model
+const crypto = require('crypto');
+const { query } = require('../pg');
 const { createLogger } = require('../../utils/logger');
 
 const logger = createLogger('chatDb');
 
 /**
- * Creates a new chat entry in the chats collection.
- * This is typically called when a user sends a new message.
- * The AI response will be added in a subsequent update.
+ * Maps a snake_case DB row to camelCase, adding an `_id` alias for backward-compat.
+ * @param {Object} row
+ */
+function mapChat(row) {
+    return {
+        _id: row.id,
+        id: row.id,
+        jobId: row.job_id,
+        userChat: row.user_chat,
+        aiChat: row.ai_chat,
+        createdAt: row.created_at,
+    };
+}
+
+/**
+ * Creates a new chat entry for a user message (ai_chat left null for now).
  *
- * @param {string} jobId - The unique ID of the meeting session.
- * @param {string} userChat - The message sent by the user.
- * @returns {Promise<Object>} The newly created chat document.
+ * @param {string} jobId  The meeting session id.
+ * @param {string} userChat  The user's message.
+ * @returns {Promise<Object>} The newly created chat, including `_id`.
  */
 const createChatEntry = async (jobId, userChat) => {
+    const id = crypto.randomUUID();
     try {
-        const newChat = new Chat({
-            jobId,
-            userChat,
-            // aiChat is intentionally left blank for now
-        });
-        const savedChat = await newChat.save();
-        logger.info(`Chat entry created`, { jobId, chatId: savedChat._id });
-        return savedChat;
+        const { rows } = await query(
+            'INSERT INTO chats (id, job_id, user_chat) VALUES ($1, $2, $3) RETURNING *',
+            [id, jobId, userChat]
+        );
+        const chat = mapChat(rows[0]);
+        logger.info('Chat entry created', { jobId, chatId: chat._id });
+        return chat;
     } catch (error) {
         logger.error('Error creating chat entry', { jobId, error: error.message });
         throw error;
@@ -32,25 +48,24 @@ const createChatEntry = async (jobId, userChat) => {
 };
 
 /**
- * Updates an existing chat entry with the AI's response.
- * This is called after the LLM has generated a complete response.
+ * Updates an existing chat entry with the AI response.
  *
- * @param {string} chatId - The unique ID of the chat document to update.
- * @param {string} aiChat - The complete response from the AI.
- * @returns {Promise<Object>} The updated chat document.
+ * @param {string} chatId  The chat row id.
+ * @param {string} aiChat  The AI's response.
+ * @returns {Promise<Object>} The updated chat row, mapped to camelCase.
  */
 const updateChatEntry = async (chatId, aiChat) => {
     try {
-        const updatedChat = await Chat.findByIdAndUpdate(
-            chatId,
-            { $set: { aiChat: aiChat } },
-            { new: true, runValidators: true } // Return the updated document and run schema validators
+        const { rows } = await query(
+            'UPDATE chats SET ai_chat = $2 WHERE id = $1 RETURNING *',
+            [chatId, aiChat]
         );
-        if (!updatedChat) {
+        if (!rows.length) {
             throw new Error('Chat document not found for update.');
         }
-        logger.info(`Chat entry updated with AI response`, { chatId });
-        return updatedChat;
+        const chat = mapChat(rows[0]);
+        logger.info('Chat entry updated with AI response', { chatId });
+        return chat;
     } catch (error) {
         logger.error('Error updating chat entry', { chatId, error: error.message });
         throw error;
@@ -58,39 +73,46 @@ const updateChatEntry = async (chatId, aiChat) => {
 };
 
 /**
- * Retrieves the chat history for a given meeting session, sorted by timestamp.
+ * Returns the most recent `limit` chats for a job in chronological (ascending) order.
+ * Optionally restricts to chats created before `beforeChatId`.
  *
- * @param {string} jobId - The unique ID of the meeting session.
- * @param {number} [limit=5] - The number of recent chat pairs to retrieve.
- * @returns {Promise<Array>} An array of chat documents.
+ * @param {string} jobId
+ * @param {number} [limit=5]
+ * @param {string|null} [beforeChatId=null]
+ * @returns {Promise<Array>}
  */
 const getChatHistory = async (jobId, limit = 5, beforeChatId = null) => {
     try {
-        // Start with a base query to find all chats for the specific jobId.
-        const query = { jobId };
+        let text;
+        let params;
 
-        // If a beforeChatId is provided, add a condition to the query
-        // to find chats with an _id less than the provided one.
-        // MongoDB ObjectIds are chronologically ordered, so this finds older chats.
         if (beforeChatId) {
-            query._id = { $lt: beforeChatId };
+            text = `
+                SELECT * FROM chats
+                WHERE job_id = $1
+                  AND created_at < (SELECT created_at FROM chats WHERE id = $3)
+                ORDER BY created_at DESC
+                LIMIT $2
+            `;
+            params = [jobId, limit, beforeChatId];
+        } else {
+            text = `
+                SELECT * FROM chats
+                WHERE job_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+            `;
+            params = [jobId, limit];
         }
 
-        // Build the Mongoose query chain.
-        const chatHistory = await Chat.find(query)
-            .sort({ createdAt: -1 }) // Sort by creation date descending to get the newest first.
-            .limit(limit)           // Limit to the most recent chats based on the sort.
-            .exec();
-
-        // Reverse the order to display them in chronological order for the user.
-        return chatHistory.reverse();
+        const { rows } = await query(text, params);
+        // Reverse DESC results to return ascending (chronological) order.
+        return rows.reverse().map(mapChat);
     } catch (error) {
         logger.error('Error retrieving chat history', { jobId, error: error.message });
-        // It's good practice to re-throw the error so the calling function can handle it.
         throw error;
     }
 };
-
 
 module.exports = {
     createChatEntry,

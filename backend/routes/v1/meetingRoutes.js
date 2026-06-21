@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { startMeeting, fetchMeetingSummary } = require('../../controllers/meetingController');
+const { requireLegacyMeetingAccess } = require('../../middlewares/auth');
 
 /**
  * @route POST /api/v1/meeting/start
@@ -11,8 +12,8 @@ router.post('/start', startMeeting);
 
 /**
  * @route GET /api/v1/meeting/:jobId/summary
- * @desc Retrieves the current summary state for a specific meeting job.
+ * @desc Retrieves the current summary state (legacy; ownership enforced).
  */
-router.get('/:jobId/summary', fetchMeetingSummary);
+router.get('/:jobId/summary', requireLegacyMeetingAccess, fetchMeetingSummary);
 
 module.exports = router;

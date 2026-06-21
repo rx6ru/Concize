@@ -24,10 +24,11 @@ const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION;
  *
  * @param {string} userPrompt - The user's query text.
  * @param {string} jobId - The jobId to filter transcription chunks by.
+ * @param {string} ownerId - The owner id to filter by (defense-in-depth tenant isolation).
  * @param {number} [limit=5] - The maximum number of relevant transcription chunks to retrieve.
  * @returns {Promise<Array<Object>>} An array of relevant transcription chunk payloads.
  */
-const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
+const queryTranscriptions = async (userPrompt, jobId, ownerId, limit = 5) => {
     try {
         logger.debug(`Querying transcriptions`, { collection: TRANSCRIPTION_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
@@ -38,18 +39,12 @@ const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
             return [];
         }
 
+        const must = [{ key: 'jobId', match: { value: jobId } }];
+        if (ownerId) must.push({ key: 'ownerId', match: { value: ownerId } });
+
         const searchResult = await client.search(TRANSCRIPTION_COLLECTION_NAME, {
             vector: queryVector,
-            filter: {
-                must: [
-                    {
-                        key: "jobId", // Assuming jobId is stored in the payload of transcription chunks
-                        match: {
-                            value: jobId,
-                        },
-                    },
-                ],
-            },
+            filter: { must },
             limit: limit,
             with_payload: true, // Return the stored payload
             with_vectors: false, // Don't return the vectors, just the payload
@@ -71,10 +66,11 @@ const queryTranscriptions = async (userPrompt, jobId, limit = 5) => {
  *
  * @param {string} userPrompt - The user's query text.
  * @param {string} jobId - The jobId to filter chat pairs by.
+ * @param {string} ownerId - The owner id to filter by (defense-in-depth tenant isolation).
  * @param {number} [limit=3] - The maximum number of relevant chat pairs to retrieve.
  * @returns {Promise<Array<Object>>} An array of relevant chat pair payloads (userChat, aiChat).
  */
-const queryChats = async (userPrompt, jobId, limit = 3) => {
+const queryChats = async (userPrompt, jobId, ownerId, limit = 3) => {
     try {
         logger.debug(`Querying chat history`, { collection: CHAT_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
@@ -85,18 +81,12 @@ const queryChats = async (userPrompt, jobId, limit = 3) => {
             return [];
         }
 
+        const must = [{ key: 'jobId', match: { value: jobId } }];
+        if (ownerId) must.push({ key: 'ownerId', match: { value: ownerId } });
+
         const searchResult = await client.search(CHAT_COLLECTION_NAME, {
             vector: queryVector,
-            filter: {
-                must: [
-                    {
-                        key: "jobId", // Assuming jobId is stored in the payload of chat pairs
-                        match: {
-                            value: jobId,
-                        },
-                    },
-                ],
-            },
+            filter: { must },
             limit: limit,
             with_payload: true, // Return the stored payload
             with_vectors: false, // Don't return the vectors, just the payload

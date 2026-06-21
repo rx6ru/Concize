@@ -13,6 +13,31 @@
         <!-- Logo for the application -->
         <img src="images/Logo.png" alt="Concize Logo" class="logo">
 
+        <!-- Auth: login form (shown when signed out) -->
+        <div id="authSection" class="hidden">
+            <input id="authEmail" type="email" placeholder="Email" autocomplete="username"
+                style="width:100%;box-sizing:border-box;padding:.6rem;margin-bottom:.5rem;border:1px solid #ccc;border-radius:6px;">
+            <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password"
+                style="width:100%;box-sizing:border-box;padding:.6rem;margin-bottom:.5rem;border:1px solid #ccc;border-radius:6px;">
+            <div class="button-wrapper">
+                <button id="signInButton" class="action-button visible">Sign In</button>
+            </div>
+            <div class="button-wrapper" style="margin-top:.5rem;">
+                <button id="signUpButton" class="action-button visible">Create Account</button>
+            </div>
+            <div id="authMessage" class="message-box"></div>
+        </div>
+
+        <!-- Signed-in account bar -->
+        <div id="accountBar" class="hidden"
+            style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:.5rem;font-size:.8rem;">
+            <span id="accountEmail" style="color:#555;"></span>
+            <button id="signOutButton" style="background:none;border:none;color:#3f51b5;cursor:pointer;">Sign out</button>
+        </div>
+
+        <!-- App (shown only when signed in) -->
+        <div id="appSection" class="hidden">
+
         <!-- Worker status display -->
         <div class="status-wrapper">
             <span>Recording Status:</span>
@@ -92,8 +117,11 @@
                 Download Transcription
             </button>
         </div>
+        </div><!-- /#appSection -->
     </div>
-    <!-- Link to the JavaScript file -->
+    <!-- Config + auth must load before popup.js -->
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
     <script src="popup.js"></script>
 </body>
 

@@ -3,7 +3,8 @@
 require('dotenv').config();
 const amqp = require('amqplib');
 const config = require('../configs/appConfig');
-const { connectToMongo, getTranscription } = require('../db/mongoutils/transcription.db');
+const { getTranscription } = require('../db/mongoutils/transcription.db');
+const { connectPg } = require('../db/pg');
 const { completeSummary } = require('../db/mongoutils/summary.db');
 const { processSummaryUpdate } = require('../services/summaryService');
 const { createLogger } = require('../utils/logger');
@@ -15,7 +16,7 @@ let channel, connection;
 const startSummaryWorker = async () => {
     try {
         // 1. Connect to DB
-        await connectToMongo();
+        await connectPg();
 
         // 2. Connect to RabbitMQ
         connection = await amqp.connect(config.queues.CLOUDAMQP_URL);

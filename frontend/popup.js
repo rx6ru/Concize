@@ -13,7 +13,81 @@ const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
 const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
 const openChatButton = document.getElementById("openChat");
 
+// --- Auth elements ---
+const authSection = document.getElementById("authSection");
+const appSection = document.getElementById("appSection");
+const accountBar = document.getElementById("accountBar");
+const accountEmail = document.getElementById("accountEmail");
+const authEmailInput = document.getElementById("authEmail");
+const authPasswordInput = document.getElementById("authPassword");
+const signInButton = document.getElementById("signInButton");
+const signUpButton = document.getElementById("signUpButton");
+const signOutButton = document.getElementById("signOutButton");
+const authMessageDiv = document.getElementById("authMessage");
+
 let fullTranscriptionText = ''; // To store the transcription
+
+/**
+ * Toggles the popup between the login form and the app based on auth state.
+ * When signed in, also kicks off the recording-state check.
+ */
+async function applyAuthState() {
+    const signedIn = await ConcizeAuth.isAuthenticated();
+    authSection.classList.toggle("hidden", signedIn);
+    appSection.classList.toggle("hidden", !signedIn);
+    accountBar.classList.toggle("hidden", !signedIn);
+    if (signedIn) {
+        await checkRecordingState();
+    }
+}
+
+function showAuthMessage(message, isError = true) {
+    authMessageDiv.textContent = message;
+    authMessageDiv.style.display = "block";
+    authMessageDiv.style.backgroundColor = isError ? "#dc2626" : "#3f51b5";
+}
+
+async function handleSignIn() {
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password) return showAuthMessage("Enter email and password.");
+    try {
+        signInButton.disabled = true;
+        await ConcizeAuth.signIn(email, password);
+        authMessageDiv.style.display = "none";
+        await applyAuthState();
+    } catch (err) {
+        showAuthMessage(err.message);
+    } finally {
+        signInButton.disabled = false;
+    }
+}
+
+async function handleSignUp() {
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password) return showAuthMessage("Enter email and password.");
+    try {
+        signUpButton.disabled = true;
+        const data = await ConcizeAuth.signUp(email, password);
+        if (data.access_token) {
+            await applyAuthState();
+        } else {
+            // Email confirmation required.
+            showAuthMessage("Account created — check your email to confirm, then sign in.", false);
+        }
+    } catch (err) {
+        showAuthMessage(err.message);
+    } finally {
+        signUpButton.disabled = false;
+    }
+}
+
+async function handleSignOut() {
+    await ConcizeAuth.signOut();
+    await chrome.storage.local.remove('meetingId');
+    await applyAuthState();
+}
 
 /**
  * Displays a general status message to the user.
@@ -147,8 +221,11 @@ async function checkRecordingState() {
     updateUIForRecording(isCurrentlyRecording);
 }
 
-// Call checkRecordingState when popup opens
-document.addEventListener("DOMContentLoaded", checkRecordingState);
+// On open, decide between login form and app.
+document.addEventListener("DOMContentLoaded", applyAuthState);
+signInButton.addEventListener("click", handleSignIn);
+signUpButton.addEventListener("click", handleSignUp);
+signOutButton.addEventListener("click", handleSignOut);
 
 // Add button click listeners
 startButton.addEventListener("click", async () => {
@@ -161,23 +238,20 @@ startButton.addEventListener("click", async () => {
     }
 
     try {
-        // Call the meeting/start API to get a jobId
-        const startMeetingResponse = await fetch('http://localhost:3000/api/meeting/start', {
+        // Create a meeting (RESTful, authenticated). Returns a meetingId.
+        const startMeetingResponse = await ConcizeAuth.authedFetch('/api/v1/meetings', {
             method: 'POST',
-            headers: {
-                // TODO: Use proper auth in production
-                'x-auth-code': 'lostnfound'
-            },
         });
         const startMeetingData = await startMeetingResponse.json();
 
-        if (!startMeetingData.success) {
-            showStatusMessage(`Failed to start meeting session: ${startMeetingData.message}`, true);
+        if (!startMeetingResponse.ok || !startMeetingData.success) {
+            showStatusMessage(`Failed to start meeting session: ${startMeetingData.message || startMeetingResponse.status}`, true);
             updateUIForRecording(false); // Revert UI if meeting session can't start
             return;
         }
-        console.log(`Meeting session started with jobId: ${startMeetingData.jobId}`);
-        await chrome.storage.local.set({ jobId: startMeetingData.jobId });
+        const meetingId = startMeetingData.meetingId;
+        console.log(`Meeting session started with meetingId: ${meetingId}`);
+        await chrome.storage.local.set({ meetingId });
 
         const [tab] = await chrome.tabs.query({
             active: true,
@@ -220,7 +294,7 @@ startButton.addEventListener("click", async () => {
             target: "offscreen",
             data: {
                 streamId: streamId,
-                jobId: startMeetingData.jobId
+                meetingId: meetingId
             },
         });
 
@@ -250,23 +324,19 @@ getTranscriptionButton.addEventListener("click", async () => {
     downloadButtonWrapper.classList.add('hidden'); // Hide download button initially
 
     try {
-        const result = await chrome.storage.local.get('jobId');
-        const jobId = result.jobId;
+        const result = await chrome.storage.local.get('meetingId');
+        const meetingId = result.meetingId;
 
-        if (!jobId) {
+        if (!meetingId) {
             showStatusMessage("No active recording session found. Please start a recording first.", true);
             return;
         }
 
         showStatusMessage("Fetching transcription...");
 
-        const response = await fetch(`http://localhost:3000/api/transcription`, {
+        const response = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/transcript`, {
             method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-auth-code': 'lostnfound'
-            },
-            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
         });
 
         if (!response.ok) {
@@ -308,8 +378,8 @@ downloadTranscriptionButton.addEventListener("click", async () => {
     }
     
     try {
-        const result = await chrome.storage.local.get('jobId');
-        const jobId = result.jobId || 'session';
+        const result = await chrome.storage.local.get('meetingId');
+        const meetingId = result.meetingId || 'session';
 
         // Create a Blob from the transcription text
         const blob = new Blob([fullTranscriptionText], { type: 'text/plain' });
@@ -318,7 +388,7 @@ downloadTranscriptionButton.addEventListener("click", async () => {
         // Create a temporary anchor element and trigger download
         const a = document.createElement('a');
         a.href = url;
-        a.download = `transcription-${jobId}.txt`;
+        a.download = `transcription-${meetingId}.txt`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

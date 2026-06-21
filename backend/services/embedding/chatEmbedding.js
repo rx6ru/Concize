@@ -43,7 +43,11 @@ const createChatCollection = async () => {
                 field_name: 'jobId',
                 field_schema: 'keyword'
             });
-            logger.info(`Payload index created for 'jobId'`, { collection: CHAT_COLLECTION_NAME });
+            await client.createPayloadIndex(CHAT_COLLECTION_NAME, {
+                field_name: 'ownerId',
+                field_schema: 'keyword'
+            });
+            logger.info(`Payload indexes created for 'jobId' and 'ownerId'`, { collection: CHAT_COLLECTION_NAME });
 
         } else {
             logger.info(`Collection already exists`, { collection: CHAT_COLLECTION_NAME });
@@ -62,10 +66,11 @@ const createChatCollection = async () => {
  * @param {string} jobId - The jobId associated with the meeting session.
  * @param {string} userChat - The user's message.
  * @param {string} aiChat - The AI's response to the user's message.
- * @param {string} chatId - The MongoDB _id of the chat pair, used as Qdrant point ID.
+ * @param {string} chatId - The chat row id, stored in the payload for cross-reference.
+ * @param {string} ownerId - Owning user id (stamped for tenant isolation).
  * @returns {Promise<Object>} A promise that resolves to the result of the upsert operation.
  */
-const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
+const upsertChatPair = async (jobId, userChat, aiChat, chatId, ownerId) => {
     try {
         // Combine user and AI chat for a comprehensive embedding
         const combinedChatText = `User: ${userChat}\nAI response: ${aiChat}`;
@@ -81,7 +86,8 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId) => {
             vector: vector,
             payload: {
                 jobId: jobId,
-                mongoId: chatId, // Store the MongoDB _id here for future reference
+                ownerId: ownerId ?? null, // tenant isolation
+                mongoId: chatId, // Cross-reference to the chats row id
                 userChat: userChat,
                 aiChat: aiChat,
                 timestamp: new Date().toISOString(), // Store timestamp of embedding

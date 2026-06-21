@@ -1,89 +1,79 @@
-// transcription.db.js
+// db/mongoutils/transcription.db.js
+//
+// Meeting + transcript persistence on Supabase Postgres.
+// (Path retained for now to limit churn; the "mongoutils" name is a misnomer post-migration
+// and is scheduled for a rename sweep.)
 
-const mongoose = require('mongoose');
-const Meeting = require('../models/meeting.model'); // Import the Mongoose model
-const config = require('../../configs/appConfig');
+const { query } = require('../pg');
 const { createLogger } = require('../../utils/logger');
 
 const logger = createLogger('transcriptionDb');
 
 /**
- * Connects to the MongoDB database using the URI from the config.
+ * Creates a new meeting owned by `ownerId`.
+ * @param {string} jobId Unique meeting id.
+ * @param {string} ownerId Owning user id.
+ * @returns {Promise<boolean>} True on success.
  */
-async function connectToMongo() {
+async function createTranscription(jobId, ownerId) {
     try {
-        await mongoose.connect(config.database.MONGODB_URL, {
-            dbName: 'concize' // Explicitly set the database name here
-        });
-        logger.info('Connected to MongoDB via Mongoose');
-    } catch (err) {
-        logger.error('Error connecting to MongoDB', { error: err.message });
-        throw err; // Allow caller to handle shutdown
-    }
-}
-
-/**
- * Creates a new transcription document in the database.
- * @param {string} jobId A unique identifier for the transcription job.
- * @returns {Promise<boolean>} True if the document was created successfully.
- */
-async function createTranscription(jobId) {
-    try {
-        const newMeeting = new Meeting({
-            jobId: jobId,
-        });
-        await newMeeting.save();
-        logger.info(`New transcription document created`, { jobId });
+        await query('INSERT INTO meetings (job_id, owner_id) VALUES ($1, $2)', [jobId, ownerId]);
+        logger.info('New meeting created', { jobId, ownerId });
         return true;
     } catch (err) {
-        logger.error('Error creating transcription document', { jobId, error: err.message });
+        logger.error('Error creating meeting', { jobId, error: err.message });
         return false;
     }
 }
 
 /**
- * Appends new text to an existing transcription document.
- * If the document does not exist, it creates a new one and appends the text.
- * @param {string} jobId The unique identifier of the transcription job.
- * @param {string} newText The text chunk to append.
- * @returns {Promise<Object>} Object containing success status and chunkIndex.
+ * Resolves a meeting's owner (used by the authorization gate).
+ * @param {string} jobId
+ * @returns {Promise<string|null>} ownerId, or null if the meeting does not exist.
+ */
+async function getMeetingOwner(jobId) {
+    const { rows } = await query('SELECT owner_id FROM meetings WHERE job_id = $1', [jobId]);
+    return rows.length ? rows[0].owner_id : null;
+}
+
+/**
+ * Appends a transcript chunk, assigning the next sequential index atomically.
+ * @param {string} jobId
+ * @param {string} newText
+ * @returns {Promise<{success: boolean, chunkIndex: number, error?: Error}>}
  */
 async function appendTranscription(jobId, newText) {
     try {
-        const result = await Meeting.findOneAndUpdate(
-            { jobId: jobId },
-            { $push: { transcriptionChunks: newText } },
-            { new: true, upsert: true } // Return the updated document, create if not found
+        const { rows } = await query(
+            `INSERT INTO transcription_chunks (job_id, chunk_index, text)
+             SELECT $1, COALESCE(MAX(chunk_index) + 1, 0), $2
+               FROM transcription_chunks WHERE job_id = $1
+             RETURNING chunk_index`,
+            [jobId, newText]
         );
-
-        if (result) {
-            const chunkIndex = result.transcriptionChunks.length - 1;
-            logger.info(`Successfully appended text`, { jobId, chunkIndex });
+        if (rows.length) {
+            const chunkIndex = rows[0].chunk_index;
+            logger.info('Appended transcript chunk', { jobId, chunkIndex });
             return { success: true, chunkIndex };
         }
-
-        logger.warn(`Failed to append text - unknown error`, { jobId });
+        logger.warn('Failed to append chunk - no row returned', { jobId });
         return { success: false, chunkIndex: -1 };
     } catch (err) {
-        logger.error('Error appending transcription text', { jobId, error: err.message });
+        // e.g. FK violation when the meeting does not exist.
+        logger.error('Error appending transcript chunk', { jobId, error: err.message });
         return { success: false, chunkIndex: -1, error: err };
     }
 }
 
 /**
- * Updates the status of a meeting document.
- * @param {string} jobId The unique identifier of the transcription job.
- * @param {string} newStatus The new status to set (e.g., 'completed').
- * @returns {Promise<boolean>} True if the document was updated successfully.
+ * @param {string} jobId
+ * @param {string} newStatus
+ * @returns {Promise<boolean>} True if a meeting row was updated.
  */
 async function updateMeetingStatus(jobId, newStatus) {
     try {
-        const result = await Meeting.findOneAndUpdate(
-            { jobId: jobId },
-            { status: newStatus },
-            { new: true }
-        );
-        return !!result; // Return true if a document was found and updated
+        const { rowCount } = await query('UPDATE meetings SET status = $2 WHERE job_id = $1', [jobId, newStatus]);
+        return rowCount > 0;
     } catch (err) {
         logger.error('Error updating meeting status', { jobId, newStatus, error: err.message });
         return false;
@@ -91,14 +81,13 @@ async function updateMeetingStatus(jobId, newStatus) {
 }
 
 /**
- * Fetches the status of a meeting document.
- * @param {string} jobId The unique identifier of the transcription job.
- * @returns {Promise<string|null>} The status string or null if the document is not found.
+ * @param {string} jobId
+ * @returns {Promise<string|null>} The status, or null if not found.
  */
 async function getMeetingStatus(jobId) {
     try {
-        const meeting = await Meeting.findOne({ jobId: jobId }, { status: 1, _id: 0 });
-        return meeting ? meeting.status : null;
+        const { rows } = await query('SELECT status FROM meetings WHERE job_id = $1', [jobId]);
+        return rows.length ? rows[0].status : null;
     } catch (err) {
         logger.error('Error fetching meeting status', { jobId, error: err.message });
         return null;
@@ -106,28 +95,35 @@ async function getMeetingStatus(jobId) {
 }
 
 /**
- * Fetches the full transcription document for a given job ID.
- * @param {string} jobId The unique identifier of the transcription job.
- * @returns {Promise<object|null>} The transcription document or null if not found.
+ * Returns the full transcript document for a meeting (shape mirrors the previous API:
+ * `{ status, transcriptionChunks, createdAt }`), or null if the meeting does not exist.
+ * @param {string} jobId
  */
 async function getTranscription(jobId) {
     try {
-        const document = await Meeting.findOne({ jobId: jobId }, { _id: 0, jobId: 0, __v: 0 });
-        if (document) {
-            logger.debug(`Found transcription document`, { jobId });
-        } else {
-            logger.warn(`No transcription document found`, { jobId });
+        const meetingRes = await query('SELECT status, created_at FROM meetings WHERE job_id = $1', [jobId]);
+        if (!meetingRes.rows.length) {
+            logger.warn('No meeting found', { jobId });
+            return null;
         }
-        return document;
+        const chunkRes = await query(
+            'SELECT text FROM transcription_chunks WHERE job_id = $1 ORDER BY chunk_index ASC',
+            [jobId]
+        );
+        return {
+            status: meetingRes.rows[0].status,
+            createdAt: meetingRes.rows[0].created_at,
+            transcriptionChunks: chunkRes.rows.map((r) => r.text),
+        };
     } catch (err) {
-        logger.error('Error fetching transcription document', { jobId, error: err.message });
+        logger.error('Error fetching transcript', { jobId, error: err.message });
         return null;
     }
 }
 
 module.exports = {
-    connectToMongo,
     createTranscription,
+    getMeetingOwner,
     appendTranscription,
     getTranscription,
     updateMeetingStatus,

@@ -44,6 +44,7 @@ const createTranCollection = async () => {
         // These are idempotent — safe to call even if index already exists.
         const indexes = [
             { field_name: 'jobId', field_schema: 'keyword' },
+            { field_name: 'ownerId', field_schema: 'keyword' },
             { field_name: 'speakers', field_schema: 'keyword' },
             { field_name: 'startTime', field_schema: 'float' },
             { field_name: 'endTime', field_schema: 'float' },
@@ -126,6 +127,7 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
                 payload: {
                     // Core content
                     jobId,
+                    ownerId: metadata.ownerId ?? null, // tenant isolation
                     narrative: textToEmbed,
                     summary: chunk.summary || '',
 

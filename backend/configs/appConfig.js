@@ -63,12 +63,23 @@ if (inference.geminiKeys.length === 0) {
     warnings.push('No GEMINI_API_KEYS set. Embedding features will not work.');
 }
 
-if (!database.MONGODB_URL) {
-    warnings.push('MONGODB_URL is not set.');
+if (!database.POSTGRES_URL) {
+    warnings.push('POSTGRES_URL is not set.');
 }
 
 if (!queues.CLOUDAMQP_URL) {
     warnings.push('CLOUDAMQP_URL is not set in queues config.');
+}
+
+// Auth validation
+if (auth.supabase.mode === 'jwks' && !auth.supabase.jwksUri) {
+    warnings.push('AUTH_MODE is jwks but SUPABASE_JWKS_URI is not set. JWT auth will be misconfigured.');
+}
+if (auth.supabase.mode === 'hs256' && !auth.supabase.jwtSecret) {
+    warnings.push('AUTH_MODE is hs256 but SUPABASE_JWT_SECRET is not set. JWT auth will be misconfigured.');
+}
+if (auth.legacy.enabled) {
+    logger.info('Legacy x-auth-code auth is ENABLED. This is a security caveat — disable in production via LEGACY_AUTH_ENABLED=false.');
 }
 
 // Print validation results

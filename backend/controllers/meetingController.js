@@ -18,9 +18,15 @@ const logger = createLogger('meetingController');
 const startMeeting = async (req, res) => {
     logger.info('Meeting start requested');
     try {
+        const ownerId = req.user && req.user.id;
+        if (!ownerId) {
+            // authenticate middleware should guarantee this; fail closed otherwise.
+            return res.status(401).json({ success: false, message: 'Authentication required.' });
+        }
+
         const jobId = crypto.randomUUID();
 
-        const dbResult = await createTranscription(jobId);
+        const dbResult = await createTranscription(jobId, ownerId);
 
         if (!dbResult) {
             logger.error('Failed to create transcription document', { jobId });
@@ -30,15 +36,18 @@ const startMeeting = async (req, res) => {
             });
         }
 
+        // Cookie retained for backward-compat with the legacy extension; the canonical
+        // transport going forward is the meetingId returned in the body + path params.
         res.cookie('jobId', jobId, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production'
         });
 
-        logger.info('Meeting session started', { jobId });
-        res.status(200).json({
+        logger.info('Meeting session started', { jobId, ownerId });
+        res.status(201).json({
             success: true,
-            jobId: jobId,
+            meetingId: jobId,
+            jobId: jobId, // deprecated alias
             message: 'New meeting session initiated.'
         });
 
@@ -59,10 +68,11 @@ const startMeeting = async (req, res) => {
  */
 const fetchMeetingSummary = async (req, res) => {
     try {
-        const { jobId } = req.params;
+        // New RESTful routes use :meetingId; the legacy route uses :jobId.
+        const jobId = req.params.meetingId || req.params.jobId;
 
         if (!jobId) {
-            return res.status(400).json({ success: false, error: "Missing jobId parameter" });
+            return res.status(400).json({ success: false, error: "Missing meetingId parameter" });
         }
 
         const summary = await getMeetingSummary(jobId);

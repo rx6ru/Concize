@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { handleAudioUpload } = require('../../controllers/audioController');
+const { requireLegacyMeetingAccess } = require('../../middlewares/auth');
 
 // Configure Multer to store the file in memory as a Buffer.
 const upload = multer({
@@ -11,11 +12,11 @@ const upload = multer({
 });
 
 /**
- * @route POST /api/v1/audio
+ * @route POST /api/v1/audios
  * @desc Receives an audio chunk, validates it, uploads to Cloudinary,
  *       and pushes a transcription job to the message queue.
- * @access Protected (via tempAuthCheck middleware applied at mount level)
+ * @access Legacy compat shim; ownership enforced via requireLegacyMeetingAccess (cookie jobId).
  */
-router.post('/', upload.single('audio'), handleAudioUpload);
+router.post('/', requireLegacyMeetingAccess, upload.single('audio'), handleAudioUpload);
 
 module.exports = router;

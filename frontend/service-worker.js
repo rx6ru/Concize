@@ -1,4 +1,21 @@
 //service-worker.js
+importScripts('config.js', 'auth.js');
+
+// Background Supabase token refresh via alarms
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('sb-token-refresh', { periodInMinutes: 30 });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create('sb-token-refresh', { periodInMinutes: 30 });
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'sb-token-refresh') {
+    await ConcizeAuth.maybeRefresh();
+  }
+});
+
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "service-worker") {
     switch (message.type) {

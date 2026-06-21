@@ -20,6 +20,7 @@ const logger = createLogger('chunkOrchestrator');
  * @param {Buffer} audioBuffer - Raw audio data
  * @param {Object} metadata - File/upload metadata (originalFileName, mimetype, etc.)
  * @param {string} jobId - Meeting job ID
+ * @param {string} ownerId - Owning user id (stamped onto the Qdrant payload for tenant isolation)
  * @returns {Promise<{
  *   success: boolean,
  *   transcription: string,
@@ -28,7 +29,7 @@ const logger = createLogger('chunkOrchestrator');
  *   error?: string,
  * }>}
  */
-async function processAudioChunk(audioBuffer, metadata, jobId) {
+async function processAudioChunk(audioBuffer, metadata, jobId, ownerId) {
     // Step 1: Transcribe
     logger.info('Step 1: Transcribing audio', { jobId });
     const result = await transcribe(audioBuffer, metadata);
@@ -134,6 +135,7 @@ async function processAudioChunk(audioBuffer, metadata, jobId) {
 
         const enrichedMetadata = {
             ...metadata,
+            ownerId,
             startTime,
             endTime,
             speakers: allSpeakers,

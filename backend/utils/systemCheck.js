@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const amqp = require('amqplib');
 const { QdrantClient } = require('@qdrant/js-client-rest');
 const ffmpeg = require('fluent-ffmpeg');
@@ -29,23 +28,16 @@ const performSystemCheck = async () => {
         throw error;
     }
 
-    // 2. MongoDB Check
+    // 2. Postgres Check
     try {
-        // Mongoose should already be connecting/connected via connectToMongo in index.js
-        // We wait up to 5 seconds for it to be ready
-        let attempts = 0;
-        while (mongoose.connection.readyState !== 1 && attempts < 5) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            attempts++;
-        }
-
-        if (mongoose.connection.readyState === 1) {
-            logger.info('✅ MongoDB connection verified');
-        } else {
-            throw new Error('Mongoose connection not ready after 5s');
-        }
+        const { query } = require('../db/pg');
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Postgres connection timed out')), 5000)
+        );
+        await Promise.race([query('SELECT 1'), timeoutPromise]);
+        logger.info('✅ Postgres connection verified');
     } catch (error) {
-        logger.error('❌ MongoDB check failed', { error: error.message });
+        logger.error('❌ Postgres check failed', { error: error.message });
         throw error;
     }
 

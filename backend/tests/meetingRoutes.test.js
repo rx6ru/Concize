@@ -8,15 +8,20 @@ const cookieParser = require('cookie-parser');
 jest.mock('../db/mongoutils/transcription.db', () => ({
     createTranscription: jest.fn(),
     updateMeetingStatus: jest.fn(),
+    // The legacy summary route runs requireLegacyMeetingAccess, which calls getMeetingOwner.
+    // Resolve to the stub user so the ownership gate passes.
+    getMeetingOwner: jest.fn().mockResolvedValue('test-owner'),
 }));
 
 const { createTranscription } = require('../db/mongoutils/transcription.db');
 const meetingRoutes = require('../routes/v1/meetingRoutes');
 
-// Setup test app
+// Setup test app. A stub auth middleware injects req.user, mirroring the real
+// `authenticate` middleware that runs globally in production.
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
+app.use((req, res, next) => { req.user = { id: 'test-owner' }; next(); });
 app.use('/api/v1/meeting', meetingRoutes);
 
 describe('Meeting Routes', () => {
@@ -32,10 +37,10 @@ describe('Meeting Routes', () => {
                 .post('/api/v1/meeting/start')
                 .send();
 
-            expect(response.status).toBe(200);
+            expect(response.status).toBe(201);
             expect(response.body.success).toBe(true);
-            expect(response.body.jobId).toBeDefined();
-            expect(typeof response.body.jobId).toBe('string');
+            expect(response.body.meetingId).toBeDefined();
+            expect(typeof response.body.meetingId).toBe('string');
             expect(response.headers['set-cookie']).toBeDefined();
         });
 
@@ -56,7 +61,7 @@ describe('Meeting Routes', () => {
             await request(app).post('/api/v1/meeting/start').send();
 
             expect(createTranscription).toHaveBeenCalledTimes(1);
-            expect(createTranscription).toHaveBeenCalledWith(expect.any(String));
+            expect(createTranscription).toHaveBeenCalledWith(expect.any(String), 'test-owner');
         });
     });
 });

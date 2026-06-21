@@ -3,24 +3,23 @@
 const express = require('express');
 const router = express.Router();
 const { getLLMStreamResponse } = require('../../controllers/chatLLM'); // Import the LLM streaming function
+const { requireLegacyMeetingAccess } = require('../../middlewares/auth');
 
 /**
  * @route POST /api/v1/chat/stream
  * @desc Handles incoming chat messages and streams the AI's response.
- * @access Public (or add authentication middleware)
+ * @access Legacy compat shim; ownership enforced via requireLegacyMeetingAccess (body jobId).
  */
-router.post('/stream', async (req, res) => {
+router.post('/stream', requireLegacyMeetingAccess, async (req, res) => {
     try {
-        const { userPrompt, jobId } = req.body;
+        const { userPrompt } = req.body;
 
-        // Validate the incoming request data
-        if (!userPrompt || !jobId) {
-            return res.status(400).json({ error: 'userPrompt and jobId are required.' });
+        if (!userPrompt) {
+            return res.status(400).json({ error: 'userPrompt is required.' });
         }
 
-        // Call the streaming function, which handles the entire RAG pipeline
-        // The function manages the response streaming itself, so we don't need to send a response here.
-        await getLLMStreamResponse(res, userPrompt, jobId);
+        // Ownership already verified; use the gated meeting + owner.
+        await getLLMStreamResponse(res, userPrompt, req.meeting.meetingId, req.meeting.ownerId);
 
     } catch (error) {
         console.error('Error in chat stream route:', error);

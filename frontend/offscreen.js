@@ -6,7 +6,7 @@ const OVERLAP_MS = 30 * 1000; // 30 seconds
 let recorderA, recorderB;
 let dataA = [], dataB = [];
 let activeStreams = [];
-let currentJobId;
+let currentMeetingId;
 let stopTimeouts = [];
 let userStopped = false;
 let audioContext = null;
@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
     switch (message.type) {
       case "start-recording":
         userStopped = false; // Reset flag on new recording
-        currentJobId = message.data.jobId;
+        currentMeetingId = message.data.meetingId;
         await startRecording(message.data.streamId);
         break;
       case "stop-recording":
@@ -158,15 +158,13 @@ async function sendAudioChunk(audioBlob, isLastChunk = false, chunkStartTimeMs =
   formData.append('audio', audioBlob, `recording-${new Date().toISOString()}.webm`);
 
   try {
-    if (!currentJobId) {
-      throw new Error("No job ID found for sending chunk.");
+    if (!currentMeetingId) {
+      throw new Error("No meeting ID found for sending chunk.");
     }
 
-    const response = await fetch('http://localhost:3000/api/audios/', {
+    const response = await ConcizeAuth.authedFetch(`/api/v1/meetings/${currentMeetingId}/audio`, {
       method: 'POST',
       headers: {
-        'x-auth-code': 'lostnfound',
-        'Cookie': `jobId=${currentJobId}`,
         'x-last-chunk': isLastChunk.toString(),
         'x-audio-offset': offsetSeconds.toString()
       },

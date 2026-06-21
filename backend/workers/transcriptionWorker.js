@@ -75,8 +75,9 @@ const startWorker = async () => {
                     jobId = messageContent.jobId;
                     fileId = messageContent.fileId;
                     metadata = messageContent.metadata || {};
+                    const ownerId = messageContent.ownerId;
 
-                    logger.info('Processing job', { jobId, fileId });
+                    logger.info('Processing job', { jobId, fileId, ownerId });
 
                     // Skip if meeting already finalized
                     const meetingStatus = await getMeetingStatus(jobId);
@@ -93,7 +94,7 @@ const startWorker = async () => {
                     logger.debug('Audio buffer fetched', { fileId, size: audioBuffer.length });
 
                     // === DELEGATE TO ORCHESTRATOR ===
-                    const result = await processAudioChunk(audioBuffer, metadata, jobId);
+                    const result = await processAudioChunk(audioBuffer, metadata, jobId, ownerId);
 
                     if (!result.success) {
                         throw new Error(result.error || 'Orchestrator returned failure');
@@ -107,6 +108,7 @@ const startWorker = async () => {
                                     config.queues.SUMMARY_QUEUE,
                                     Buffer.from(JSON.stringify({
                                         jobId,
+                                        ownerId,
                                         chunkIndex: result.chunkIndex,
                                         isLastChunk: messageContent.isLastChunk,
                                     })),

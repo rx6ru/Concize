@@ -169,23 +169,34 @@ class ChatInterface {
         this.currentStreamingMessage = bubbleDiv;
         this.scrollToBottom();
 
-        const API_URL = 'http://localhost:3000/api/chat/stream';
         let accumulatedText = '';
         try {
-            const result = await chrome.storage.local.get('jobId');
-            const jobId = result.jobId;
+            const { meetingId } = await chrome.storage.local.get('meetingId');
+            if (!meetingId) {
+                indicator.remove();
+                bubbleDiv.classList.add('error-bubble');
+                bubbleDiv.innerHTML = `<div class="message-content"><p>No active meeting — start a recording first.</p></div>`;
+                this.currentStreamingMessage = null;
+                return;
+            }
 
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-auth-code': 'lostnfound'
-                },
-                body: JSON.stringify({
-                    userPrompt: userMessage,
-                    jobId: jobId || "default",
-                })
-            });
+            let response;
+            try {
+                response = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userPrompt: userMessage })
+                });
+            } catch (authError) {
+                indicator.remove();
+                bubbleDiv.classList.add('error-bubble');
+                const msg = authError.message === 'Not signed in'
+                    ? 'You are not signed in. Please sign in via the extension popup and try again.'
+                    : authError.message;
+                bubbleDiv.innerHTML = `<div class="message-content"><p>${this.escapeHtml(msg)}</p></div>`;
+                this.currentStreamingMessage = null;
+                return;
+            }
 
             // --- ERROR CHECK 1: PRE-STREAM HTTP ERRORS (429, 503, 500) ---
             if (!response.ok) {

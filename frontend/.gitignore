@@ -1,0 +1,6 @@
+# Local environment config (copy from config.example.js). Holds your Supabase
+# project URL + anon key + backend URL — not committed.
+config.js
+
+.DS_Store
+Thumbs.db

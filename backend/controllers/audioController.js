@@ -71,7 +71,10 @@ function validateAudio(buffer, metadata) {
  */
 const handleAudioUpload = async (req, res) => {
     const audioFile = req.file;
-    const { jobId } = req.cookies;
+    // New RESTful route resolves the meeting via req.meeting (ownership already verified);
+    // legacy route falls back to the jobId cookie.
+    const jobId = (req.meeting && req.meeting.meetingId) || req.cookies.jobId;
+    const ownerId = (req.meeting && req.meeting.ownerId) || (req.user && req.user.id);
 
     // --- Input and Session Validation ---
     if (!audioFile) {
@@ -147,6 +150,7 @@ const handleAudioUpload = async (req, res) => {
 
         const message = {
             jobId: jobId,
+            ownerId: ownerId, // rides the queue so embeddings/summaries land owner-stamped
             fileId: fileId,
             isLastChunk: isLastChunk,
             metadata: {

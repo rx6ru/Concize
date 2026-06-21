@@ -2,16 +2,12 @@
 const express = require('express');
 const router = express.Router();
 const { getTranscription } = require('../../db/mongoutils/transcription.db');
+const { requireLegacyMeetingAccess } = require('../../middlewares/auth');
 
 // Route to get a full transcription by the jobId in the cookie
-// GET /api/transcription
-router.get('/', async (req, res) => {
-  // Get the jobId from the request cookies
-  const { jobId } = req.cookies;
-
-  if (!jobId) {
-    return res.status(400).json({ error: 'jobId is required in the cookie' });
-  }
+// GET /api/transcription  (legacy; ownership enforced via requireLegacyMeetingAccess)
+router.get('/', requireLegacyMeetingAccess, async (req, res) => {
+  const jobId = req.meeting.meetingId;
 
   try {
     const document = await getTranscription(jobId);

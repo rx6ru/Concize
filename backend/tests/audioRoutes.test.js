@@ -31,6 +31,17 @@ jest.mock("../configs/appConfig", () => ({
   }
 }));
 
+// This suite exercises the audio controller; the ownership gate is covered by
+// legacyRoutesOwnership.test.js. Stub it to a pass-through that mirrors what the real
+// gate would attach (req.meeting from the cookie jobId).
+jest.mock("../middlewares/auth", () => ({
+  requireLegacyMeetingAccess: (req, res, next) => {
+    req.user = { id: "legacy-owner" };
+    req.meeting = { meetingId: req.cookies && req.cookies.jobId, ownerId: "legacy-owner" };
+    next();
+  },
+}));
+
 // Mock fluent-ffmpeg and ffprobe
 jest.mock("fluent-ffmpeg", () => {
   const mockFfmpeg = jest.fn(() => ({

@@ -6,11 +6,11 @@ const cookieParser = require("cookie-parser");
 const { createLogger } = require("./utils/logger");
 const requestLogger = require("./middlewares/requestLogger");
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
-const { connectToMongo } = require("./db/mongoutils/transcription.db");
+const { connectPg } = require("./db/pg");
 const { performSystemCheck } = require("./utils/systemCheck");
 const { startWorker, shutdown: workerShutdown } = require("./workers/transcriptionWorker");
 const v1Routes = require("./routes/v1");
-const tempAuthCheck = require("./middlewares/tempAuthCheck");
+const { authenticate } = require("./middlewares/auth");
 
 const logger = createLogger('server');
 
@@ -60,13 +60,14 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(requestLogger);
 
-// Apply temporary authentication middleware globally
-app.use(tempAuthCheck);
+// Apply authentication globally: every request must carry a valid Supabase JWT
+// or (transitionally) a legacy x-auth-code. Sets req.user. Authorization (ownership)
+// is enforced per-resource by requireMeetingAccess on the meeting routes.
+app.use(authenticate);
 
-// Connect to MongoDB once when the server starts.
-// Note: Actual connection is awaited in the startup sequence below
-connectToMongo().catch(err => {
-  logger.error('Initial MongoDB connection failed', { error: err.message });
+// Verify Postgres connectivity at startup.
+connectPg().catch(err => {
+  logger.error('Initial Postgres connection failed', { error: err.message });
   process.exit(1);
 });
 
