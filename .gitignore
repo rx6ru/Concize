@@ -10,3 +10,12 @@ cred/
 
 dev-docs/
 .VSCodeCounter/
+KB/
+.claude
+
+# Internal/working docs — kept local, not committed (README stays committed)
+/ARCHITECTURE.md
+/SECURITY.md
+/DESIGN.md
+/gotcha.md
+/CLAUDE.md

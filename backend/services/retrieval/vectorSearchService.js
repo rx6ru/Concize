@@ -12,6 +12,7 @@ const client = new QdrantClient({
     url: config.database.QDRANT_URL,
     apiKey: config.database.QDRANT_API_KEY,
     timeout: 60000,
+    checkCompatibility: false, // skip the version-check round-trip on construction
 });
 
 // Collection names from config

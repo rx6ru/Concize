@@ -4,6 +4,7 @@
 'use strict';
 
 const { getSummaryInference } = require('../utils/llm/inferenceProvider');
+const { runResilient } = require('../utils/llm/resilientInference');
 const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
 const { getPrompt } = require('../.secrets/promptRegistry');
 const { createLogger } = require('../utils/logger');
@@ -32,13 +33,15 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
         const { client, model, taskConfig } = getSummaryInference();
         logger.debug('Generating summary', { provider: taskConfig.provider, model });
 
-        const completion = await client.chat.completions.create({
-            messages: [
-                { role: 'user', content: prompt }
-            ],
-            model: model,
-            response_format: { type: 'json_object' },
-        });
+        const completion = await runResilient(taskConfig.provider, () =>
+            client.chat.completions.create({
+                messages: [
+                    { role: 'user', content: prompt }
+                ],
+                model: model,
+                response_format: { type: 'json_object' },
+            })
+        );
 
         const result = completion.choices[0]?.message?.content;
         if (!result) {

@@ -2,25 +2,39 @@
 'use strict';
 
 const winston = require('winston');
+const { getContext } = require('./context');
 
 const { combine, timestamp, printf, colorize, errors, json } = winston.format;
 
 const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
+// Injects the ambient request correlation id (if any) into every log line, so one id traces a
+// request across all modules. No-op outside a request context.
+const injectContext = winston.format((info) => {
+    const ctx = getContext();
+    if (ctx && ctx.requestId && info.requestId === undefined) {
+        info.requestId = ctx.requestId;
+    }
+    return info;
+});
+
 // Human-readable format for development
 const devFormat = combine(
+    injectContext(),
     colorize({ all: true }),
     timestamp({ format: 'HH:mm:ss' }),
     errors({ stack: true }),
-    printf(({ timestamp, level, message, module, ...meta }) => {
+    printf(({ timestamp, level, message, module, requestId, ...meta }) => {
         const mod = module ? `[${module}]` : '';
+        const rid = requestId ? ` (${String(requestId).slice(0, 8)})` : '';
         const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-        return `${timestamp} ${level} ${mod} ${message}${metaStr}`;
+        return `${timestamp} ${level} ${mod}${rid} ${message}${metaStr}`;
     })
 );
 
 // Structured JSON format for production (log aggregation friendly)
 const prodFormat = combine(
+    injectContext(),
     timestamp(),
     errors({ stack: true }),
     json()

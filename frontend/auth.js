@@ -9,7 +9,10 @@
 
 (function () {
     const SB_URL = CONCIZE_CONFIG.SUPABASE_URL;
-    const SB_ANON = CONCIZE_CONFIG.SUPABASE_ANON_KEY;
+    // New Supabase API keys (2025+): the publishable key (sb_publishable_...) replaces the
+    // legacy anon key. It goes in the `apikey` header ONLY — never in Authorization (it's not
+    // a JWT). Fall back to a legacy anon key if that's what the project still uses.
+    const SB_KEY = CONCIZE_CONFIG.SUPABASE_PUBLISHABLE_KEY || CONCIZE_CONFIG.SUPABASE_ANON_KEY;
     const SESSION_KEY = 'sb_session';
 
     async function getSession() {
@@ -30,7 +33,7 @@
     }
 
     function authHeaders() {
-        return { apikey: SB_ANON, 'Content-Type': 'application/json' };
+        return { apikey: SB_KEY, 'Content-Type': 'application/json' };
     }
 
     async function signUp(email, password) {

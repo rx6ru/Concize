@@ -3,6 +3,7 @@
 
 const config = require('../../configs/appConfig');
 const geminiService = require('../../utils/llm/geminiService'); // Key Rotation
+const { runResilient } = require('../../utils/llm/resilientInference');
 const { createLogger } = require('../../utils/logger');
 
 const logger = createLogger('embeddingService');
@@ -157,29 +158,20 @@ const getEmbedding = async (text, opts = {}) => {
 };
 
 /**
- * Wraps getEmbedding with exponential backoff retry for rate-limit (429) errors.
+ * Wraps getEmbedding with full-jitter, Retry-After-aware retry (429 + 5xx).
+ * Replaces the previous synchronized exponential backoff (a retry-storm risk under load).
  * @param {string} text
  * @param {Object} [opts]
  * @param {number} [maxRetries=3]
  * @returns {Promise<number[]>}
  */
 const getEmbeddingWithRetry = async (text, opts = {}, maxRetries = 3) => {
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            return await getEmbedding(text, opts);
-        } catch (err) {
-            const isRateLimited = err.status === 429 || err.code === 429 ||
-                (err.message && err.message.includes('429'));
-
-            if (isRateLimited && attempt < maxRetries - 1) {
-                const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-                logger.warn('Embedding rate limited, retrying', { attempt: attempt + 1, delay });
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-            throw err;
-        }
-    }
+    // Routed through the per-provider concurrency limiter + circuit breaker + jittered retry.
+    return runResilient('gemini', () => getEmbedding(text, opts), {
+        maxRetries,
+        baseDelayMs: 1000,
+        capDelayMs: 20000,
+    });
 };
 
 module.exports = { getEmbedding, getEmbeddingWithRetry };

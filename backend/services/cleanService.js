@@ -5,6 +5,7 @@
 'use strict';
 
 const { getCleanInference } = require('../utils/llm/inferenceProvider');
+const { runResilient } = require('../utils/llm/resilientInference');
 const { getPrompt } = require('../.secrets/promptRegistry');
 const { createLogger } = require('../utils/logger');
 
@@ -31,15 +32,19 @@ const clean = async (text, context = {}) => {
         provider: context.provider || 'unknown',
     });
 
+    // The outer loop retries ONLY malformed-JSON responses. Network/429/5xx resilience lives in
+    // runResilient (limiter + jittered retry + breaker) — kept separate so the two retry layers
+    // don't stack and amplify load.
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            logger.info('Attempting to clean transcription', { attempt, maxRetries: MAX_RETRIES });
+        logger.info('Attempting to clean transcription', { attempt, maxRetries: MAX_RETRIES });
 
-            // Get inference client routed by config
-            const { client, model, taskConfig } = getCleanInference();
-            logger.debug('Cleaning using model', { provider: taskConfig.provider, model });
+        // Get inference client routed by config
+        const { client, model, taskConfig } = getCleanInference();
+        logger.debug('Cleaning using model', { provider: taskConfig.provider, model });
 
-            const chatCompletion = await client.chat.completions.create({
+        // Transport errors (429/5xx exhausted) propagate out — do NOT loop on them here.
+        const chatCompletion = await runResilient(taskConfig.provider, () =>
+            client.chat.completions.create({
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: text },
@@ -50,50 +55,48 @@ const clean = async (text, context = {}) => {
                 top_p: 1,
                 stream: false,
                 stop: null,
-            });
+            })
+        );
 
-            const fullResponse = chatCompletion.choices[0]?.message?.content || '';
+        const fullResponse = chatCompletion.choices[0]?.message?.content || '';
 
-            let parsedJson;
-            try {
-                parsedJson = JSON.parse(fullResponse);
-            } catch {
-                // Fall back to regex extraction if full parse fails
-                const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
-                if (!jsonMatch) {
-                    logger.warn('No valid JSON array found in response', { attempt });
-                    continue;
-                }
-                parsedJson = JSON.parse(jsonMatch[0]);
-            }
-
-            if (!Array.isArray(parsedJson)) {
-                logger.warn('Response is not a JSON array', { attempt });
+        let parsedJson;
+        try {
+            parsedJson = JSON.parse(fullResponse);
+        } catch {
+            // Fall back to regex extraction if full parse fails
+            const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) {
+                logger.warn('No valid JSON array found in response', { attempt });
                 continue;
             }
-
-            // Normalize: ensure every chunk has the expected shape
-            const normalized = parsedJson.map((chunk, idx) => ({
-                summary: chunk.summary || '',
-                narrative: chunk.narrative || chunk.refined_text || '', // backward compat
-                mentionedNames: Array.isArray(chunk.mentionedNames) ? chunk.mentionedNames : [],
-            }));
-
-            logger.info('Transcription cleaned successfully', {
-                chunks: normalized.length,
-                attempt,
-                hasNames: normalized.some(c => c.mentionedNames.length > 0),
-            });
-
-            return normalized;
-
-        } catch (e) {
-            logger.error('Error during transcription cleaning', { attempt, error: e.message });
-            if (attempt === MAX_RETRIES) {
-                logger.error('Max retries reached. Failing.');
-                throw e;
+            try {
+                parsedJson = JSON.parse(jsonMatch[0]);
+            } catch {
+                logger.warn('Extracted JSON still invalid', { attempt });
+                continue;
             }
         }
+
+        if (!Array.isArray(parsedJson)) {
+            logger.warn('Response is not a JSON array', { attempt });
+            continue;
+        }
+
+        // Normalize: ensure every chunk has the expected shape
+        const normalized = parsedJson.map((chunk) => ({
+            summary: chunk.summary || '',
+            narrative: chunk.narrative || chunk.refined_text || '', // backward compat
+            mentionedNames: Array.isArray(chunk.mentionedNames) ? chunk.mentionedNames : [],
+        }));
+
+        logger.info('Transcription cleaned successfully', {
+            chunks: normalized.length,
+            attempt,
+            hasNames: normalized.some(c => c.mentionedNames.length > 0),
+        });
+
+        return normalized;
     }
 
     throw new Error('Failed to clean transcription after multiple attempts.');

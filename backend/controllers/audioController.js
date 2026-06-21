@@ -1,8 +1,8 @@
 // controllers/audioController.js
 
-const amqp = require('amqplib');
 const config = require('../configs/appConfig');
 const { createLogger } = require('../utils/logger');
+const { publishToQueue } = require('../services/amqp');
 const { storeAudioFile, deleteAudioFile } = require('../db/cloudinary-utils/audio.db');
 
 const logger = createLogger('audioController');
@@ -14,7 +14,6 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
 
 const audioQueue = config.queues.AUDIO_QUEUE;
-const CLOUDAMQP_URL = config.queues.CLOUDAMQP_URL;
 
 /**
  * Extracts audio metadata (format, duration) from a buffer using ffprobe.
@@ -132,18 +131,8 @@ const handleAudioUpload = async (req, res) => {
         return res.status(500).send('Failed to upload audio file.');
     }
 
-    // --- Publish to RabbitMQ ---
-    let conn;
-    let ch;
-
+    // --- Publish to RabbitMQ (shared long-lived publisher connection) ---
     try {
-        conn = await amqp.connect(CLOUDAMQP_URL);
-        logger.debug('RabbitMQ connection established', { jobId });
-        ch = await conn.createConfirmChannel();
-        logger.debug('Confirm channel created', { jobId });
-
-        await ch.assertQueue(audioQueue, { durable: true });
-
         const isLastChunk = req.headers['x-last-chunk'] === 'true';
         const audioOffset = parseFloat(req.headers['x-audio-offset'] || '0');
         logger.debug('Chunk headers', { jobId, isLastChunk, audioOffset });
@@ -164,11 +153,7 @@ const handleAudioUpload = async (req, res) => {
             },
         };
 
-        logger.debug('Sending message to queue', { jobId, fileId });
-
-        ch.sendToQueue(audioQueue, Buffer.from(JSON.stringify(message)), { persistent: true });
-        await ch.waitForConfirms();
-
+        await publishToQueue(audioQueue, message);
         logger.info('Audio pushed to transcription queue', { jobId, fileId });
 
         res.status(202).json({
@@ -189,13 +174,6 @@ const handleAudioUpload = async (req, res) => {
 
         if (!res.headersSent) {
             res.status(500).send('Failed to push audio to queue.');
-        }
-    } finally {
-        if (ch) {
-            await ch.close().catch(e => logger.error('Error closing channel', { error: e.message }));
-        }
-        if (conn) {
-            await conn.close().catch(e => logger.error('Error closing connection', { error: e.message }));
         }
     }
 };

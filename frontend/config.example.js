@@ -4,14 +4,14 @@
 //   cp config.example.js config.js
 // `config.js` is gitignored so your project URL/keys are not committed.
 //
-// The anon key is a PUBLIC key (safe to ship in a client) — it only allows the operations
-// your Supabase Row-Level Security / auth settings permit. Never ship the service_role key.
+// SUPABASE_PUBLISHABLE_KEY is the new-format public client key (sb_publishable_...) — safe to
+// ship in a client. It replaces the legacy anon key. NEVER put the secret key (sb_secret_...) here.
 
 const CONCIZE_CONFIG = {
-    // Your Supabase project, e.g. https://abcdefgh.supabase.co
+    // Your Supabase project URL, e.g. https://abcdefgh.supabase.co
     SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
-    // Supabase anon/public key (Project Settings → API).
-    SUPABASE_ANON_KEY: 'YOUR-SUPABASE-ANON-KEY',
+    // Supabase publishable key (Project Settings → API keys → publishable). Format: sb_publishable_...
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_YOUR_KEY',
     // Your Concize backend base URL (no trailing slash).
     BACKEND_URL: 'http://localhost:3000',
 };

@@ -44,7 +44,7 @@ async function applyAuthState() {
 function showAuthMessage(message, isError = true) {
     authMessageDiv.textContent = message;
     authMessageDiv.style.display = "block";
-    authMessageDiv.style.backgroundColor = isError ? "#dc2626" : "#3f51b5";
+    authMessageDiv.style.backgroundColor = isError ? "#c64545" : "#cc785c";
 }
 
 async function handleSignIn() {
@@ -98,9 +98,9 @@ function showStatusMessage(message, isError = false) {
     statusMessageDiv.textContent = message;
     statusMessageDiv.style.display = "block";
     if (isError) {
-        statusMessageDiv.style.backgroundColor = "#dc2626"; // Red for errors
+        statusMessageDiv.style.backgroundColor = "#c64545"; // error red
     } else {
-        statusMessageDiv.style.backgroundColor = "#3f51b5"; // Blue for general status
+        statusMessageDiv.style.backgroundColor = "#cc785c"; // coral (brand)
     }
 }
 

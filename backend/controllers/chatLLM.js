@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getChatInference } = require('../utils/llm/inferenceProvider');
+const { runResilient } = require('../utils/llm/resilientInference');
 const { queryTranscriptions, queryChats } = require('../services/retrieval/vectorSearchService');
 const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
 const { upsertChatPair } = require('../services/embedding/chatEmbedding');
@@ -260,16 +261,21 @@ ${userPrompt}`;
                     jobId
                 });
 
-                const stream = await client.chat.completions.create({
-                    messages: [
-                        { role: 'system', content: SYSTEM_PROMPT },
-                        { role: 'user', content: contentsPrompt }
-                    ],
-                    model: model,
-                    temperature: taskConfig.temperature,
-                    max_completion_tokens: taskConfig.maxTokens,
-                    stream: true,
-                });
+                // Concurrency-limited via the per-provider Bottleneck limiter. maxRetries:0 — this is a
+                // user-facing stream, so we don't add jittered backoff here; the outer loop owns retries.
+                const stream = await runResilient(taskConfig.provider, () =>
+                    client.chat.completions.create({
+                        messages: [
+                            { role: 'system', content: SYSTEM_PROMPT },
+                            { role: 'user', content: contentsPrompt }
+                        ],
+                        model: model,
+                        temperature: taskConfig.temperature,
+                        max_completion_tokens: taskConfig.maxTokens,
+                        stream: true,
+                    }),
+                    { maxRetries: 0 }
+                );
 
                 // Start heartbeat while streaming
                 startHeartbeat();

@@ -99,21 +99,23 @@ Or drop `backend/db/schema.sql` into `supabase/migrations/` and run `supabase db
 
 ## 🏃 Run Instructions
 
-Run the system in **two separate terminals**:
+The system runs as **three separate processes** — the API, the transcription worker, and the
+summary worker are decoupled so heavy transcription/LLM work never blocks the API event loop.
 
-### Terminal 1: Server + Transcription
-Starts the API server and the audio transcription worker.
+**One command (dev):**
 ```bash
-npm run dev
+npm run dev:all     # runs api + transcription worker + summary worker (hot-reload)
 ```
 
-### Terminal 2: Summary Worker
-Starts the background summarization service.
+**Or three terminals:**
 ```bash
-npm run worker:summary
+npm run dev                    # Terminal 1: API server
+npm run worker:transcription   # Terminal 2: transcription worker (audio → transcribe → clean → embed)
+npm run worker:summary         # Terminal 3: summary worker
 ```
 
-*Note: For production, use `npm start` instead of `npm run dev`.*
+*Production: run `npm start`, `npm run worker:transcription`, and `npm run worker:summary` as
+separate managed processes (systemd units / containers).*
 
 ---
 

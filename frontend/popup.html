@@ -15,24 +15,21 @@
 
         <!-- Auth: login form (shown when signed out) -->
         <div id="authSection" class="hidden">
-            <input id="authEmail" type="email" placeholder="Email" autocomplete="username"
-                style="width:100%;box-sizing:border-box;padding:.6rem;margin-bottom:.5rem;border:1px solid #ccc;border-radius:6px;">
-            <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password"
-                style="width:100%;box-sizing:border-box;padding:.6rem;margin-bottom:.5rem;border:1px solid #ccc;border-radius:6px;">
-            <div class="button-wrapper">
+            <input id="authEmail" class="auth-input" type="email" placeholder="Email" autocomplete="username">
+            <input id="authPassword" class="auth-input" type="password" placeholder="Password" autocomplete="current-password">
+            <div class="button-wrapper primary">
                 <button id="signInButton" class="action-button visible">Sign In</button>
             </div>
-            <div class="button-wrapper" style="margin-top:.5rem;">
+            <div class="button-wrapper">
                 <button id="signUpButton" class="action-button visible">Create Account</button>
             </div>
             <div id="authMessage" class="message-box"></div>
         </div>
 
         <!-- Signed-in account bar -->
-        <div id="accountBar" class="hidden"
-            style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:.5rem;font-size:.8rem;">
-            <span id="accountEmail" style="color:#555;"></span>
-            <button id="signOutButton" style="background:none;border:none;color:#3f51b5;cursor:pointer;">Sign out</button>
+        <div id="accountBar" class="hidden">
+            <span id="accountEmail"></span>
+            <button id="signOutButton">Sign out</button>
         </div>
 
         <!-- App (shown only when signed in) -->
@@ -78,7 +75,7 @@
         <div id="permissionStatus" class="message-box"></div>
 
         <!-- Chat button -->
-        <div class="button-wrapper" style="margin-top: 1rem;">
+        <div class="button-wrapper">
             <button id="openChat" class="action-button visible">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -88,7 +85,7 @@
         </div>
 
         <!-- Get Transcription Button -->
-        <div class="button-wrapper" style="margin-top: 1rem;">
+        <div class="button-wrapper">
             <button id="getTranscriptionButton" class="action-button visible">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 17V3M6 11L12 17L18 11M19 21H5"/>
@@ -107,7 +104,7 @@
         </div>
 
         <!-- Download Transcription Button -->
-        <div class="button-wrapper hidden" id="downloadButtonWrapper" style="margin-top: 1rem;">
+        <div class="button-wrapper hidden" id="downloadButtonWrapper">
             <button id="downloadTranscriptionButton" class="action-button visible">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>

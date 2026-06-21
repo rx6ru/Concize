@@ -4,13 +4,16 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const { createLogger } = require("./utils/logger");
+const requestId = require("./middlewares/requestId");
 const requestLogger = require("./middlewares/requestLogger");
 const { initialiseCloudinary } = require("./db/cloudinary-utils/audio.db");
 const { connectPg } = require("./db/pg");
 const { performSystemCheck } = require("./utils/systemCheck");
-const { startWorker, shutdown: workerShutdown } = require("./workers/transcriptionWorker");
 const v1Routes = require("./routes/v1");
 const { authenticate } = require("./middlewares/auth");
+const { shutdown: inferenceShutdown } = require("./utils/llm/resilientInference");
+const { closeAmqp } = require("./services/amqp");
+const { register: metricsRegister, httpMetricsMiddleware } = require("./utils/metrics");
 
 const logger = createLogger('server');
 
@@ -58,7 +61,20 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestId); // correlation id first, so all downstream logs carry it
+app.use(httpMetricsMiddleware);
 app.use(requestLogger);
+
+// Metrics scrape endpoint — mounted BEFORE auth so monitoring needs no token.
+// Restrict at the network layer in production (internal-only).
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', metricsRegister.contentType);
+    res.end(await metricsRegister.metrics());
+  } catch (err) {
+    res.status(500).end(err.message);
+  }
+});
 
 // Apply authentication globally: every request must carry a valid Supabase JWT
 // or (transitionally) a legacy x-auth-code. Sets req.user. Authorization (ownership)
@@ -92,16 +108,10 @@ const startServer = async () => {
     await performSystemCheck();
 
     // 2. Start HTTP Server
-    const serverInstance = app.listen(PORT, async () => {
+    // The transcription worker runs as its OWN process (npm run worker:transcription) so that
+    // heavy ffmpeg/transcription/LLM work never competes with HTTP on the API event loop.
+    const serverInstance = app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
-
-      // 3. Start Background Worker
-      try {
-        await startWorker();
-      } catch (error) {
-        logger.error('Failed to start persistent worker', { error: error.message });
-        // Decide if this should be fatal or not. For now, log and continue.
-      }
     });
 
     // assign to global variable for shutdown handling
@@ -141,11 +151,12 @@ const gracefulShutdown = async () => {
     global.server.close(async () => {
       logger.info('HTTP server closed');
 
-      // 2. Close Worker (RabbitMQ)
+      // 2. Release LLM limiter timers + the shared AMQP publisher connection
       try {
-        await workerShutdown();
+        await inferenceShutdown();
+        await closeAmqp();
       } catch (err) {
-        logger.error('Error during worker shutdown', { error: err.message });
+        logger.error('Error during resource shutdown', { error: err.message });
       }
 
       // 3. Clear force timer and exit cleanly

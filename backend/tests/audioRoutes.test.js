@@ -19,8 +19,10 @@ jest.mock("amqplib", () => ({
       sendToQueue: jest.fn(),
       waitForConfirms: jest.fn().mockResolvedValue(true),
       close: jest.fn(),
+      on: jest.fn(),
     }),
     close: jest.fn(),
+    on: jest.fn(),
   }),
 }));
 
@@ -60,6 +62,7 @@ jest.mock("fluent-ffmpeg", () => {
 });
 
 const { storeAudioFile } = require("../db/cloudinary-utils/audio.db");
+const { _resetForTests: resetAmqp } = require("../services/amqp");
 const audioRoutes = require("../routes/v1/audioRoutes");
 
 // Setup test app
@@ -71,6 +74,7 @@ app.use("/api/v1/audios", audioRoutes);
 describe("Audio Routes", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAmqp(); // drop the shared publisher connection so each test gets a fresh mock
   });
 
   describe("POST /api/v1/audios", () => {

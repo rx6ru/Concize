@@ -1,166 +1,252 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
+/* Concize — warm-cream editorial system (see DESIGN.md) */
 :root {
-    --background-dark: #121212;
-    --background-light: #1E1E1E;
-    --text-primary: #E0E0E0;
-    --text-secondary: #A0A0A0;
-    --accent-blue: #007BFF;
-    --accent-blue-dark: #0056b3;
-    --accent-red: #ef4444;
-    --accent-red-dark: #dc2626;
-    --accent-green: #28a745;
-    --accent-green-dark: #218838;
-    --accent-teal: #17a2b8;
-    --accent-teal-dark: #138496;
-    --accent-purple: #6f42c1;
-    --accent-purple-dark: #5a32a3;
-    --running-bg: #10B981;
-    --stopped-bg: #EF4444;
-    --recording-bg: #FBBF24;
-    --border-radius: 8px;
-    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --box-shadow-hover: 0 6px 10px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+    --canvas: #faf9f5;
+    --surface-soft: #f5f0e8;
+    --surface-card: #efe9de;
+    --surface-cream-strong: #e8e0d2;
+    --ink: #141413;
+    --body: #3d3d3a;
+    --muted: #6c6a64;
+    --muted-soft: #8e8b82;
+    --hairline: #e6dfd8;
+    --primary: #cc785c;
+    --primary-active: #a9583e;
+    --on-primary: #ffffff;
+    --error: #c64545;
+    --success: #5db872;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-pill: 9999px;
+}
+
+* {
+    box-sizing: border-box;
 }
 
 body {
-    font-family: 'Inter', sans-serif;
-    background-color: var(--background-dark);
-    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--canvas);
+    color: var(--body);
     margin: 0;
-    padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
+    width: 340px;
+    -webkit-font-smoothing: antialiased;
 }
 
 .container {
-    width: 320px;
-    padding: 1.5rem;
+    width: 340px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-    background-color: var(--background-light);
-    border-radius: 12px;
-    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+    align-items: stretch;
+    gap: 14px;
 }
 
 .logo {
-    width: 80px;
-    height: 80px;
-    margin-bottom: 0.5rem;
+    width: 52px;
+    height: 52px;
     object-fit: contain;
-    border-radius: 12px;
+    align-self: center;
+    margin: 2px 0;
 }
 
+/* --- Account bar (signed in) --- */
+#accountBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--hairline);
+}
+
+#accountEmail {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+}
+
+#signOutButton {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+}
+
+#signOutButton:hover {
+    background: var(--surface-card);
+}
+
+/* --- Auth (login) section --- */
+#authSection {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auth-input {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+}
+
+.auth-input::placeholder {
+    color: var(--muted-soft);
+}
+
+.auth-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.15);
+}
+
+/* --- App section --- */
+#appSection {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* --- Status row --- */
 .status-wrapper {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
 }
 
 .status-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
-    color: #1f2937;
-}
-
-.status-badge.running {
-    background-color: var(--running-bg);
+    letter-spacing: 0.04em;
 }
 
 .status-badge.stopped {
-    background-color: var(--stopped-bg);
+    background: var(--surface-card);
+    color: var(--muted);
 }
 
 .status-badge.recording {
-    background-color: var(--recording-bg);
+    background: rgba(198, 69, 69, 0.12);
+    color: var(--error);
 }
 
+.status-badge.running {
+    background: rgba(93, 184, 114, 0.16);
+    color: #3f9355;
+}
+
+/* --- Recording controls --- */
 .recording-controls {
-    width: 100%;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
+    gap: 12px;
 }
 
 .recording-indicator {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--accent-red);
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--error);
 }
 
 .recording-glyph {
-    width: 12px;
-    height: 12px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
-    background-color: var(--accent-red);
+    background: var(--error);
 }
 
 @keyframes blinker {
-    50% {
-        opacity: 0;
-    }
+    50% { opacity: 0; }
 }
 
 .blink {
     animation: blinker 1s linear infinite;
 }
 
+/* --- Buttons ---
+   .button-wrapper holds the background + border; .action-button overlays it (absolute) so the
+   start/stop pair can cross-fade via .visible. Default wrapper = secondary (cream + hairline).
+   .start / .primary = coral; .stop = error red. */
 .button-wrapper {
     position: relative;
     width: 100%;
-    height: 48px;
-    transition: all 0.2s ease-in-out;
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    height: 44px;
+    border-radius: var(--radius-md);
     overflow: hidden;
-}
-
-.button-wrapper.start {
-    background: var(--accent-blue);
-}
-
-.button-wrapper.stop {
-    background: var(--accent-red);
+    background: var(--surface-card);
+    border: 1px solid var(--hairline);
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .button-wrapper:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--box-shadow-hover);
+    background: var(--surface-cream-strong);
+}
+
+.button-wrapper.start,
+.button-wrapper.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.button-wrapper.start:hover,
+.button-wrapper.primary:hover {
+    background: var(--primary-active);
+    border-color: var(--primary-active);
+}
+
+.button-wrapper.stop {
+    background: var(--error);
+    border-color: var(--error);
+}
+
+.button-wrapper.stop:hover {
+    background: #a83a3a;
+    border-color: #a83a3a;
 }
 
 .action-button {
-    background: transparent;
-    color: white;
-    font-weight: 700;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem 1.5rem;
-    cursor: pointer;
+    gap: 8px;
+    background: transparent;
     border: none;
     outline: none;
-    width: 100%;
-    height: 100%;
-    font-size: 1rem;
-    position: absolute;
-    top: 0;
-    left: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
     opacity: 0;
-    transition: opacity 0.3s ease-in-out;
+    transition: opacity 0.2s ease;
 }
 
 .action-button.visible {
@@ -168,89 +254,78 @@ body {
     z-index: 1;
 }
 
+.action-button svg {
+    width: 18px;
+    height: 18px;
+}
+
 .action-button:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
 }
 
 .action-button:focus-visible {
-    outline: 2px solid var(--accent-blue);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
 
-.action-button svg {
-    margin-right: 0.5rem;
+/* White label on coral/error wrappers */
+.button-wrapper.start .action-button,
+.button-wrapper.primary .action-button,
+.button-wrapper.stop .action-button {
+    color: var(--on-primary);
 }
 
+/* --- Message boxes --- */
 .message-box {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    border-radius: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
     text-align: center;
-    width: 100%;
-    font-size: 0.875rem;
+    font-size: 13px;
     font-weight: 500;
+    line-height: 1.4;
     display: none;
 }
 
-#statusMessage {
-    background-color: var(--accent-purple);
-    color: white;
+#statusMessage,
+#authMessage {
+    color: var(--on-primary);
 }
 
 #permissionStatus {
-    background-color: #fff3e0;
-    color: #ef6c00;
+    background: #fbe7e0;
+    color: var(--primary-active);
 }
 
+/* --- Transcription --- */
 .transcription-box {
     width: 100%;
-    padding: 1rem;
-    background-color: #1f2937;
-    border-radius: 12px;
+    padding: 14px;
+    background: var(--surface-card);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
     max-height: 200px;
     overflow-y: auto;
-    font-size: 0.875rem;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .transcription-box h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .transcription-box p {
-    color: var(--text-primary);
+    margin: 0;
+    color: var(--body);
+    font-size: 14px;
     line-height: 1.6;
+    word-break: break-word;
 }
 
+/* Must beat the ID-level display rules on #appSection / #authSection / #accountBar */
 .hidden {
-    display: none;
-}
-
-#openChat {
-    background: var(--accent-purple);
-}
-
-#openChat:hover {
-    background: var(--accent-purple-dark);
-}
-
-#getTranscriptionButton {
-    background: var(--accent-green);
-}
-
-#getTranscriptionButton:hover {
-    background: var(--accent-green-dark);
-}
-
-#downloadTranscriptionButton {
-    background: var(--accent-teal);
-}
-
-#downloadTranscriptionButton:hover {
-    background: var(--accent-teal-dark);
+    display: none !important;
 }
