@@ -14,7 +14,7 @@
  * - When in doubt, let the LLM + hardened prompt handle it
  */
 
-const { getMeetingSummary } = require('../../db/mongoutils/summary.db');
+const { getMeetingSummary } = require('../../db/queries/summary.db');
 
 // Common stop words to ignore in keyword extraction
 const STOP_WORDS = new Set([

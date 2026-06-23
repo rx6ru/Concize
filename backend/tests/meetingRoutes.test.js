@@ -5,7 +5,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 
 // Mock the database utility
-jest.mock('../db/mongoutils/transcription.db', () => ({
+jest.mock('../db/queries/transcription.db', () => ({
     createTranscription: jest.fn(),
     updateMeetingStatus: jest.fn(),
     // The legacy summary route runs requireLegacyMeetingAccess, which calls getMeetingOwner.
@@ -13,7 +13,7 @@ jest.mock('../db/mongoutils/transcription.db', () => ({
     getMeetingOwner: jest.fn().mockResolvedValue('test-owner'),
 }));
 
-const { createTranscription } = require('../db/mongoutils/transcription.db');
+const { createTranscription } = require('../db/queries/transcription.db');
 const meetingRoutes = require('../routes/v1/meetingRoutes');
 
 // Setup test app. A stub auth middleware injects req.user, mirroring the real
@@ -68,12 +68,12 @@ describe('Meeting Routes', () => {
 
 
 // Re-doing the top level mock to include getMeetingSummary
-jest.mock('../db/mongoutils/summary.db', () => ({
+jest.mock('../db/queries/summary.db', () => ({
     getMeetingSummary: jest.fn(),
 }));
 
 // Re-import after mock
-const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { getMeetingSummary } = require('../db/queries/summary.db');
 
 describe('Meeting Routes (Expanded)', () => {
     // Tests for GET /api/v1/meeting/:jobId/summary

@@ -1,4 +1,4 @@
-// db/mongoutils/summary.db.js
+// db/queries/summary.db.js
 //
 // Meeting-summary persistence on Supabase Postgres.
 // The incremental update uses a real transaction with row locking (SELECT ... FOR UPDATE),

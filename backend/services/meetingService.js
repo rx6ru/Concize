@@ -1,5 +1,5 @@
 // services/meetingService.js
-const { updateMeetingStatus } = require('../db/mongoutils/transcription.db');
+const { updateMeetingStatus } = require('../db/queries/transcription.db');
 const { createLogger } = require('../utils/logger');
 
 const logger = createLogger('meetingService');

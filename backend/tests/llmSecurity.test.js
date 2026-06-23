@@ -1,7 +1,7 @@
 // tests/llmSecurity.test.js
 
 // Mock summary.db
-jest.mock('../db/mongoutils/summary.db', () => ({
+jest.mock('../db/queries/summary.db', () => ({
     getMeetingSummary: jest.fn()
 }));
 
@@ -9,7 +9,7 @@ const inputGuardrails = require('../utils/llmSecurity/inputGuardrails');
 const relevanceFilter = require('../utils/llmSecurity/relevanceFilter');
 const outputGuardrails = require('../utils/llmSecurity/outputGuardrails');
 const securityMonitor = require('../utils/llmSecurity/securityMonitor');
-const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { getMeetingSummary } = require('../db/queries/summary.db');
 
 describe('LLM Security', () => {
     beforeEach(() => {

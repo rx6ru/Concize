@@ -6,11 +6,11 @@ This repo contains the **backend** (`backend/`) and the **Chrome extension** (`f
 ## 🚀 Key Features
 
 -   **Scalable Architecture**: Decoupled HTTP Server, Transcription Worker, and Summary Worker.
--   **High-Speed AI**:
-    -   **Transcription**: Groq (Whisper V3) - Ultra-fast (~500x real-time).
-    -   **Chat & Cleaning**: Groq (Defaults to `openai/gpt-oss-120b`).
-    -   **Summarization**: Groq (`llama-3.1-8b-instant`) - Optimized for speed.
+-   **High-Speed AI** (provider + model are configurable per task via env):
+    -   **Transcription**: Sarvam (Saaras) by default — strong Indian-language / Hinglish support; Groq Whisper available.
+    -   **Chat / Cleaning / Summarization**: Groq (`openai/gpt-oss-120b` by default); Cerebras also supported.
     -   **Embeddings**: Gemini - For semantic search.
+    -   **Resilience**: per-provider concurrency limiting + full-jitter, `Retry-After`-aware retries on all LLM/embedding calls.
 -   **Self-Improving Summaries**: Real-time incremental meeting summarization.
 -   **Auth & Multi-Tenancy**:
     -   **Supabase JWT** (asymmetric / JWKS, verified with `jose`); legacy `x-auth-code` retained as a flagged compat shim during migration.
@@ -69,6 +69,7 @@ LEGACY_OWNER_ID=legacy-owner           # Owner ID assigned to legacy x-auth-code
 POSTGRES_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require # Supabase: use direct/session connection (port 5432), NOT the transaction pooler (6543)
 PGSSL=require # set to 'disable' only for local non-SSL Postgres
 PG_POOL_MAX=10
+REDIS_URL= # optional until a Redis-backed feature is used (idempotency, Tier-2 session state). Upstash or redis://localhost:6379
 CLOUDAMQP_URL=amqps://...
 QDRANT_URL=https://...
 QDRANT_API_KEY=...
@@ -89,11 +90,13 @@ SUMMARY_QUEUE=meeting_summary_queue
 ```
 
 ### 3. Database Schema
-Apply the Postgres schema to your Supabase database:
+The schema is tracked as a Supabase migration in `supabase/migrations/` (canonical reference:
+`backend/db/schema.sql`). It includes **RLS enabled (default-deny)** on all tables — required because
+Supabase exposes `public` tables to the publishable key (see SECURITY.md).
 ```bash
-psql "$POSTGRES_URL" -f backend/db/schema.sql
+supabase link --project-ref <your-ref> && supabase db push   # apply tracked migrations
+# or, ad hoc: psql "$POSTGRES_URL" -f backend/db/schema.sql
 ```
-Or drop `backend/db/schema.sql` into `supabase/migrations/` and run `supabase db push`.
 
 ---
 

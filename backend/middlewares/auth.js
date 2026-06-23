@@ -8,7 +8,7 @@ const config = require('../configs/appConfig');
 const { createTokenVerifier } = require('../utils/auth/tokenVerifier');
 const { createAuthenticate } = require('./authenticate');
 const { createRequireMeetingAccess } = require('./requireMeetingAccess');
-const { getMeetingOwner } = require('../db/mongoutils/transcription.db');
+const { getMeetingOwner } = require('../db/queries/transcription.db');
 
 // Verifier is lazy: with no JWKS URI it only throws if a Bearer token actually arrives,
 // so legacy traffic keeps working before Supabase is provisioned.

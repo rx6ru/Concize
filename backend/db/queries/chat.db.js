@@ -1,7 +1,6 @@
-// db/mongoutils/chat.db.js
+// db/queries/chat.db.js
 //
 // Chat persistence on Supabase Postgres.
-// (Path retained to limit churn; the "mongoutils" name is a misnomer post-migration.)
 
 const crypto = require('crypto');
 const { query } = require('../pg');

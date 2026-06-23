@@ -1,10 +1,10 @@
--- db/schema.sql
--- Canonical Postgres schema for Concize application data (Supabase Postgres).
--- Identity lives in Supabase auth; `owner_id` holds the Supabase user id (text) and is the
--- single source of ownership. chats & meeting_summaries derive ownership via the job_id FK.
+-- 20260622012246_init_concize_schema.sql
+-- Initial Concize schema. Matches the remote migration `init_concize_schema` applied to Supabase
+-- and the canonical reference at backend/db/schema.sql. Tracked in-repo so the schema is versioned.
 --
--- Apply locally with: psql "$POSTGRES_URL" -f db/schema.sql
--- Or via Supabase CLI: place under supabase/migrations/ and `supabase db push`.
+-- Apply with the Supabase CLI: `supabase db push` (after `supabase link`).
+-- Identity lives in Supabase auth; `owner_id` (Supabase user id, text) is the single source of ownership.
+-- chats & meeting_summaries derive ownership via the job_id FK.
 
 CREATE TABLE IF NOT EXISTS meetings (
     job_id     text PRIMARY KEY,
@@ -46,13 +46,11 @@ CREATE TABLE IF NOT EXISTS meeting_summaries (
     updated_at                 timestamptz NOT NULL DEFAULT now()
 );
 
--- Row-Level Security — REQUIRED, not optional.
--- Supabase auto-exposes every `public` table through its PostgREST API to the anon/authenticated
--- roles, i.e. to anyone holding the PUBLISHABLE key (which we ship publicly in the extension).
--- With RLS off, that key could read/write these tables directly, bypassing the backend's ownership
--- checks. We enable RLS with NO policies → default-deny for anon/authenticated. The backend connects
--- as the `postgres` role (BYPASSRLS), so it is unaffected; the public key is denied all direct access.
--- (If we ever let the client talk to Postgres directly, add owner-scoped policies then.)
+-- Row-Level Security — REQUIRED. Supabase auto-exposes `public` tables via PostgREST to the
+-- anon/authenticated roles (the publishable key we ship in the extension). With RLS off, that key
+-- could read/write these tables directly, bypassing the backend's ownership checks. Enable RLS with
+-- NO policies → default-deny for anon/authenticated. The backend connects as `postgres` (BYPASSRLS),
+-- so it is unaffected. (Add owner-scoped policies only if the client ever queries Postgres directly.)
 ALTER TABLE meetings             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transcription_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chats                ENABLE ROW LEVEL SECURITY;

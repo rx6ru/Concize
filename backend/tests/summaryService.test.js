@@ -1,7 +1,7 @@
 // tests/summaryService.test.js
 
 // Mock DB utilities
-jest.mock('../db/mongoutils/summary.db', () => ({
+jest.mock('../db/queries/summary.db', () => ({
     startSummaryUpdate: jest.fn(),
     saveSummaryContent: jest.fn(),
 }));
@@ -28,7 +28,7 @@ jest.mock('../.secrets/meetingSummary', () => ({
     getSummaryPrompt: jest.fn().mockReturnValue('Mock prompt template'),
 }));
 
-const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
+const { startSummaryUpdate, saveSummaryContent } = require('../db/queries/summary.db');
 const { processSummaryUpdate } = require('../services/summaryService');
 
 describe('summaryService.js', () => {

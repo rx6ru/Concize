@@ -5,9 +5,9 @@ const path = require('path');
 const { getChatInference } = require('../utils/llm/inferenceProvider');
 const { runResilient } = require('../utils/llm/resilientInference');
 const { queryTranscriptions, queryChats } = require('../services/retrieval/vectorSearchService');
-const { createChatEntry, updateChatEntry } = require('../db/mongoutils/chat.db');
+const { createChatEntry, updateChatEntry } = require('../db/queries/chat.db');
 const { upsertChatPair } = require('../services/embedding/chatEmbedding');
-const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { getMeetingSummary } = require('../db/queries/summary.db');
 const { createLogger } = require('../utils/logger');
 
 const logger = createLogger('chatLLM');

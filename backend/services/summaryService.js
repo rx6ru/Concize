@@ -5,7 +5,7 @@
 
 const { getSummaryInference } = require('../utils/llm/inferenceProvider');
 const { runResilient } = require('../utils/llm/resilientInference');
-const { startSummaryUpdate, saveSummaryContent } = require('../db/mongoutils/summary.db');
+const { startSummaryUpdate, saveSummaryContent } = require('../db/queries/summary.db');
 const { getPrompt } = require('../.secrets/promptRegistry');
 const { createLogger } = require('../utils/logger');
 

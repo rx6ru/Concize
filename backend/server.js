@@ -13,6 +13,7 @@ const v1Routes = require("./routes/v1");
 const { authenticate } = require("./middlewares/auth");
 const { shutdown: inferenceShutdown } = require("./utils/llm/resilientInference");
 const { closeAmqp } = require("./services/amqp");
+const { closeRedis } = require("./db/redis");
 const { register: metricsRegister, httpMetricsMiddleware } = require("./utils/metrics");
 
 const logger = createLogger('server');
@@ -155,6 +156,7 @@ const gracefulShutdown = async () => {
       try {
         await inferenceShutdown();
         await closeAmqp();
+        await closeRedis();
       } catch (err) {
         logger.error('Error during resource shutdown', { error: err.message });
       }

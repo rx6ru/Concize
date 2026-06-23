@@ -19,3 +19,6 @@ KB/
 /DESIGN.md
 /gotcha.md
 /CLAUDE.md
+
+.agents/
+.mcp.json

@@ -3,9 +3,9 @@
 require('dotenv').config();
 const amqp = require('amqplib');
 const config = require('../configs/appConfig');
-const { getTranscription } = require('../db/mongoutils/transcription.db');
+const { getTranscription } = require('../db/queries/transcription.db');
 const { connectPg } = require('../db/pg');
-const { completeSummary } = require('../db/mongoutils/summary.db');
+const { completeSummary } = require('../db/queries/summary.db');
 const { processSummaryUpdate } = require('../services/summaryService');
 const { createLogger } = require('../utils/logger');
 

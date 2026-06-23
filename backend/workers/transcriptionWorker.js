@@ -12,7 +12,7 @@ const {
     deleteAudioFile,
     initialiseCloudinary,
 } = require('../db/cloudinary-utils/audio.db');
-const { getMeetingStatus } = require('../db/mongoutils/transcription.db');
+const { getMeetingStatus } = require('../db/queries/transcription.db');
 const { completeMeeting, completeMeetingWithErrors } = require('../services/meetingService');
 const config = require('../configs/appConfig');
 const { createLogger } = require('../utils/logger');

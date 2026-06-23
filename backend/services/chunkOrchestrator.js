@@ -8,7 +8,7 @@ const { transcribe } = require('./transcriptionService');
 const { preChunkSegments } = require('./preChunker');
 const { clean } = require('./cleanService');
 const { upsertTranscriptionChunks } = require('./embedding/transcriptionEmbedding');
-const { appendTranscription } = require('../db/mongoutils/transcription.db');
+const { appendTranscription } = require('../db/queries/transcription.db');
 const { createLogger } = require('../utils/logger');
 
 const logger = createLogger('chunkOrchestrator');

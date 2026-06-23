@@ -1,8 +1,6 @@
-// db/mongoutils/transcription.db.js
+// db/queries/transcription.db.js
 //
 // Meeting + transcript persistence on Supabase Postgres.
-// (Path retained for now to limit churn; the "mongoutils" name is a misnomer post-migration
-// and is scheduled for a rename sweep.)
 
 const { query } = require('../pg');
 const { createLogger } = require('../../utils/logger');

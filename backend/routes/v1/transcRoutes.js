@@ -1,7 +1,7 @@
 // transcRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getTranscription } = require('../../db/mongoutils/transcription.db');
+const { getTranscription } = require('../../db/queries/transcription.db');
 const { requireLegacyMeetingAccess } = require('../../middlewares/auth');
 
 // Route to get a full transcription by the jobId in the cookie

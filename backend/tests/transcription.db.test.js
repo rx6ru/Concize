@@ -7,7 +7,7 @@ const path = require('path');
 const { newDb } = require('pg-mem');
 
 // Build an in-memory Postgres, load the real schema, and inject its Pool into db/pg.js.
-const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8');
+const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8').replace(/ALTER TABLE[^;]*ENABLE ROW LEVEL SECURITY;/gi, ''); // pg-mem doesn't model RLS; verified against real Supabase
 let mem;
 
 jest.mock('../configs/appConfig', () => ({ database: { POSTGRES_URL: 'postgres://mem' } }));
@@ -20,7 +20,7 @@ const {
     getTranscription,
     updateMeetingStatus,
     getMeetingStatus,
-} = require('../db/mongoutils/transcription.db');
+} = require('../db/queries/transcription.db');
 
 beforeEach(() => {
     mem = newDb();

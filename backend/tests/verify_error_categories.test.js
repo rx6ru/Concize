@@ -1,11 +1,11 @@
 // tests/verify_error_categories.js
 const { getLLMStreamResponse } = require('../controllers/chatLLM');
-const { createChatEntry } = require('../db/mongoutils/chat.db');
+const { createChatEntry } = require('../db/queries/chat.db');
 const { queryTranscriptions, queryChats } = require('../services/retrieval/vectorSearchService');
 const EventEmitter = require('events');
 
 // Mock dependencies
-jest.mock('../db/mongoutils/chat.db', () => ({
+jest.mock('../db/queries/chat.db', () => ({
     createChatEntry: jest.fn().mockResolvedValue({ _id: 'chat123' }),
     updateChatEntry: jest.fn().mockResolvedValue(),
 }));
@@ -13,7 +13,7 @@ jest.mock('../services/retrieval/vectorSearchService');
 jest.mock('../services/embedding/chatEmbedding', () => ({
     upsertChatPair: jest.fn().mockResolvedValue(),
 }));
-jest.mock('../db/mongoutils/summary.db', () => ({
+jest.mock('../db/queries/summary.db', () => ({
     getMeetingSummary: jest.fn().mockResolvedValue({ title: 'Test', content: 'Test meeting summary' }),
 }));
 jest.mock('../utils/llmSecurity', () => ({

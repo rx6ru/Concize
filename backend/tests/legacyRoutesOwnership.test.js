@@ -6,16 +6,16 @@ const request = require('supertest');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 
-jest.mock('../db/mongoutils/transcription.db', () => ({
+jest.mock('../db/queries/transcription.db', () => ({
     getMeetingOwner: jest.fn(),
     getTranscription: jest.fn(),
     createTranscription: jest.fn(),
 }));
-jest.mock('../db/mongoutils/summary.db', () => ({ getMeetingSummary: jest.fn() }));
+jest.mock('../db/queries/summary.db', () => ({ getMeetingSummary: jest.fn() }));
 jest.mock('../controllers/chatLLM', () => ({ getLLMStreamResponse: jest.fn((res) => res.json({ ok: true })) }));
 
-const { getMeetingOwner, getTranscription } = require('../db/mongoutils/transcription.db');
-const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { getMeetingOwner, getTranscription } = require('../db/queries/transcription.db');
+const { getMeetingSummary } = require('../db/queries/summary.db');
 
 const transcRoutes = require('../routes/v1/transcRoutes');
 const meetingRoutes = require('../routes/v1/meetingRoutes');

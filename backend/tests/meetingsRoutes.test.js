@@ -8,7 +8,7 @@ const express = require('express');
 
 // Mock the DB module BEFORE requiring anything that binds to it (middlewares/auth captures
 // getMeetingOwner at load time; the mock must be in place first).
-jest.mock('../db/mongoutils/transcription.db', () => ({
+jest.mock('../db/queries/transcription.db', () => ({
     getMeetingOwner: jest.fn(),
     getTranscription: jest.fn(),
     createTranscription: jest.fn(),
@@ -17,7 +17,7 @@ jest.mock('../db/mongoutils/transcription.db', () => ({
 jest.mock('../controllers/chatLLM', () => ({ getLLMStreamResponse: jest.fn() }));
 jest.mock('../controllers/audioController', () => ({ handleAudioUpload: jest.fn() }));
 
-const { getMeetingOwner, getTranscription } = require('../db/mongoutils/transcription.db');
+const { getMeetingOwner, getTranscription } = require('../db/queries/transcription.db');
 const meetingsRoutes = require('../routes/v1/meetingsRoutes');
 
 // Build an app with a controllable stub user.

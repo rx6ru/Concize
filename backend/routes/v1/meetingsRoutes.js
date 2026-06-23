@@ -18,7 +18,7 @@ const { requireMeetingAccess } = require('../../middlewares/auth');
 const { startMeeting, fetchMeetingSummary } = require('../../controllers/meetingController');
 const { handleAudioUpload } = require('../../controllers/audioController');
 const { getLLMStreamResponse } = require('../../controllers/chatLLM');
-const { getTranscription } = require('../../db/mongoutils/transcription.db');
+const { getTranscription } = require('../../db/queries/transcription.db');
 const { createLogger } = require('../../utils/logger');
 
 const logger = createLogger('meetingsRoutes');

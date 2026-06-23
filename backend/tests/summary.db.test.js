@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { newDb } = require('pg-mem');
 
-const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8');
+const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8').replace(/ALTER TABLE[^;]*ENABLE ROW LEVEL SECURITY;/gi, ''); // pg-mem doesn't model RLS; verified against real Supabase
 let mem;
 
 jest.mock('../configs/appConfig', () => ({ database: { POSTGRES_URL: 'postgres://mem' } }));
@@ -17,7 +17,7 @@ const {
     startSummaryUpdate,
     saveSummaryContent,
     completeSummary,
-} = require('../db/mongoutils/summary.db');
+} = require('../db/queries/summary.db');
 
 beforeEach(async () => {
     mem = newDb();

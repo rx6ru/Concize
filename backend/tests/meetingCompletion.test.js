@@ -1,7 +1,7 @@
 // tests/meetingCompletion.test.js
 
 // Mock the database utility before importing the module under test
-jest.mock('../db/mongoutils/transcription.db', () => ({
+jest.mock('../db/queries/transcription.db', () => ({
     updateMeetingStatus: jest.fn(),
 }));
 
@@ -20,7 +20,7 @@ jest.mock('../utils/logger', () => ({
 const mockDb = {
     updateMeetingStatus: jest.fn(),
 };
-jest.mock('../db/mongoutils/transcription.db', () => mockDb);
+jest.mock('../db/queries/transcription.db', () => mockDb);
 
 const { completeMeeting, completeMeetingWithErrors } = require('../services/meetingService');
 

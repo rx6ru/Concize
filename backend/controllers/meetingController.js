@@ -2,8 +2,8 @@
 
 const crypto = require('crypto');
 const { createLogger } = require('../utils/logger');
-const { createTranscription } = require('../db/mongoutils/transcription.db');
-const { getMeetingSummary } = require('../db/mongoutils/summary.db');
+const { createTranscription } = require('../db/queries/transcription.db');
+const { getMeetingSummary } = require('../db/queries/summary.db');
 
 const logger = createLogger('meetingController');
 
