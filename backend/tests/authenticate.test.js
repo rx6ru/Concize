@@ -3,7 +3,7 @@
 // Verifies: Bearer-JWT happy path, invalid-JWT rejection (no fallthrough),
 // legacy x-auth-code behind a flag (mapped to a synthetic ownerId), and hard denial.
 
-const { createAuthenticate } = require('../middlewares/authenticate');
+const { createAuthenticate } = require('../src/http/middleware/authenticate');
 
 // Minimal Express req/res/next doubles.
 function mockRes() {

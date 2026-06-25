@@ -1,6 +1,6 @@
 // tests/metrics.test.js
 const { EventEmitter } = require('events');
-const { register, httpMetricsMiddleware } = require('../utils/metrics');
+const { register, httpMetricsMiddleware } = require('../src/core/metrics');
 
 describe('metrics', () => {
     it('exposes default process metrics under the concize_ prefix', async () => {

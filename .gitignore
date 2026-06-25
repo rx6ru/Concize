@@ -5,20 +5,22 @@ uploads/
 transcriptions/
 cred/
 
-.agent/
 .vscode/
 
 dev-docs/
 .VSCodeCounter/
 KB/
-.claude
 
 # Internal/working docs — kept local, not committed (README stays committed)
 /ARCHITECTURE.md
 /SECURITY.md
 /DESIGN.md
 /gotcha.md
-/CLAUDE.md
 
-.agents/
-.mcp.json
+
+
+__pycache__/
+*.pyc
+
+experiments/
+backend/experiments/

@@ -24,3 +24,5 @@ Thumbs.db
 dev-scripts/
 
 .secrets/
+# Prompts stay local (was .secrets/) — renamed for clarity, not exposure
+prompts/

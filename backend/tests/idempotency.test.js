@@ -2,7 +2,7 @@
 // Real Redis semantics via ioredis-mock (no live Redis needed).
 
 const RedisMock = require('ioredis-mock');
-const { claimOnce, releaseClaim } = require('../utils/idempotency');
+const { claimOnce, releaseClaim } = require('../src/infra/idempotency');
 
 describe('idempotency (claimOnce / releaseClaim)', () => {
     let redis;
