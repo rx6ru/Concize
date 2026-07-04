@@ -1,0 +1,35 @@
+# Local stack for running the backend without the managed services.
+# Start with: docker compose -f docker-compose.dev.yml up -d
+# Then apply backend/src/infra/schema.sql to the postgres container.
+#
+# Ports are offset so they don't clash with anything already on 5432/6333/5672.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: concize-pg
+    environment:
+      POSTGRES_PASSWORD: local
+      POSTGRES_DB: concize
+    ports:
+      - "55432:5432"
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: concize-qdrant
+    ports:
+      - "56333:6333"
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    container_name: concize-rabbit
+    ports:
+      - "55672:5672"
+    # The image writes .erlang.cookie with permissions Erlang then refuses to read on some
+    # overlayfs setups, so it gets created with the right mode before the server starts.
+    entrypoint: >
+      sh -c "umask 077;
+             echo localcookie > /var/lib/rabbitmq/.erlang.cookie;
+             chmod 400 /var/lib/rabbitmq/.erlang.cookie;
+             chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie;
+             exec docker-entrypoint.sh rabbitmq-server"

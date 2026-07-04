@@ -1,0 +1,5 @@
+# Torch is intentionally not pinned here. Install the build that matches your CUDA version
+# first (see pytorch.org), then this file.
+funasr==1.4.1
+websockets>=15.0
+numpy>=1.24

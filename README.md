@@ -1,173 +1,253 @@
-# 🎙️ Concize
+# Concize
 
-A scalable system for real-time meeting transcription, summarization, and RAG-based chat.
-This repo contains the **backend** (`backend/`) and the **Chrome extension** (`frontend/`).
+Real-time meeting intelligence for Indian-language and code-mixed speech. Audio streams in over
+a WebSocket, comes back as an attributed transcript while the meeting is still running, and can
+be queried by chat with citations back to who said what and when.
 
-## 🚀 Key Features
+Built for the case most meeting tools handle badly: several people, Hinglish, long sessions, and
+speakers talking over each other. Leading English ASR models score 28-51% word error rate on
+Indian-language benchmarks, which makes the downstream summary and chat unusable no matter how
+good the LLM is.
 
--   **Scalable Architecture**: Decoupled HTTP Server, Transcription Worker, and Summary Worker.
--   **High-Speed AI** (provider + model are configurable per task via env):
-    -   **Transcription**: Sarvam (Saaras) by default — strong Indian-language / Hinglish support; Groq Whisper available.
-    -   **Chat / Cleaning / Summarization**: Groq (`openai/gpt-oss-120b` by default); Cerebras also supported.
-    -   **Embeddings**: Gemini - For semantic search.
-    -   **Resilience**: per-provider concurrency limiting + full-jitter, `Retry-After`-aware retries on all LLM/embedding calls.
--   **Self-Improving Summaries**: Real-time incremental meeting summarization.
--   **Auth & Multi-Tenancy**:
-    -   **Supabase JWT** (asymmetric / JWKS, verified with `jose`); legacy `x-auth-code` retained as a flagged compat shim during migration.
-    -   **Ownership-rooted API**: every meeting has an `owner_id`; access is enforced per-resource (cross-tenant → `404`), including the legacy routes and the Qdrant vector layer.
--   **Defense-in-Depth Security**:
-    -   **Relevance Filter**: Summary-anchored query validation.
-    -   **Input/Output Guardrails**: Prevention of prompt injections and leakage.
-    -   **Secure Prompts**: All system prompts stored in gitignored `.secrets/`.
--   **Storage**:
-    -   **Supabase Postgres**: Persistent data (Transcripts, Chat History, Summaries).
-    -   **Cloudinary**: Temporary audio storage.
-    -   **Qdrant**: Vector database for RAG.
+Two parts live here: the Node backend (`backend/`) and a Chrome extension that captures tab and
+microphone audio (`frontend/`). Speaker attribution runs as a separate Python service
+(`speaker-service/`) and is optional.
 
----
+## How it works
 
-## 🏗️ System Architecture
+One audio stream is fanned out to independent recognisers and their output is joined on a shared
+timeline. A slow or dead recogniser costs one capability, not the meeting.
 
-The system runs as **distributed processes** communicating via RabbitMQ.
+```
+  chrome extension
+        │  16 kHz mono PCM, 100 ms frames, uint32 sequence prefix
+        ▼
+  ws /rt ──► gateway ──┬──► words lane     Sarvam saaras:v3-realtime
+   (auth on the        │
+    HTTP upgrade)      └──► speaker lane   FunASR CAM++  (optional)
+                                 │
+                          timeline fusion
+                                 │  words outrank speakers
+                                 ▼
+                  utterances  (append-only, Postgres)
+                                 │
+                  ┌──────────────┼──────────────┐
+                  ▼              ▼              ▼
+              chunking      summary worker   watermark
+                  │
+              embedding ──► Qdrant ──► retrieval ──► chat (SSE)
+```
 
-1.  **Main API (Express)**: Handles Uploads, Chat, and Meeting Management.
-2.  **Transcription Worker**: Consumes `audioQueue`. Fetches from Cloudinary → Transcribes (Groq) → Clean (Groq `gpt-oss-120b`) → Embed (Gemini/Qdrant) → Publishes to `summaryQueue`.
-3.  **Summary Worker**: Consumes `summaryQueue`. Generates incremental summaries via LLM (`llama-3.1-8b-instant`).
+Text is emitted the moment it is final, with `speaker: null` if attribution is not known yet.
+When the speaker lane catches up, the client gets a `revision` rather than the text having been
+delayed. Nothing is updated in place: a correction writes a new revision of the utterance and
+supersedes the old one in the same transaction, so a reader always sees exactly one current row
+per turn and every derived artefact can be rebuilt by replaying the log.
 
----
+After the meeting a batch pass re-transcribes the recording, which sees the whole thing at once
+and beats the streaming pass, and corrects the live record.
 
-## 🛠️ Setup
+## Status
 
-### 1. Install Dependencies
-```bash
+A working system, not a deployed product. There are no users and no uptime to report.
+
+| Area | State |
+|---|---|
+| Live capture, streaming ASR, timeline fusion | working |
+| Append-only transcript log, revisions | working |
+| Chunking, embedding, vector search | working |
+| Retrieval, citations, injection screening | working |
+| Speaker attribution service | working, wants a GPU to be useful |
+| Post-meeting reconciliation | modules built, not scheduled |
+| Sparse (BM25) retrieval lane | not built, pipeline runs dense-only |
+| Cross-encoder reranking | not built |
+| Narrative and topic chunk layers | not built |
+| Overlapping-speech detection | not built |
+
+## Quick start
+
+Needs Node 20+, Docker, and keys for Sarvam (transcription), Groq or Cerebras (chat) and Gemini
+(embeddings).
+
+```sh
+git clone https://github.com/rx6ru/Concize.git
+cd Concize
+
+# postgres, qdrant and rabbitmq, on offset ports so they do not clash
+docker compose -f docker-compose.dev.yml up -d
+docker cp backend/src/infra/schema.sql concize-pg:/tmp/schema.sql
+docker exec concize-pg psql -U postgres -d concize -f /tmp/schema.sql
+
 cd backend
 npm install
+cp .env.example .env      # fill in the keys, see Configuration
+npm start
 ```
 
-### 2. Environment Variables (`.env`)
-Create a `.env` file in `backend/`:
+The server refuses to start if Postgres, RabbitMQ or Qdrant are unreachable, so a clean boot
+means the stack is actually wired up:
 
-```env
-# Server
-PORT=5001
-NODE_ENV=development
-DEV_PREFIX=dev_ # For data isolation
-
-# Security
-ALLOWED_AUTH_CODES=your-secret-code,another-code
-
-# Auth (dual-mode JWT + legacy)
-AUTH_MODE=jwks                          # 'jwks' (default, asymmetric) or 'hs256'
-SUPABASE_JWKS_URI=https://<project>.supabase.co/auth/v1/.well-known/jwks.json
-SUPABASE_JWT_ISSUER=https://<project>.supabase.co/auth/v1
-SUPABASE_JWT_AUD=authenticated          # Default: 'authenticated'
-SUPABASE_JWT_SECRET=                    # Required when AUTH_MODE=hs256
-LEGACY_AUTH_ENABLED=                    # 'true'/'false'; defaults to true in dev, false in prod
-LEGACY_OWNER_ID=legacy-owner           # Owner ID assigned to legacy x-auth-code requests
-
-# Database
-POSTGRES_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require # Supabase: use direct/session connection (port 5432), NOT the transaction pooler (6543)
-PGSSL=require # set to 'disable' only for local non-SSL Postgres
-PG_POOL_MAX=10
-REDIS_URL= # optional until a Redis-backed feature is used (idempotency, Tier-2 session state). Upstash or redis://localhost:6379
-CLOUDAMQP_URL=amqps://...
-QDRANT_URL=https://...
-QDRANT_API_KEY=...
-
-# Models
-GROQ_API_KEYS=key1,key2,key3
-GEMINI_API_KEYS=key1,key2
-GROQ_CHAT_MODEL=openai/gpt-oss-120b # Optional override
-
-# Storage
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...
-CLOUDINARY_API_SECRET=...
-
-# Queues
-AUDIO_QUEUE=audio_processing_queue
-SUMMARY_QUEUE=meeting_summary_queue
+```
+info [systemCheck] Binaries verified (ffmpeg: .../ffmpeg)
+info [systemCheck] Postgres connection verified
+info [systemCheck] RabbitMQ connection verified
+info [systemCheck] Qdrant connection verified
+info [server]      Server is running on port 3000
+info [chunkSearch] Chunk collection created {"collection":"concize_chunks"}
 ```
 
-### 3. Database Schema
-The schema is tracked as a Supabase migration in `supabase/migrations/` (canonical reference:
-`backend/db/schema.sql`). It includes **RLS enabled (default-deny)** on all tables — required because
-Supabase exposes `public` tables to the publishable key (see SECURITY.md).
-```bash
-supabase link --project-ref <your-ref> && supabase db push   # apply tracked migrations
-# or, ad hoc: psql "$POSTGRES_URL" -f backend/db/schema.sql
+Load `frontend/` as an unpacked extension from `chrome://extensions` to capture audio, or drive
+the WebSocket directly (see Protocol).
+
+### Speaker attribution
+
+Separate and optional, because it wants a GPU:
+
+```sh
+cd speaker-service
+python -m venv venv && ./venv/bin/pip install -r requirements.txt
+./venv/bin/python app.py --device cuda:0 --port 8765
 ```
 
----
+Then set `SPEAKER_SERVICE_URL=ws://127.0.0.1:8765/speaker`. Without it, meetings transcribe
+normally and every turn comes back unattributed rather than guessed.
 
-## 🏃 Run Instructions
+## Configuration
 
-The system runs as **three separate processes** — the API, the transcription worker, and the
-summary worker are decoupled so heavy transcription/LLM work never blocks the API event loop.
+Provider and model are chosen per task, so transcription can run on Sarvam while chat runs on
+Groq without touching code.
 
-**One command (dev):**
-```bash
-npm run dev:all     # runs api + transcription worker + summary worker (hot-reload)
+| Variable | Default | Notes |
+|---|---|---|
+| `POSTGRES_URL` | - | required |
+| `QDRANT_URL`, `QDRANT_API_KEY` | - | required |
+| `CLOUDAMQP_URL` | - | required, summary worker queue |
+| `TRANSCRIPTION_PROVIDER` / `_MODEL` | `sarvam` / `saaras:v1` | `groq` also supported |
+| `CHAT_PROVIDER` / `CHAT_MODEL` | `cerebras` / `llama3.1-8b` | `groq`, `sarvam` also supported |
+| `SUMMARY_PROVIDER`, `CLEAN_PROVIDER` | `cerebras` | same set |
+| `SPEAKER_SERVICE_URL` | unset | unset disables attribution |
+| `AUTH_MODE` | `jwks` | `hs256` for local development |
+| `SUPABASE_JWKS_URI`, `SUPABASE_JWT_ISSUER` | - | required in `jwks` mode |
+| `PGSSL` | on | set to `disable` for a local container |
+| `PORT` | `3000` | |
+| `LOG_LEVEL` | `info` | |
+
+API keys accept a comma-separated list (`GROQ_API_KEYS`, `GEMINI_API_KEYS`, `SARVAM_API_KEYS`)
+and are rotated per call. See `backend/.env.example` for the full set.
+
+## Protocol
+
+### WebSocket
+
+```
+ws://host:3000/rt?token=<supabase jwt>&meetingId=<id>
 ```
 
-**Or three terminals:**
-```bash
-npm run dev                    # Terminal 1: API server
-npm run worker:transcription   # Terminal 2: transcription worker (audio → transcribe → clean → embed)
-npm run worker:summary         # Terminal 3: summary worker
+Authorisation happens on the HTTP upgrade, before a socket exists. A meeting owned by someone
+else is rejected with 404 rather than 403, so the API never confirms that it exists.
+
+The client sends binary frames of 16 kHz mono little-endian PCM, each prefixed with a big-endian
+uint32 sequence number. The session clock comes from that sequence rather than arrival time, so
+the lanes agree on timestamps under network jitter.
+
+```jsonc
+{"type":"session.ready","meetingId":"..."}
+{"type":"partial","turnId":12,"text":"we should revisit"}       // volatile, never attributed
+{"type":"final","turnId":12,"text":"we should revisit pricing","t0":65000,"t1":70000,
+ "speaker":null,"confidence":"unknown","overlap":false}
+{"type":"revision","turnId":12,"speaker":"S3","confidence":"confident"}
+{"type":"watermark","watermarkMs":70000,"lagMs":420}
+{"type":"lane.status","lane":"speaker","status":"down","reason":"..."}
 ```
 
-*Production: run `npm start`, `npm run worker:transcription`, and `npm run worker:summary` as
-separate managed processes (systemd units / containers).*
+Send `{"event":"stop"}` to end the meeting cleanly and flush the trailing chunk.
 
----
+### REST
 
-## 🔐 Authentication
+Everything is under `/api/v1` and needs a bearer token. Ownership is enforced per resource.
 
-All endpoints require a **`Authorization: Bearer <supabase-jwt>`** header. The backend verifies the
-token against the Supabase JWKS (or an HS256 secret if `AUTH_MODE=hs256`) and derives the user id
-from the `sub` claim. During migration, a legacy `x-auth-code` is also accepted when
-`LEGACY_AUTH_ENABLED=true` (defaults: on in dev, off in prod) and maps to a single `LEGACY_OWNER_ID`.
-
-Authorization is **ownership-based**: a caller may only access meetings they own. Cross-tenant or
-unknown meetings return **`404`** (no existence leak).
-
-## 📡 Key API Endpoints
-
-Canonical RESTful, ownership-rooted resource tree (`/api/v1`):
-
--   `POST /api/v1/meetings` — create a meeting (returns `{ meetingId }`)
--   `POST /api/v1/meetings/:meetingId/audio` — upload an audio chunk (multipart/form-data, field `audio`)
--   `GET  /api/v1/meetings/:meetingId/transcript` — full transcript
--   `POST /api/v1/meetings/:meetingId/chat` — RAG chat, SSE stream; body `{ "userPrompt": "..." }`
--   `GET  /api/v1/meetings/:meetingId/summary` — real-time incremental summary
-
-> **Legacy routes** (`/api/v1/{audios,transcription,chat,meeting}`) remain as deprecated compat
-> shims (meeting id in cookie/body), now also ownership-gated. New clients should use the routes above.
-
----
-
-## 🧩 Frontend (Chrome Extension) Setup
-
-The extension lives in `frontend/` and authenticates via Supabase (email/password) using the REST
-auth API (no SDK — required for MV3 service workers).
-
-1.  Copy the config template and fill in your values:
-    ```bash
-    cd frontend
-    cp config.example.js config.js   # config.js is gitignored
-    ```
-    Set `SUPABASE_URL`, `SUPABASE_ANON_KEY` (public anon key), and `BACKEND_URL`.
-2.  Create a user in your Supabase project (dashboard, or the in-popup "Create Account" if email
-    confirmation is disabled).
-3.  Load the unpacked extension in Chrome (`chrome://extensions` → Developer mode → Load unpacked →
-    select `frontend/`), sign in, then record / transcribe / chat.
-
----
-
-## 🧪 Testing
-
-Run the full test suite (Unit + Integration):
-```bash
-npm test
 ```
+POST /meetings                    create a meeting
+GET  /meetings/:id/transcript     current transcript
+POST /meetings/:id/chat           ask a question, answer streams back over SSE
+GET  /meetings/:id/summary        running summary
+GET  /health
+GET  /metrics                     prometheus, mounted before auth
+```
+
+## Layout
+
+```
+backend/src/
+  realtime/      gateway, session clock, timeline fusion
+  transcript/    utterance log, chunk boundaries, derive and embed workers, reconciliation
+  chat/          retrieval pipeline, vector search, context assembly, chat controller
+  meetings/      meeting lifecycle
+  summary/       incremental summarisation
+  providers/     llm/ stt/ speaker/ embedding/, one adapter per vendor
+  safety/        guardrails, relevance filter, prompt-injection screening
+  infra/         postgres, redis, queue, storage, qdrant, schema.sql
+  http/          middleware and versioned routes
+  core/          config, logger, metrics, request context
+speaker-service/ python diarization service
+frontend/        chrome extension (MV3)
+```
+
+Files are named `<subject>.<role>.js`, so a directory listing tells you what each thing is.
+
+## Design notes
+
+The decisions worth knowing about, and the measurements behind them.
+
+**Chunk boundaries are rules, not an LLM call.** A chunk closes on speaker turn + silence gap +
+semantic shift, with a token and duration cap as backstop. It runs on every utterance on the live
+path, and it has to be deterministic or replaying the log stops rebuilding the same chunks.
+
+**Retrieval fuses on rank, not score.** Cosine similarity and BM25 live on incompatible scales,
+and normalising them to combine quietly favours one engine. Reciprocal rank fusion only uses each
+engine's ordering. Recent speech is retrieved as its own lane and never trimmed by `topN`,
+because during a live meeting most questions are about what was just said.
+
+**Uncertainty reaches the prompt.** Every turn carries whether its speaker is `confident`,
+`provisional` or `unknown`, and overlapping audio is marked. The context block renders both
+inline and the instructions tell the model to hedge rather than name someone. Incomplete answers
+are acceptable, confidently wrong ones are not.
+
+**Retrieved transcript is flagged, not dropped.** Anyone in a meeting can say "ignore your
+previous instructions" out loud and it lands verbatim in retrieved context. Measured on
+`llama-prompt-guard-2-86m`, a benign meeting line ("so the fix is to ignore untrusted
+instructions from the transcript") scores 0.9995 and a real attack scores 0.9996. No threshold
+separates them, so screening marks lines and the defence lives in the prompt structure instead.
+User questions are still blocked outright, where the same model is clean.
+
+**The speaker threshold is 0.70, not the library default of 0.60.** Measured on an L40S against
+LibriSpeech ground truth with 40-speaker sessions: 0.60 gives 0.854 turn accuracy, 0.70 gives
+0.942, and latency is flat across the sweep. The roster cap is set far above any real meeting
+because when it fills the matcher stops applying its threshold and force-matches to the nearest
+centroid (cosine 0.3185 accepted against 0.6), merging two people into one id with nothing
+downstream able to tell. Adaptive score normalisation measured worse at every setting and is not
+used.
+
+## Limitations
+
+- About one turn in seventeen is still attributed to the wrong speaker at 40 speakers, and 6 of
+  40 identities hold more than one person. That is why confidence travels with the data.
+- The speaker tracker is sensitive to where the stream starts. Losing the first 300 ms took it
+  from 15 speaker centres to 1 in testing. The lane holds audio until the service connects now,
+  but the underlying fragility is upstream.
+- Sarvam's realtime API does not diarize, which is why speakers are a separate lane at all.
+- Batch transcription caps a file at 2 hours, so longer meetings are cut into overlapping
+  segments and stitched. A speaker silent through an overlap window appears as a new identity in
+  the following segment.
+- Vector search is dense-only until the sparse lane lands.
+
+## Tests
+
+```sh
+cd backend && npm test                      # 504 tests, no network or GPU needed
+cd speaker-service && python test_speaker.py
+```
+
+Database tests run against `pg-mem`, and the live pipeline test drives a real WebSocket through
+the gateway, fusion, the transcript log and chunk derivation. Note that pg-mem applies a partial
+index without its predicate, which is why the schema uses composite indexes instead.
