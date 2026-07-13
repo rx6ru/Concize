@@ -11,7 +11,8 @@
     "dev": "nodemon src/server.js",
     "worker:summary": "node src/summary/summary.worker.js",
     "dev:all": "concurrently -n api,summary -c blue,magenta \"nodemon src/server.js\" \"nodemon src/summary/summary.worker.js\"",
-    "test": "jest --coverage --detectOpenHandles"
+    "test": "jest --coverage --detectOpenHandles",
+    "test:pg": "TEST_POSTGRES_URL=postgres://postgres:local@127.0.0.1:55432/concize PGSSL=disable jest chunk.text.search"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

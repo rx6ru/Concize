@@ -5,8 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { newDb } = require('pg-mem');
 
-const schema = fs.readFileSync(path.join(__dirname, '../src/infra/schema.sql'), 'utf8')
-    .replace(/ALTER TABLE[^;]*ENABLE ROW LEVEL SECURITY;/gi, ''); // pg-mem can't model RLS
+const { loadSchema } = require('./helpers/schema');
+
+const schema = loadSchema();
 
 jest.mock('../src/core/config', () => ({ database: { POSTGRES_URL: 'postgres://mem' } }));
 jest.mock('../src/core/logger', () => ({

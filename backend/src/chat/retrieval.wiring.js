@@ -15,6 +15,7 @@ const { createInjectionGuard } = require('../safety/injection.guard');
 const { runResilient } = require('../providers/llm/resilient.inference');
 const groqService = require('../providers/llm/groq');
 const { getRecentTurns, getWatermarkMs } = require('../transcript/utterance.repository');
+const { searchChunkText } = require('../transcript/chunk.repository');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('retrievalWiring');
@@ -36,6 +37,8 @@ function get() {
         parts = {
             retrieval: createRetrieval({
                 denseSearch: index.denseSearch,
+                sparseSearch: ({ query: text, meetingId, ownerId, layer, limit }) =>
+                    searchChunkText(meetingId, { text, ownerId, layer, limit }),
                 recentTurns: ({ meetingId, sinceMs }) =>
                     getRecentTurns(meetingId, { windowMs: sinceMs }),
             }),

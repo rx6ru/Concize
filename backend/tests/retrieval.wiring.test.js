@@ -39,6 +39,10 @@ jest.mock('../src/providers/llm/resilient.inference', () => ({
     runResilient: jest.fn((provider, fn) => fn()),
 }));
 
+jest.mock('../src/transcript/chunk.repository', () => ({
+    searchChunkText: jest.fn(async () => []),
+}));
+
 jest.mock('../src/transcript/utterance.repository', () => ({
     getRecentTurns: jest.fn(async () => []),
     getWatermarkMs: jest.fn(async () => 120000),
@@ -47,6 +51,7 @@ jest.mock('../src/transcript/utterance.repository', () => ({
 const wiring = require('../src/chat/retrieval.wiring');
 const { getRecentTurns, getWatermarkMs } = require('../src/transcript/utterance.repository');
 const { runResilient } = require('../src/providers/llm/resilient.inference');
+const { searchChunkText } = require('../src/transcript/chunk.repository');
 
 const point = (over = {}) => ({
     id: 'v1',
@@ -72,6 +77,7 @@ beforeEach(() => {
     getRecentTurns.mockResolvedValue([]);
     getWatermarkMs.mockResolvedValue(120000);
     runResilient.mockReset().mockImplementation((provider, fn) => fn());
+    searchChunkText.mockReset().mockResolvedValue([]);
     wiring._resetForTests();
 });
 
@@ -85,6 +91,38 @@ describe('buildContext', () => {
         const out = await ask();
 
         expect(out.contextBlock).toBe('#1.0 1:05 S1: we should revisit pricing');
+    });
+
+    it('runs the sparse lane alongside dense and fuses both', async () => {
+        hits.push(point());
+        searchChunkText.mockResolvedValue([{
+            vectorId: 'v9', score: 0.4, layer: 1, ordinal: 4, rev: 0,
+            t0Ms: 30000, t1Ms: 34000, text: 'ticket PROJ-4417 is blocked',
+            speakers: ['S2'], hasOverlap: false,
+        }]);
+
+        const out = await ask();
+
+        expect(searchChunkText).toHaveBeenCalled();
+        expect(out.contextBlock).toContain('we should revisit pricing');   // dense
+        expect(out.contextBlock).toContain('PROJ-4417');                    // sparse
+    });
+
+    it('gives the sparse lane the owner too, so tenant isolation is not dense-only', async () => {
+        hits.push(point());
+        await ask();
+
+        expect(searchChunkText).toHaveBeenCalledWith('m1', expect.objectContaining({
+            text: 'what about pricing?', ownerId: 'user-A',
+        }));
+    });
+
+    it('still answers from dense when lexical search is unavailable', async () => {
+        hits.push(point());
+        searchChunkText.mockRejectedValue(new Error('pg down'));
+
+        const out = await ask();
+        expect(out.contextBlock).toContain('we should revisit pricing');
     });
 
     it('scopes every search to the meeting AND the owner', async () => {

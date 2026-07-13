@@ -59,7 +59,7 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Retrieval, citations, injection screening | working |
 | Speaker attribution service | working, wants a GPU to be useful |
 | Post-meeting reconciliation | modules built, not scheduled |
-| Sparse (BM25) retrieval lane | not built, pipeline runs dense-only |
+| Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
 | Narrative and topic chunk layers | not built |
 | Overlapping-speech detection | not built |
@@ -203,10 +203,16 @@ The decisions worth knowing about, and the measurements behind them.
 semantic shift, with a token and duration cap as backstop. It runs on every utterance on the live
 path, and it has to be deterministic or replaying the log stops rebuilding the same chunks.
 
-**Retrieval fuses on rank, not score.** Cosine similarity and BM25 live on incompatible scales,
-and normalising them to combine quietly favours one engine. Reciprocal rank fusion only uses each
-engine's ordering. Recent speech is retrieved as its own lane and never trimmed by `topN`,
-because during a live meeting most questions are about what was just said.
+**Retrieval fuses on rank, not score.** Cosine similarity and lexical rank live on incompatible
+scales, and normalising them to combine quietly favours one engine. Reciprocal rank fusion only
+uses each engine's ordering. Recent speech is retrieved as its own lane and never trimmed by
+`topN`, because during a live meeting most questions are about what was just said.
+
+**The lexical lane is Postgres full text search, indexed `simple` rather than `english`.**
+Stemming mangles code-mixed speech, and exact tokens are the point: names, ticket ids, product
+codes are what dense embeddings smear. It also contributes something dense retrieval cannot,
+which is absence. Asked for a ticket id that was never mentioned, the dense lane still returns
+its nearest chunk at cosine 0.52 while the lexical lane correctly returns nothing.
 
 **Uncertainty reaches the prompt.** Every turn carries whether its speaker is `confident`,
 `provisional` or `unknown`, and overlapping audio is marked. The context block renders both
@@ -239,7 +245,6 @@ used.
 - Batch transcription caps a file at 2 hours, so longer meetings are cut into overlapping
   segments and stitched. A speaker silent through an overlap window appears as a new identity in
   the following segment.
-- Vector search is dense-only until the sparse lane lands.
 
 ## Tests
 

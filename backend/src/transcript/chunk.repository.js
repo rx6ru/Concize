@@ -52,6 +52,72 @@ async function insertChunk(meetingId, chunk) {
 }
 
 /**
+ * Turns a question into an OR query over its terms.
+ *
+ * plainto_tsquery ANDs everything, so "what's the budget?" only matches a chunk containing all
+ * of those words, which is almost never. Lexical retrieval wants any-term matching with the
+ * ranking deciding, the same bag-of-words behaviour BM25 has.
+ *
+ * Punctuation is stripped rather than escaped, so nothing the user types can be read as tsquery
+ * syntax. Single characters go too, they match everything and rank nothing.
+ */
+function toOrQuery(text) {
+    const terms = String(text)
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .split(/\s+/)
+        .filter((t) => t.length >= 2);
+    return terms.join(' | ');
+}
+
+/**
+ * Lexical search over stored chunks, the sparse half of retrieval.
+ *
+ * Matches the shape denseSearch returns so retrieval can fuse the two without caring which
+ * engine produced what. Ranking only has to order sensibly, since fusion works on rank.
+ *
+ * Needs real Postgres. pg-mem has no full text search, so this is covered by
+ * tests/chunk.text.search.test.js instead of the pg-mem suites.
+ */
+async function searchChunkText(meetingId, { text, ownerId = null, layer = null, limit = 20 } = {}) {
+    const tsquery = toOrQuery(text || '');
+    if (!tsquery) return [];
+
+    const { rows } = await query(
+        `SELECT * FROM (
+             SELECT DISTINCT ON (c.layer, c.ordinal)
+                    c.layer, c.ordinal, c.rev, c.t0_ms, c.t1_ms, c.text,
+                    c.speakers, c.has_overlap, c.vector_id,
+                    ts_rank_cd(to_tsvector('simple', c.context_prefix || ' ' || c.text), q.tsq) AS rank
+               FROM chunks c
+               JOIN meetings m ON m.job_id = c.meeting_id
+               CROSS JOIN to_tsquery('simple', $2) AS q(tsq)
+              WHERE c.meeting_id = $1
+                AND ($3::text IS NULL OR m.owner_id = $3)
+                AND ($4::int IS NULL OR c.layer = $4)
+                AND to_tsvector('simple', c.context_prefix || ' ' || c.text) @@ q.tsq
+              ORDER BY c.layer, c.ordinal, c.rev DESC
+         ) hit
+         ORDER BY hit.rank DESC
+         LIMIT $5`,
+        [meetingId, tsquery, ownerId, layer, limit]
+    );
+
+    return rows.map((row) => ({
+        vectorId: row.vector_id,
+        score: Number(row.rank),
+        layer: row.layer,
+        ordinal: row.ordinal,
+        rev: row.rev,
+        t0Ms: row.t0_ms,
+        t1Ms: row.t1_ms,
+        text: row.text,
+        speakers: row.speakers || [],
+        hasOverlap: row.has_overlap,
+    }));
+}
+
+/**
  * Latest revision of each chunk in a layer, in spoken order.
  *
  * Deduped in JS rather than by a correlated subquery: the SQL form is not portable across
@@ -131,6 +197,7 @@ async function getUnembedded(meetingId, { limit = 100 } = {}) {
 
 module.exports = {
     insertChunk,
+    searchChunkText,
     getChunks,
     markDirtyForRange,
     getDirtyChunks,

@@ -100,6 +100,14 @@ CREATE TABLE IF NOT EXISTS chunks (
     PRIMARY KEY (meeting_id, layer, ordinal, rev)
 );
 CREATE INDEX IF NOT EXISTS chunks_current_idx ON chunks (meeting_id, layer, ordinal);
+
+-- Lexical search index, the sparse half of retrieval. Embeddings smear exact tokens (names,
+-- numbers, product codes) and this is what finds them.
+-- 'simple' rather than 'english': the transcript is code-mixed, English stemming mangles Hindi
+-- words, and exact tokens are the whole point here. The context prefix is indexed alongside the
+-- text because it is also part of what gets embedded, and using it in only one lane loses recall.
+CREATE INDEX IF NOT EXISTS chunks_text_idx ON chunks
+    USING GIN (to_tsvector('simple', context_prefix || ' ' || text));
 CREATE INDEX IF NOT EXISTS chunks_dirty_idx ON chunks (meeting_id, dirty);
 
 -- Row-Level Security, required, not optional.
