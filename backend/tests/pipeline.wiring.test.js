@@ -38,7 +38,10 @@ jest.mock('../src/transcript/utterance.repository', () => ({
 
 jest.mock('../src/meetings/meeting.repository', () => ({
     getMeetingOwner: jest.fn(async () => 'user-A'),
+    appendTranscription: jest.fn(async () => ({ success: true, chunkIndex: store.chunks.length - 1 })),
 }));
+
+jest.mock('../src/infra/queue', () => ({ publishToQueue: jest.fn(async () => {}) }));
 
 jest.mock('../src/summary/summary.repository', () => ({
     getMeetingSummary: jest.fn(async () => ({ title: 'Q3 planning' })),
@@ -62,6 +65,8 @@ const pipeline = require('../src/transcript/pipeline.wiring');
 const { insertChunk, markDirtyForRange, attachVector } = require('../src/transcript/chunk.repository');
 const { appendUtterance, reviseUtterance } = require('../src/transcript/utterance.repository');
 const { getEmbedding } = require('../src/providers/embedding/embedding.service');
+const { appendTranscription } = require('../src/meetings/meeting.repository');
+const { publishToQueue } = require('../src/infra/queue');
 
 const utterance = (over = {}) => ({
     turnId: 1, t0Ms: 0, t1Ms: 2000, text: 'we should revisit pricing', ...over,
@@ -221,5 +226,47 @@ describe('embedding passes', () => {
         await pipeline.onSessionEnd('m1');
 
         expect(upserted[0].payload.ownerId).toBeNull();
+    });
+});
+
+describe('summary handoff', () => {
+    it('queues each derived chunk for summarisation', async () => {
+        await pipeline.onUtterance('m1', utterance());
+        await pipeline.onSessionEnd('m1');
+
+        expect(appendTranscription).toHaveBeenCalledWith('m1', 'we should revisit pricing');
+        expect(publishToQueue).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ jobId: 'm1', chunkIndex: expect.any(Number) })
+        );
+    });
+
+    it('finalises the summary through the queue so it lands after the last chunk', async () => {
+        await pipeline.onUtterance('m1', utterance());
+        await pipeline.onSessionEnd('m1');
+
+        expect(publishToQueue).toHaveBeenLastCalledWith(
+            expect.any(String), { jobId: 'm1', finalise: true }
+        );
+    });
+
+    it('does not publish when the append failed, so the worker never chases a missing chunk', async () => {
+        appendTranscription.mockResolvedValueOnce({ success: false, chunkIndex: -1 });
+
+        await pipeline.onUtterance('m1', utterance());
+        await pipeline.onSessionEnd('m1');
+
+        // the finalise marker still goes out, but no chunk was announced
+        expect(publishToQueue).not.toHaveBeenCalledWith(
+            expect.any(String), expect.objectContaining({ chunkIndex: expect.anything() })
+        );
+    });
+
+    it('does not fail the meeting when the queue is down', async () => {
+        publishToQueue.mockRejectedValue(new Error('amqp gone'));
+
+        await expect(pipeline.onUtterance('m1', utterance())).resolves.toBeUndefined();
+        await expect(pipeline.onSessionEnd('m1')).resolves.toBeUndefined();
+        expect(store.chunks).toHaveLength(1);      // the chunk was still stored
     });
 });

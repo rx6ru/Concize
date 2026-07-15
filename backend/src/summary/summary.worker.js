@@ -35,7 +35,21 @@ const startSummaryWorker = async () => {
         channel.consume(config.queues.SUMMARY_QUEUE, async (msg) => {
             if (!msg) return;
 
-            const { jobId, chunkIndex, isLastChunk } = JSON.parse(msg.content.toString());
+            const payload = JSON.parse(msg.content.toString());
+
+            // Sent when a meeting ends. It rides the queue rather than being called directly so
+            // it lands after the last chunk, otherwise the chunk's save flips status back.
+            if (payload.finalise) {
+                try {
+                    await completeSummary(payload.jobId);
+                } catch (err) {
+                    logger.error('Finalise failed', { jobId: payload.jobId, error: err.message });
+                }
+                channel.ack(msg);
+                return;
+            }
+
+            const { jobId, chunkIndex, isLastChunk } = payload;
             logger.info('Received summary chunk', { jobId, chunkIndex, isLastChunk });
 
             try {

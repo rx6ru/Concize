@@ -13,8 +13,10 @@ const {
     insertChunk, markDirtyForRange, getDirtyChunks, getUnembedded, attachVector,
 } = require('./chunk.repository');
 const { appendUtterance, reviseUtterance } = require('./utterance.repository');
-const { getMeetingOwner } = require('../meetings/meeting.repository');
+const { getMeetingOwner, appendTranscription } = require('../meetings/meeting.repository');
 const { getMeetingSummary } = require('../summary/summary.repository');
+const { publishToQueue } = require('../infra/queue');
+const config = require('../core/config');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('transcriptPipeline');
@@ -35,7 +37,10 @@ function build() {
     const derive = createDeriveService({
         insertChunk,
         markDirtyForRange,
-        onChunk: (meetingId) => { scheduleEmbed(meetingId); },
+        onChunk: (meetingId, chunk) => {
+            scheduleEmbed(meetingId);
+            queueForSummary(meetingId, chunk);
+        },
     });
 
     return { index, embedWorker, derive };
@@ -87,6 +92,23 @@ function scheduleEmbed(meetingId) {
     return entry.promise;
 }
 
+/**
+ * Hands a finished chunk to the summary worker.
+ *
+ * The worker reads transcription_chunks by index, which is how the old batch path fed it, so the
+ * live path appends there too rather than the worker growing a second input. Failing here costs
+ * a stale summary, not the meeting.
+ */
+async function queueForSummary(meetingId, chunk) {
+    try {
+        const { success, chunkIndex } = await appendTranscription(meetingId, chunk.text);
+        if (!success) return;
+        await publishToQueue(config.queues.SUMMARY_QUEUE, { jobId: meetingId, chunkIndex, isLastChunk: false });
+    } catch (err) {
+        logger.error('Summary enqueue failed', { meetingId, error: err.message });
+    }
+}
+
 // The gateway's event shape is the wire shape; the log's is the storage shape.
 function toUtterance(event) {
     return {
@@ -127,6 +149,14 @@ async function onRevision(meetingId, event) {
 async function onSessionEnd(meetingId) {
     await get().derive.finish(meetingId);
     await scheduleEmbed(meetingId);
+
+    // Through the queue, not a direct call: the last chunk may still be summarising, and its
+    // save would flip the status back to updating.
+    try {
+        await publishToQueue(config.queues.SUMMARY_QUEUE, { jobId: meetingId, finalise: true });
+    } catch (err) {
+        logger.warn('Could not finalise summary', { meetingId, error: err.message });
+    }
 }
 
 /** Test seam. */

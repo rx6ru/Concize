@@ -58,7 +58,8 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Chunking, embedding, vector search | working |
 | Retrieval, citations, injection screening | working |
 | Speaker attribution service | working, wants a GPU to be useful |
-| Post-meeting reconciliation | modules built, not scheduled |
+| Incremental summarisation | working |
+| Post-meeting reconciliation | modules built, blocked on audio retention |
 | Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
 | Narrative and topic chunk layers | not built |
