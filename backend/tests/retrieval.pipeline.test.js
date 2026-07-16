@@ -53,13 +53,31 @@ describe('specificity', () => {
         expect(overlapsInTime({ t0Ms: 0, t1Ms: 100 }, { t0Ms: 100, t1Ms: 200 })).toBe(false);
     });
 
-    it('drops a topic chunk already covered by a verbatim one', () => {
+    it('drops a topic chunk the verbatim one mostly covers', () => {
         const kept = dropSubsumed([
-            hit(1, { layer: 1, t0Ms: 0, t1Ms: 5000 }),
+            hit(1, { layer: 1, t0Ms: 0, t1Ms: 85000 }),
             hit(2, { layer: 3, t0Ms: 0, t1Ms: 90000 }),
         ]);
         expect(kept).toHaveLength(1);
         expect(kept[0].layer).toBe(1);
+    });
+
+    it('keeps a topic chunk a short verbatim one barely touches', () => {
+        const kept = dropSubsumed([
+            hit(1, { layer: 1, t0Ms: 0, t1Ms: 5000 }),
+            hit(2, { layer: 3, t0Ms: 0, t1Ms: 90000 }),
+        ]);
+        expect(kept).toHaveLength(2);
+    });
+
+    it('keeps a narrative when only a small part of it also matched', () => {
+        // a layer-2 chunk spans several layer-1 ones; one of them matching should not
+        // throw away the synthesis of the rest
+        const kept = dropSubsumed([
+            hit(1, { layer: 1, t0Ms: 60000, t1Ms: 90000 }),
+            hit(2, { layer: 2, t0Ms: 0, t1Ms: 300000 }),
+        ]);
+        expect(kept).toHaveLength(2);
     });
 
     it('keeps an abstract chunk covering a different span', () => {

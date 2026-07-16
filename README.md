@@ -59,10 +59,12 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Retrieval, citations, injection screening | working |
 | Speaker attribution service | working, wants a GPU to be useful |
 | Incremental summarisation | working |
-| Post-meeting reconciliation | modules built, blocked on audio retention |
+| Session audio retention | working, opt in via RECORDING_DIR |
+| Post-meeting reconciliation | modules built, not scheduled |
 | Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
-| Narrative and topic chunk layers | not built |
+| Layer 2 narrative chunks | working |
+| Layer 3 topic chunks | not built |
 | Overlapping-speech detection | not built |
 
 ## Quick start

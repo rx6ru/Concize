@@ -145,6 +145,7 @@ const startServer = async () => {
       onUtterance: transcriptPipeline.onUtterance,
       onRevision: transcriptPipeline.onRevision,
       onSessionEnd: transcriptPipeline.onSessionEnd,
+      onFrame: transcriptPipeline.onFrame,
     });
 
     // assign to global variable for shutdown handling

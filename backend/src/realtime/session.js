@@ -16,6 +16,7 @@ function createSession({
     sampleRate = 16000,
     frameMs = 100,
     onEvent,
+    onFrame = null,          // every audio frame, used to spool the recording
     onLaneStatus = () => {},
 }) {
     if (!meetingId) throw new Error('meetingId is required');
@@ -85,6 +86,10 @@ function createSession({
             state.framesReceived += 1;
 
             const t0Ms = seq * frameMs;
+            if (onFrame) {
+                try { onFrame(frame); } catch { /* recording is best effort */ }
+            }
+
             for (const [name, entry] of lanes) {
                 if (entry.status === LANE_STATES.DOWN) continue;
                 try {

@@ -44,11 +44,13 @@ function reject(socket, status, message) {
  * @param {function} deps.createLane      builds the words lane for a session
  * @param {function} [deps.onUtterance]   called with each finalised utterance
  * @param {function} [deps.onSessionEnd]  called once per session after its lanes are closed
+ * @param {function} [deps.onFrame]       every audio frame, for recording
  */
 function attachGateway({
     server, verifyAccessToken, getMeetingOwner, createLane,
     createSpeakerLane = null,
     onUtterance = () => {}, onRevision = () => {}, onSessionEnd = () => {},
+    onFrame = null,
 }) {
     const wss = new WebSocketServer({ noServer: true });
     const sessions = new Map();
@@ -113,6 +115,7 @@ function attachGateway({
         const session = createSession({
             meetingId,
             ownerId,
+            onFrame: onFrame ? (frame) => onFrame(meetingId, frame) : null,
             onEvent: (event) => {
                 if (event.lane === 'speaker') {
                     fusion.addSpeakerInterval(event);

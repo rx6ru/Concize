@@ -43,6 +43,16 @@ jest.mock('../src/meetings/meeting.repository', () => ({
 
 jest.mock('../src/infra/queue', () => ({ publishToQueue: jest.fn(async () => {}) }));
 
+// without this the narrator reaches for a real provider and the suite hits the network
+jest.mock('../src/providers/llm/inference.provider', () => ({
+    getSummaryInference: () => ({
+        client: { chat: { completions: { create: jest.fn(async () => ({
+            choices: [{ message: { content: 'S1 said they should revisit pricing.' } }],
+        })) } } },
+        model: 'test-model',
+    }),
+}));
+
 jest.mock('../src/summary/summary.repository', () => ({
     getMeetingSummary: jest.fn(async () => ({ title: 'Q3 planning' })),
 }));
@@ -135,7 +145,7 @@ describe('end of meeting', () => {
 
         await pipeline.onSessionEnd('m1');
 
-        expect(store.chunks).toHaveLength(1);
+        expect(store.chunks.filter((c) => c.layer === 1)).toHaveLength(1);
         expect(store.chunks[0]).toMatchObject({ layer: 1, text: 'we should revisit pricing' });
     });
 
@@ -143,7 +153,7 @@ describe('end of meeting', () => {
         await pipeline.onUtterance('m1', utterance({ speakerLabel: 'S1' }));
         await pipeline.onSessionEnd('m1');
 
-        expect(upserted).toHaveLength(1);
+        expect(upserted.filter((u) => u.payload.layer === 1)).toHaveLength(1);
         expect(upserted[0].payload).toMatchObject({
             meetingId: 'm1',
             ownerId: 'user-A',      // tenant isolation reaches the vector layer
@@ -156,7 +166,7 @@ describe('end of meeting', () => {
         await pipeline.onUtterance('m1', utterance({ speakerLabel: 'S1' }));
         await pipeline.onSessionEnd('m1');
 
-        const embedded = getEmbedding.mock.calls.at(-1)[0];
+        const embedded = getEmbedding.mock.calls.find((c) => c[0].includes('we should revisit'))[0];
         expect(embedded).toContain('Q3 planning');
         expect(embedded).toContain('Speakers: S1');
         expect(embedded).toContain('we should revisit pricing');
@@ -175,7 +185,7 @@ describe('end of meeting', () => {
         await pipeline.onSessionEnd('m1');
         await pipeline.onSessionEnd('m1');
 
-        expect(store.chunks).toHaveLength(1);
+        expect(store.chunks.filter((c) => c.layer === 1)).toHaveLength(1);
     });
 });
 
@@ -267,6 +277,6 @@ describe('summary handoff', () => {
 
         await expect(pipeline.onUtterance('m1', utterance())).resolves.toBeUndefined();
         await expect(pipeline.onSessionEnd('m1')).resolves.toBeUndefined();
-        expect(store.chunks).toHaveLength(1);      // the chunk was still stored
+        expect(store.chunks.filter((c) => c.layer === 1)).toHaveLength(1);   // still stored
     });
 });

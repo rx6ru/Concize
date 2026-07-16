@@ -48,10 +48,22 @@ const overlapsInTime = (a, b) => a.t0Ms < b.t1Ms && b.t0Ms < a.t1Ms;
  * Drops abstract candidates already covered by a more specific one.
  * Lower layer number = more specific (1 verbatim, 2 narrative, 3 topic).
  */
+// How much of an abstract chunk a specific one must cover before it replaces it. Any overlap at
+// all is too eager once layer 2 exists: a narrative spans several verbatim chunks, and one of
+// them matching should not throw away the synthesis of the other seven.
+const SUBSUME_COVERAGE = 0.6;
+
+function coverageOf(inner, outer) {
+    const span = outer.t1Ms - outer.t0Ms;
+    if (span <= 0) return 0;
+    const shared = Math.min(inner.t1Ms, outer.t1Ms) - Math.max(inner.t0Ms, outer.t0Ms);
+    return Math.max(0, shared) / span;
+}
+
 function dropSubsumed(candidates) {
     const kept = [];
     for (const c of candidates) {
-        const subsumed = kept.some((k) => k.layer < c.layer && overlapsInTime(k, c));
+        const subsumed = kept.some((k) => k.layer < c.layer && coverageOf(k, c) >= SUBSUME_COVERAGE);
         if (!subsumed) kept.push(c);
     }
     return kept;

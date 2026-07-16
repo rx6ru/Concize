@@ -9,6 +9,9 @@ const { getEmbedding } = require('../providers/embedding/embedding.service');
 const { createChunkSearch } = require('../chat/chunk.search');
 const { createDeriveService } = require('./derive.service');
 const { createEmbedWorker } = require('./embed.worker');
+const { createNarrator } = require('./narrative');
+const { createRecorder } = require('../realtime/recorder');
+const { getSummaryInference } = require('../providers/llm/inference.provider');
 const {
     insertChunk, markDirtyForRange, getDirtyChunks, getUnembedded, attachVector,
 } = require('./chunk.repository');
@@ -20,6 +23,16 @@ const config = require('../core/config');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('transcriptPipeline');
+
+// Spools the meeting to disk so the post-meeting batch pass has something to re-transcribe.
+// Off by default: a three hour meeting is about 345 MB of wav.
+const recorder = process.env.RECORDING_DIR
+    ? createRecorder({ dir: process.env.RECORDING_DIR })
+    : null;
+
+function onFrame(meetingId, frame) {
+    if (recorder) recorder.write(meetingId, frame);
+}
 
 let parts = null;
 
@@ -34,16 +47,27 @@ function build() {
         upsert: index.upsert,
     });
 
+    // Layer 2 is prose covering a run of layer-1 chunks, so an abstract question matches
+    // narrative rather than raw disfluent speech. Same provider the summary uses.
+    const narrator = createNarrator({
+        complete: async (args) => {
+            const { client, model } = getSummaryInference();
+            return client.chat.completions.create({ ...args, model });
+        },
+        model: null,
+    });
+
     const derive = createDeriveService({
         insertChunk,
         markDirtyForRange,
         onChunk: (meetingId, chunk) => {
             scheduleEmbed(meetingId);
             queueForSummary(meetingId, chunk);
+            narrate(meetingId, chunk);
         },
     });
 
-    return { index, embedWorker, derive };
+    return { index, embedWorker, derive, narrator };
 }
 
 function get() {
@@ -109,6 +133,19 @@ async function queueForSummary(meetingId, chunk) {
     }
 }
 
+/** Stores a layer-2 narrative chunk once enough layer-1 chunks have accumulated. */
+async function narrate(meetingId, chunk) {
+    try {
+        const layer2 = await get().narrator.add(meetingId, chunk);
+        if (layer2) {
+            await insertChunk(meetingId, layer2);
+            scheduleEmbed(meetingId);
+        }
+    } catch (err) {
+        logger.error('Narrative chunk failed', { meetingId, error: err.message });
+    }
+}
+
 // The gateway's event shape is the wire shape; the log's is the storage shape.
 function toUtterance(event) {
     return {
@@ -147,7 +184,20 @@ async function onRevision(meetingId, event) {
 
 /** Closes the open chunk at end of meeting and indexes whatever is left. */
 async function onSessionEnd(meetingId) {
+    if (recorder) {
+        const rec = await recorder.close(meetingId);
+        if (rec) logger.info('Recording saved', { meetingId, durationMs: rec.durationMs, bytes: rec.bytes });
+    }
+
     await get().derive.finish(meetingId);
+
+    try {
+        const layer2 = await get().narrator.flush(meetingId);
+        if (layer2) await insertChunk(meetingId, layer2);
+    } catch (err) {
+        logger.error('Final narrative chunk failed', { meetingId, error: err.message });
+    }
+
     await scheduleEmbed(meetingId);
 
     // Through the queue, not a direct call: the last chunk may still be summarising, and its
@@ -167,6 +217,9 @@ function _resetForTests() {
 
 module.exports = {
     ensureReady,
+    onFrame,
+    loadRecording: (meetingId) => (recorder ? recorder.load(meetingId) : Promise.resolve(null)),
+    discardRecording: (meetingId) => (recorder ? recorder.discard(meetingId) : Promise.resolve(false)),
     onUtterance,
     onRevision,
     onSessionEnd,
