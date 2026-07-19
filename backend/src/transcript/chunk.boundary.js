@@ -11,6 +11,7 @@ const DEFAULTS = {
     silenceGapMs: 700,
     overlapRatio: 0.15,        // fraction of the closed chunk carried into the next
     semanticShiftThreshold: 0.35,
+    startOrdinal: 0,          // resumed meetings carry on from the last stored chunk
 };
 
 // Rough token estimate, not a real tokenizer call. Runs per utterance on the live path and
@@ -42,7 +43,7 @@ function createChunker(opts = {}) {
     const cfg = { ...DEFAULTS, ...opts };
     let buffer = [];
     let tokens = 0;
-    let ordinal = 0;
+    let ordinal = cfg.startOrdinal;
 
     const spanMs = () => (buffer.length ? buffer[buffer.length - 1].t1Ms - buffer[0].t0Ms : 0);
 

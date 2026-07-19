@@ -13,7 +13,7 @@ const { createNarrator } = require('./narrative');
 const { createRecorder } = require('../realtime/recorder');
 const { getSummaryInference } = require('../providers/llm/inference.provider');
 const {
-    insertChunk, markDirtyForRange, getDirtyChunks, getUnembedded, attachVector,
+    insertChunk, markDirtyForRange, getDirtyChunks, getUnembedded, attachVector, nextOrdinal,
 } = require('./chunk.repository');
 const { appendUtterance, reviseUtterance } = require('./utterance.repository');
 const { getMeetingOwner, appendTranscription } = require('../meetings/meeting.repository');
@@ -55,11 +55,13 @@ function build() {
             return client.chat.completions.create({ ...args, model });
         },
         model: null,
+        nextOrdinal,
     });
 
     const derive = createDeriveService({
         insertChunk,
         markDirtyForRange,
+        nextOrdinal,
         onChunk: (meetingId, chunk) => {
             scheduleEmbed(meetingId);
             queueForSummary(meetingId, chunk);

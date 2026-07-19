@@ -280,3 +280,52 @@ describe('summary handoff', () => {
         expect(store.chunks.filter((c) => c.layer === 1)).toHaveLength(1);   // still stored
     });
 });
+
+describe('two meetings at once', () => {
+    it('keeps chunks, summaries and vectors on the right meeting', async () => {
+        // interleaved rather than sequential, since per-meeting state is keyed in Maps and a
+        // regression that hoisted it out of the closure would only show up under interleaving
+        await Promise.all([
+            pipeline.onUtterance('m1', utterance({ turnId: 1, text: 'alpha one' })),
+            pipeline.onUtterance('m2', utterance({ turnId: 2, text: 'beta one' })),
+        ]);
+        await Promise.all([
+            pipeline.onUtterance('m1', utterance({ turnId: 3, t0Ms: 3000, t1Ms: 4000, text: 'alpha two' })),
+            pipeline.onUtterance('m2', utterance({ turnId: 4, t0Ms: 3000, t1Ms: 4000, text: 'beta two' })),
+        ]);
+        await Promise.all([pipeline.onSessionEnd('m1'), pipeline.onSessionEnd('m2')]);
+
+        const textFor = (id) => store.chunks.filter((c) => c.meetingId === id && c.layer === 1)
+            .map((c) => c.text).join(' ');
+
+        expect(textFor('m1')).toContain('alpha');
+        expect(textFor('m1')).not.toContain('beta');
+        expect(textFor('m2')).toContain('beta');
+        expect(textFor('m2')).not.toContain('alpha');
+    });
+
+    it('does not cross-contaminate the utterance log', async () => {
+        await Promise.all([
+            pipeline.onUtterance('m1', utterance({ turnId: 1, text: 'alpha' })),
+            pipeline.onUtterance('m2', utterance({ turnId: 2, text: 'beta' })),
+        ]);
+
+        expect(store.utterances.find((u) => u.meetingId === 'm1').text).toBe('alpha');
+        expect(store.utterances.find((u) => u.meetingId === 'm2').text).toBe('beta');
+    });
+
+    it('embeds each meeting against its own owner', async () => {
+        require('../src/meetings/meeting.repository').getMeetingOwner
+            .mockImplementation(async (id) => (id === 'm1' ? 'user-A' : 'user-B'));
+
+        await Promise.all([
+            pipeline.onUtterance('m1', utterance({ turnId: 1, text: 'alpha' })),
+            pipeline.onUtterance('m2', utterance({ turnId: 2, text: 'beta' })),
+        ]);
+        await Promise.all([pipeline.onSessionEnd('m1'), pipeline.onSessionEnd('m2')]);
+
+        const ownerOf = (id) => upserted.find((u) => u.payload.meetingId === id).payload.ownerId;
+        expect(ownerOf('m1')).toBe('user-A');
+        expect(ownerOf('m2')).toBe('user-B');
+    });
+});

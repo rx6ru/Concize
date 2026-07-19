@@ -16,15 +16,18 @@ const logger = createLogger('deriveService');
  * @param {object}   [deps.chunkerOptions]
  * @param {function} [deps.onChunk]   called after a chunk is stored, e.g. to enqueue embedding
  */
-function createDeriveService({ insertChunk, markDirtyForRange = null, chunkerOptions = {}, onChunk = () => {} }) {
+function createDeriveService({ insertChunk, markDirtyForRange = null, nextOrdinal = null, chunkerOptions = {}, onChunk = () => {} }) {
     // One chunker per live meeting. Boundaries depend on the running buffer, so state
     // cannot be shared and cannot be rebuilt per-utterance without losing the buffer.
     const chunkers = new Map();
 
-    const chunkerFor = (meetingId) => {
-        if (!chunkers.has(meetingId)) chunkers.set(meetingId, createChunker(chunkerOptions));
+    async function chunkerFor(meetingId) {
+        if (!chunkers.has(meetingId)) {
+            const startOrdinal = nextOrdinal ? await nextOrdinal(meetingId, 1) : 0;
+            chunkers.set(meetingId, createChunker({ ...chunkerOptions, startOrdinal }));
+        }
         return chunkers.get(meetingId);
-    };
+    }
 
     async function store(meetingId, chunk) {
         const stored = await insertChunk(meetingId, { ...chunk, layer: 1 });
@@ -42,7 +45,8 @@ function createDeriveService({ insertChunk, markDirtyForRange = null, chunkerOpt
          */
         async ingest(meetingId, utterance, embedding = null) {
             try {
-                const closed = chunkerFor(meetingId).add(utterance, embedding);
+                const chunker = await chunkerFor(meetingId);
+                const closed = chunker.add(utterance, embedding);
                 return closed ? await store(meetingId, closed) : null;
             } catch (err) {
                 logger.error('Derive failed', { meetingId, error: err.message });

@@ -118,6 +118,18 @@ async function searchChunkText(meetingId, { text, ownerId = null, layer = null, 
 }
 
 /**
+ * Next free ordinal for a layer. A meeting resumed after a restart has to keep numbering from
+ * here, otherwise the insert collides with a pre-restart chunk on the primary key.
+ */
+async function nextOrdinal(meetingId, layer = 1) {
+    const { rows } = await query(
+        'SELECT COALESCE(MAX(ordinal), -1) AS highest FROM chunks WHERE meeting_id = $1 AND layer = $2',
+        [meetingId, layer]
+    );
+    return Number(rows[0].highest) + 1;
+}
+
+/**
  * Latest revision of each chunk in a layer, in spoken order.
  *
  * Deduped in JS rather than by a correlated subquery: the SQL form is not portable across
@@ -197,6 +209,7 @@ async function getUnembedded(meetingId, { limit = 100 } = {}) {
 
 module.exports = {
     insertChunk,
+    nextOrdinal,
     searchChunkText,
     getChunks,
     markDirtyForRange,

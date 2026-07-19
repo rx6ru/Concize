@@ -50,14 +50,18 @@ function buildChunk(chunks, ordinal, text) {
  * @param {number} [deps.maxChunks]
  * @param {number} [deps.timeoutMs]
  */
-function createNarrator({ complete, model, minChunks = 4, maxChunks = 8, timeoutMs = 20000 }) {
+function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, maxChunks = 8, timeoutMs = 20000 }) {
     // One buffer per live meeting: { buffer: layer1Chunk[], ordinal: number }.
     const meetings = new Map();
 
-    const stateFor = (meetingId) => {
-        if (!meetings.has(meetingId)) meetings.set(meetingId, { buffer: [], ordinal: 0 });
+    async function stateFor(meetingId) {
+        if (!meetings.has(meetingId)) {
+            // resumed meetings carry on numbering, or the insert collides on the primary key
+            const ordinal = nextOrdinal ? await nextOrdinal(meetingId, 2) : 0;
+            meetings.set(meetingId, { buffer: [], ordinal });
+        }
         return meetings.get(meetingId);
-    };
+    }
 
     async function narrate(chunks) {
         // clear the timer even when it loses the race, or it holds the event loop open until it fires
@@ -95,7 +99,7 @@ function createNarrator({ complete, model, minChunks = 4, maxChunks = 8, timeout
     return {
         /** Buffer one layer-1 chunk. Returns a layer-2 chunk once enough accumulate, else null. */
         async add(meetingId, layer1Chunk) {
-            const state = stateFor(meetingId);
+            const state = await stateFor(meetingId);
             state.buffer.push(layer1Chunk);
             // maxChunks forces an attempt even if minChunks has not been reached yet.
             if (state.buffer.length < minChunks && state.buffer.length < maxChunks) return null;

@@ -11,8 +11,10 @@ const utt = (t0, t1, text, speaker = 'S1') => ({
 
 function makeService(over = {}) {
     const stored = [];
+    // keeps the ordinal the chunk carries, like the real insert does. overwriting it here
+    // hid the resume collision, where the chunker restarts numbering at zero.
     const insertChunk = jest.fn(async (meetingId, c) => {
-        const row = { ...c, meetingId, ordinal: stored.length };
+        const row = { ...c, meetingId };
         stored.push(row);
         return row;
     });
@@ -149,5 +151,44 @@ describe('finish', () => {
         await svc.ingest('m1', utt(0, 1000, 'a'));
         await expect(svc.finish('m1')).resolves.toBeNull();
         expect(svc.active()).toBe(0);
+    });
+});
+
+describe('resuming a meeting', () => {
+    it('carries on numbering from storage instead of colliding on the primary key', async () => {
+        // a restart mid-meeting leaves the in-memory chunker behind but the stored chunks remain
+        const { svc } = makeService({ nextOrdinal: jest.fn(async () => 7) });
+
+        await svc.ingest('m1', utt(0, 1000, 'after the restart'));
+        const chunk = await svc.finish('m1');
+
+        expect(chunk.ordinal).toBe(7);
+    });
+
+    it('starts at zero for a meeting with nothing stored', async () => {
+        const { svc } = makeService({ nextOrdinal: jest.fn(async () => 0) });
+
+        await svc.ingest('m1', utt(0, 1000, 'first ever'));
+        expect((await svc.finish('m1')).ordinal).toBe(0);
+    });
+
+    it('asks storage once per meeting, not once per utterance', async () => {
+        const nextOrdinal = jest.fn(async () => 0);
+        const { svc } = makeService({ nextOrdinal });
+
+        for (let i = 0; i < 5; i++) await svc.ingest('m1', utt(i * 1000, i * 1000 + 500, `line ${i}`));
+
+        expect(nextOrdinal).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps two meetings on their own counters', async () => {
+        const nextOrdinal = jest.fn(async (meetingId) => (meetingId === 'm1' ? 3 : 10));
+        const { svc } = makeService({ nextOrdinal });
+
+        await svc.ingest('m1', utt(0, 1000, 'meeting one'));
+        await svc.ingest('m2', utt(0, 1000, 'meeting two'));
+
+        expect((await svc.finish('m1')).ordinal).toBe(3);
+        expect((await svc.finish('m2')).ordinal).toBe(10);
     });
 });
