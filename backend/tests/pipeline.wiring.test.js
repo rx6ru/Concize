@@ -36,6 +36,11 @@ jest.mock('../src/transcript/utterance.repository', () => ({
     reviseUtterance: jest.fn(async (meetingId, turnId, u) => { store.revisions.push({ meetingId, turnId, ...u }); }),
 }));
 
+jest.mock('../src/meetings/meeting.service', () => ({
+    completeMeeting: jest.fn(async () => true),
+    completeMeetingWithErrors: jest.fn(async () => true),
+}));
+
 jest.mock('../src/meetings/meeting.repository', () => ({
     getMeetingOwner: jest.fn(async () => 'user-A'),
     appendTranscription: jest.fn(async () => ({ success: true, chunkIndex: store.chunks.length - 1 })),
@@ -77,6 +82,7 @@ const { appendUtterance, reviseUtterance } = require('../src/transcript/utteranc
 const { getEmbedding } = require('../src/providers/embedding/embedding.service');
 const { appendTranscription } = require('../src/meetings/meeting.repository');
 const { publishToQueue } = require('../src/infra/queue');
+const { completeMeeting } = require('../src/meetings/meeting.service');
 
 const utterance = (over = {}) => ({
     turnId: 1, t0Ms: 0, t1Ms: 2000, text: 'we should revisit pricing', ...over,
@@ -327,5 +333,22 @@ describe('two meetings at once', () => {
         const ownerOf = (id) => upserted.find((u) => u.payload.meetingId === id).payload.ownerId;
         expect(ownerOf('m1')).toBe('user-A');
         expect(ownerOf('m2')).toBe('user-B');
+    });
+});
+
+describe('marking the meeting finished', () => {
+    it('moves the meeting out of in-progress when the session ends', async () => {
+        // every meeting has sat at in-progress forever, because nothing ever advanced it
+        await pipeline.onUtterance('m1', utterance());
+        await pipeline.onSessionEnd('m1');
+
+        expect(completeMeeting).toHaveBeenCalledWith('m1');
+    });
+
+    it('does not fail the teardown when the status write fails', async () => {
+        completeMeeting.mockRejectedValue(new Error('pg down'));
+
+        await pipeline.onUtterance('m1', utterance());
+        await expect(pipeline.onSessionEnd('m1')).resolves.toBeUndefined();
     });
 });

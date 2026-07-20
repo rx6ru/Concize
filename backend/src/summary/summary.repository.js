@@ -70,6 +70,13 @@ const startSummaryUpdate = async (jobId, chunkIndex) => {
                 return mapSummary(ins.rows[0]);
             }
 
+            // Already applied. The broker redelivers when an ack is lost, and treating that as
+            // out-of-order requeues the same message forever at one message per two seconds.
+            if (row.last_processed_chunk_index >= chunkIndex) {
+                logger.info('Chunk already summarised, skipping', { jobId, chunkIndex });
+                return null;
+            }
+
             if (row.last_processed_chunk_index !== chunkIndex - 1) {
                 logger.warn('Skipped chunk: out of order', {
                     jobId, chunkIndex, expected: row.last_processed_chunk_index + 1,

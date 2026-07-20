@@ -48,6 +48,37 @@ describe('summary.db (Postgres)', () => {
         await expect(startSummaryUpdate('job-1', 3)).rejects.toThrow(/missing start/i);
     });
 
+    it('skips a chunk it has already summarised instead of rejecting it', async () => {
+        // the broker redelivers when an ack is lost. treating that as out-of-order requeues
+        // the same message forever.
+        await startSummaryUpdate('job-1', 0);
+        await saveSummaryContent('job-1', { title: 'T0', summary: 'C0' }, 0);
+
+        await expect(startSummaryUpdate('job-1', 0)).resolves.toBeNull();
+    });
+
+    it('skips any chunk already behind the watermark', async () => {
+        await startSummaryUpdate('job-1', 0);
+        await saveSummaryContent('job-1', { title: 'T0', summary: 'C0' }, 0);
+        await startSummaryUpdate('job-1', 1);
+        await saveSummaryContent('job-1', { title: 'T1', summary: 'C1' }, 1);
+
+        await expect(startSummaryUpdate('job-1', 0)).resolves.toBeNull();
+        await expect(startSummaryUpdate('job-1', 1)).resolves.toBeNull();
+    });
+
+    it('leaves the summary untouched when it skips a duplicate', async () => {
+        await startSummaryUpdate('job-1', 0);
+        await saveSummaryContent('job-1', { title: 'T0', summary: 'C0' }, 0);
+        const before = await getMeetingSummary('job-1');
+
+        await startSummaryUpdate('job-1', 0);
+        const after = await getMeetingSummary('job-1');
+
+        expect(after.version).toBe(before.version);
+        expect(after.content).toBe(before.content);
+    });
+
     it('processes chunks strictly in order, rejecting out-of-order', async () => {
         await startSummaryUpdate('job-1', 0);
         await saveSummaryContent('job-1', { title: 'T0', summary: 'C0' }, 0);

@@ -11,12 +11,14 @@ const { createDeriveService } = require('./derive.service');
 const { createEmbedWorker } = require('./embed.worker');
 const { createNarrator } = require('./narrative');
 const { createRecorder } = require('../realtime/recorder');
+const { createReconciler } = require('./reconcile.wiring');
 const { getSummaryInference } = require('../providers/llm/inference.provider');
 const {
     insertChunk, markDirtyForRange, getDirtyChunks, getUnembedded, attachVector, nextOrdinal,
 } = require('./chunk.repository');
 const { appendUtterance, reviseUtterance } = require('./utterance.repository');
 const { getMeetingOwner, appendTranscription } = require('../meetings/meeting.repository');
+const { completeMeeting } = require('../meetings/meeting.service');
 const { getMeetingSummary } = require('../summary/summary.repository');
 const { publishToQueue } = require('../infra/queue');
 const config = require('../core/config');
@@ -33,6 +35,12 @@ const recorder = process.env.RECORDING_DIR
 function onFrame(meetingId, frame) {
     if (recorder) recorder.write(meetingId, frame);
 }
+
+const loadRecording = (meetingId) => (recorder ? recorder.load(meetingId) : Promise.resolve(null));
+const discardRecording = (meetingId) => (recorder ? recorder.discard(meetingId) : Promise.resolve(false));
+
+// Only exists when there is a recording to reconcile against.
+const reconciler = recorder ? createReconciler({ loadRecording, discardRecording }) : null;
 
 let parts = null;
 
@@ -202,12 +210,26 @@ async function onSessionEnd(meetingId) {
 
     await scheduleEmbed(meetingId);
 
+    // Nothing else advanced this, so every meeting sat at in-progress forever.
+    try {
+        await completeMeeting(meetingId);
+    } catch (err) {
+        logger.warn('Could not mark the meeting complete', { meetingId, error: err.message });
+    }
+
     // Through the queue, not a direct call: the last chunk may still be summarising, and its
     // save would flip the status back to updating.
     try {
         await publishToQueue(config.queues.SUMMARY_QUEUE, { jobId: meetingId, finalise: true });
     } catch (err) {
         logger.warn('Could not finalise summary', { meetingId, error: err.message });
+    }
+
+    // Batch re-transcription takes minutes, so it runs behind the session teardown rather
+    // than holding the socket close open.
+    if (reconciler) {
+        reconciler.run(meetingId).catch((err) =>
+            logger.error('Reconcile pass failed', { meetingId, error: err.message }));
     }
 }
 
@@ -220,8 +242,9 @@ function _resetForTests() {
 module.exports = {
     ensureReady,
     onFrame,
-    loadRecording: (meetingId) => (recorder ? recorder.load(meetingId) : Promise.resolve(null)),
-    discardRecording: (meetingId) => (recorder ? recorder.discard(meetingId) : Promise.resolve(false)),
+    loadRecording,
+    discardRecording,
+    reconcile: (meetingId) => (reconciler ? reconciler.run(meetingId) : Promise.resolve(null)),
     onUtterance,
     onRevision,
     onSessionEnd,

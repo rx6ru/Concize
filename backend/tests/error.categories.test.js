@@ -26,6 +26,7 @@ jest.mock('../src/safety', () => ({
     validateInput: jest.fn().mockReturnValue({ blocked: false }),
     isRelevantToMeeting: jest.fn().mockResolvedValue({ relevant: true }),
     recordViolation: jest.fn(),
+    checkBlocked: jest.fn().mockReturnValue({ blocked: false, violationCount: 0 }),
 }));
 jest.mock('../prompts/systemPrompt', () => ({
     SECURE_SYSTEM_PROMPT: 'Mock system prompt',
@@ -132,6 +133,18 @@ describe('Error Category Verification', () => {
 
         expect(res.statusCode).toBe(200);
         getMeetingSummary.mockResolvedValue({ title: 'Test', content: 'Test meeting summary' });
+    });
+
+    test('Category B: a meeting past the violation threshold is turned away', async () => {
+        const res = new MockResponse();
+        const { checkBlocked } = require('../src/safety');
+        checkBlocked.mockReturnValueOnce({ blocked: true, violationCount: 12 });
+
+        await getLLMStreamResponse(res, "Hello", "job1");
+
+        expect(res.statusCode).toBe(429);
+        expect(res.jsonBody.error.code).toBe('TEMPORARILY_BLOCKED');
+        expect(res.headers['Content-Type']).toBeUndefined();
     });
 
     test('Category B: Pre-Stream Failure (e.g. Rate Limit) should result in 429 JSON', async () => {

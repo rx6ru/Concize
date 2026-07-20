@@ -17,7 +17,8 @@ const logger = createLogger('chatLLM');
 const {
     validateInput,
     isRelevantToMeeting,
-    recordViolation
+    recordViolation,
+    checkBlocked
 } = require('../safety');
 const { SECURE_SYSTEM_PROMPT } = require('../../prompts/systemPrompt');
 
@@ -122,6 +123,20 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
 
     // --- Phase 0: Security Validation (Category B Potential) ---
     // If security checks fail, return JSON error immediately.
+
+    // recordViolation has been counting toward VIOLATION_THRESHOLD all along with nothing
+    // reading the count, so the threshold never actually stopped anyone.
+    const standing = checkBlocked(jobId);
+    if (standing.blocked) {
+        logger.warn('Blocked after repeated violations', { jobId, violations: standing.violationCount });
+        return res.status(429).json({
+            error: {
+                type: 'too_many_violations',
+                code: 'TEMPORARILY_BLOCKED',
+                message: "Too many blocked requests on this meeting. Try again later."
+            }
+        });
+    }
 
     // Input Guardrails
     const inputCheck = validateInput(userPrompt);
