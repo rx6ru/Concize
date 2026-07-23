@@ -149,17 +149,70 @@ describe('flush', () => {
         await narrator.add('m1', chunk(1000, 2000, 'b'));
 
         const out = await narrator.flush('m1');
-        expect(out).not.toBeNull();
-        expect(out.sourceOrdinals).toEqual([0, 1]);
+        expect(out).toHaveLength(1);
+        expect(out[0].sourceOrdinals).toEqual([0, 1]);
         expect(complete).toHaveBeenCalledTimes(1);
         expect(narrator.pending('m1')).toBe(0);
         expect(narrator.active()).toBe(0);
     });
 
-    it('returns null and stays a no-op when nothing is buffered', async () => {
+    it('returns an empty list and stays a no-op when nothing is buffered', async () => {
         const { narrator } = makeNarrator();
-        expect(await narrator.flush('ghost')).toBeNull();
+        expect(await narrator.flush('ghost')).toEqual([]);
         expect(narrator.active()).toBe(0);
+    });
+
+    // Chunks arriving while a narration is in flight queue up behind the busy guard. Returns a
+    // narrator holding `total - 4` of them: the first span drains, the rest are the backlog.
+    async function withBacklog(complete, total = 20) {
+        const { narrator } = makeNarrator({ complete });
+        const adds = [];
+        for (let i = 0; i < total; i++) {
+            adds.push(narrator.add('m1', chunk(i * 1000, i * 1000 + 900, 'line')));
+        }
+        expect(narrator.pending('m1')).toBe(total);
+        return { narrator, settle: async () => { await Promise.all(adds); } };
+    }
+
+    // A backlog used to go out as one request. At 16 chunks that is past the provider's
+    // per-request token limit, it 413s, and every remaining narrative is lost.
+    it('splits a backlog into maxChunks-sized spans', async () => {
+        let release;
+        const gate = new Promise((r) => { release = r; });
+        const complete = jest.fn(() => gate.then(() => reply('Narrative text.')));
+
+        const { narrator, settle } = await withBacklog(complete);
+        release();
+        await settle();
+        expect(narrator.pending('m1')).toBe(16);
+
+        const out = await narrator.flush('m1');
+
+        expect(out.map((c) => c.sourceOrdinals.length)).toEqual([8, 8]);
+        expect(out.map((c) => c.ordinal)).toEqual([1, 2]);
+        expect(narrator.pending('m1')).toBe(0);
+    });
+
+    it('keeps emitting the rest of the backlog when one span fails', async () => {
+        let release;
+        const gate = new Promise((r) => { release = r; });
+        let calls = 0;
+        const complete = jest.fn(() => {
+            calls += 1;
+            if (calls === 1) return gate.then(() => reply('Narrative text.'));
+            if (calls === 2) return Promise.reject(new Error('413 request too large'));
+            return Promise.resolve(reply('Narrative text.'));
+        });
+
+        const { narrator, settle } = await withBacklog(complete);
+        release();
+        await settle();
+
+        const out = await narrator.flush('m1');
+
+        expect(out).toHaveLength(1);
+        expect(out[0].sourceOrdinals).toHaveLength(8);
+        expect(narrator.pending('m1')).toBe(0);
     });
 });
 
@@ -186,5 +239,49 @@ describe('provider outage', () => {
         }
 
         expect(narrator.pending('m1')).toBeLessThanOrEqual(8);
+    });
+});
+
+describe('a burst of chunks', () => {
+    it('narrates one span at a time instead of one call per chunk', async () => {
+        let inFlight = 0;
+        let peak = 0;
+        const complete = jest.fn(async () => {
+            inFlight += 1;
+            peak = Math.max(peak, inFlight);
+            await new Promise((r) => setTimeout(r, 5));
+            inFlight -= 1;
+            return reply('Narrative text.');
+        });
+        const { narrator } = makeNarrator({ complete });
+
+        // ingesting a stored meeting fires these back to back, unlike a live meeting
+        await Promise.all(
+            Array.from({ length: 20 }, (_, i) => narrator.add('m1', chunk(i * 1000, i * 1000 + 900, `line ${i}`)))
+        );
+
+        expect(peak).toBe(1);
+    });
+
+    it('does not narrate the same chunk into two spans', async () => {
+        const { narrator } = makeNarrator();
+        const out = await Promise.all(
+            Array.from({ length: 12 }, (_, i) => narrator.add('m1', chunk(i * 1000, i * 1000 + 900, `line ${i}`)))
+        );
+
+        const emitted = out.filter(Boolean);
+        const covered = emitted.flatMap((c) => c.sourceOrdinals);
+        expect(new Set(covered).size).toBe(covered.length);
+    });
+
+    it('gives each emitted span its own ordinal', async () => {
+        const { narrator } = makeNarrator();
+        const out = [];
+        for (let i = 0; i < 24; i++) {
+            out.push(await narrator.add('m1', chunk(i * 1000, i * 1000 + 900, `line ${i}`)));
+        }
+
+        const ordinals = out.filter(Boolean).map((c) => c.ordinal);
+        expect(new Set(ordinals).size).toBe(ordinals.length);
     });
 });

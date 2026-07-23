@@ -54,13 +54,21 @@ function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, ma
     // One buffer per live meeting: { buffer: layer1Chunk[], ordinal: number }.
     const meetings = new Map();
 
-    async function stateFor(meetingId) {
+    // Synchronous: an await here lets two concurrent chunks both pass the length check and
+    // both start narrating the same span. The ordinal is resolved at emit time instead.
+    function stateFor(meetingId) {
         if (!meetings.has(meetingId)) {
-            // resumed meetings carry on numbering, or the insert collides on the primary key
-            const ordinal = nextOrdinal ? await nextOrdinal(meetingId, 2) : 0;
-            meetings.set(meetingId, { buffer: [], ordinal });
+            meetings.set(meetingId, { buffer: [], ordinal: null, busy: false });
         }
         return meetings.get(meetingId);
+    }
+
+    // Resumed meetings carry on numbering, or the insert collides on the primary key.
+    async function ordinalFor(meetingId, state) {
+        if (state.ordinal === null) {
+            state.ordinal = nextOrdinal ? await nextOrdinal(meetingId, 2) : 0;
+        }
+        return state.ordinal;
     }
 
     async function narrate(chunks) {
@@ -99,40 +107,62 @@ function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, ma
     return {
         /** Buffer one layer-1 chunk. Returns a layer-2 chunk once enough accumulate, else null. */
         async add(meetingId, layer1Chunk) {
-            const state = await stateFor(meetingId);
+            const state = stateFor(meetingId);
             state.buffer.push(layer1Chunk);
-            // maxChunks forces an attempt even if minChunks has not been reached yet.
+
+            // one narration per meeting at a time. without this a burst of chunks starts a call
+            // per chunk, they all narrate overlapping spans and the provider times them out.
+            if (state.busy) return null;
             if (state.buffer.length < minChunks && state.buffer.length < maxChunks) return null;
 
-            const text = await narrate(state.buffer);
-            if (!text) {
-                // a provider outage must not keep growing the buffer for the rest of the meeting
-                if (state.buffer.length >= maxChunks) {
-                    logger.warn('Dropping narrative span after repeated failures',
-                        { meetingId, chunks: state.buffer.length });
-                    state.buffer = [];
+            const span = state.buffer.slice(0, maxChunks);
+            state.busy = true;
+            try {
+                const text = await narrate(span);
+                if (!text) {
+                    // a provider outage must not keep growing the buffer for the rest of the meeting
+                    if (state.buffer.length >= maxChunks) {
+                        logger.warn('Dropping narrative span after repeated failures',
+                            { meetingId, chunks: state.buffer.length });
+                        state.buffer = state.buffer.slice(span.length);
+                    }
+                    return null;
                 }
-                return null;
-            }
 
-            const chunk = buildChunk(state.buffer, state.ordinal, text);
-            state.ordinal += 1;
-            state.buffer = [];
-            return chunk;
+                const ordinal = await ordinalFor(meetingId, state);
+                const chunk = buildChunk(span, ordinal, text);
+                state.ordinal = ordinal + 1;
+                // only drop what was narrated; more may have arrived during the call
+                state.buffer = state.buffer.slice(span.length);
+                return chunk;
+            } finally {
+                state.busy = false;
+            }
         },
 
-        /** Emit whatever is pending for a meeting, even below minChunks, and forget it. */
+        /**
+         * Emit everything pending for a meeting, even below minChunks, and forget it.
+         *
+         * Chunks that queued behind an in-flight narration are still here, so the backlog can be
+         * far wider than maxChunks. It goes out in maxChunks-sized spans: as one request it
+         * exceeds the provider's per-request token limit, and the whole tail is lost.
+         */
         async flush(meetingId) {
             const state = meetings.get(meetingId);
-            if (!state || !state.buffer.length) {
-                meetings.delete(meetingId);
-                return null;
-            }
-
-            const text = await narrate(state.buffer);
-            const chunk = text ? buildChunk(state.buffer, state.ordinal, text) : null;
             meetings.delete(meetingId);
-            return chunk;
+            if (!state || !state.buffer.length) return [];
+
+            const out = [];
+            for (let i = 0; i < state.buffer.length; i += maxChunks) {
+                const span = state.buffer.slice(i, i + maxChunks);
+                const text = await narrate(span);
+                // a span that fails is dropped, not retried: the rest of the meeting still indexes
+                if (!text) continue;
+                const ordinal = await ordinalFor(meetingId, state);
+                out.push(buildChunk(span, ordinal, text));
+                state.ordinal = ordinal + 1;
+            }
+            return out;
         },
 
         pending(meetingId) {
