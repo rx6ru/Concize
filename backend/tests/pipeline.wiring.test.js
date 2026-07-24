@@ -21,10 +21,15 @@ jest.mock('../src/transcript/chunk.repository', () => ({
     markDirtyForRange: jest.fn(async (meetingId, t0Ms, t1Ms) => {
         store.dirtyRanges.push({ meetingId, t0Ms, t1Ms });
     }),
-    getUnembedded: jest.fn(async () => store.chunks.filter((c) => !c.vectorId)),
-    getDirtyChunks: jest.fn(async () => store.chunks.filter((c) => c.dirty)),
+    // Both the meeting scope and the limit are what the real queries apply. Ignoring the limit
+    // hid a backlog that never drained; ignoring the meeting made two meetings patch each other.
+    getUnembedded: jest.fn(async (meetingId, { limit = 100 } = {}) =>
+        store.chunks.filter((c) => c.meetingId === meetingId && !c.vectorId).slice(0, limit)),
+    getDirtyChunks: jest.fn(async (meetingId, { limit = 100 } = {}) =>
+        store.chunks.filter((c) => c.meetingId === meetingId && c.dirty).slice(0, limit)),
     attachVector: jest.fn(async (meetingId, chunk, vectorId) => {
-        const hit = store.chunks.find((c) => c.layer === chunk.layer && c.ordinal === chunk.ordinal);
+        const hit = store.chunks.find((c) => c.meetingId === meetingId
+            && c.layer === chunk.layer && c.ordinal === chunk.ordinal);
         hit.vectorId = vectorId;
         hit.dirty = false;
         return hit;
@@ -74,12 +79,13 @@ jest.mock('../src/infra/qdrant', () => ({
 
 jest.mock('../src/providers/embedding/embedding.service', () => ({
     getEmbedding: jest.fn(async () => new Array(768).fill(0.1)),
+    getEmbeddingWithRetry: jest.fn(async () => new Array(768).fill(0.1)),
 }));
 
 const pipeline = require('../src/transcript/pipeline.wiring');
 const { insertChunk, markDirtyForRange, attachVector } = require('../src/transcript/chunk.repository');
 const { appendUtterance, reviseUtterance } = require('../src/transcript/utterance.repository');
-const { getEmbedding } = require('../src/providers/embedding/embedding.service');
+const { getEmbeddingWithRetry: getEmbedding } = require('../src/providers/embedding/embedding.service');
 const { appendTranscription } = require('../src/meetings/meeting.repository');
 const { publishToQueue } = require('../src/infra/queue');
 const { completeMeeting } = require('../src/meetings/meeting.service');
@@ -207,6 +213,37 @@ describe('embedding passes', () => {
 
         // One vector, not three: the later calls joined the running pass.
         expect(upserted).toHaveLength(1);
+    });
+
+    // A pass reads at most batchSize chunks. A long meeting ends with a bigger backlog than
+    // that, and the single closing pass used to leave the remainder out of the index forever.
+    it('drains a backlog larger than one pass', async () => {
+        for (let i = 0; i < 80; i++) {
+            store.chunks.push({
+                meetingId: 'm1', layer: 1, ordinal: i, rev: 0,
+                t0Ms: i * 1000, t1Ms: i * 1000 + 900, text: `line ${i}`, speakers: [], vectorId: null,
+            });
+        }
+
+        await pipeline.scheduleEmbed('m1');
+
+        expect(store.chunks.filter((c) => !c.vectorId)).toHaveLength(0);
+        expect(upserted).toHaveLength(80);
+    });
+
+    it('stops draining instead of spinning when every chunk fails', async () => {
+        getEmbedding.mockRejectedValue(new Error('provider down'));
+        for (let i = 0; i < 80; i++) {
+            store.chunks.push({
+                meetingId: 'm1', layer: 1, ordinal: i, rev: 0,
+                t0Ms: i * 1000, t1Ms: i * 1000 + 900, text: `line ${i}`, speakers: [], vectorId: null,
+            });
+        }
+
+        await pipeline.scheduleEmbed('m1');
+
+        expect(upserted).toHaveLength(0);
+        expect(getEmbedding.mock.calls.length).toBeLessThanOrEqual(80);
     });
 
     it('leaves a chunk unembedded when the provider is down, rather than marking it indexed', async () => {

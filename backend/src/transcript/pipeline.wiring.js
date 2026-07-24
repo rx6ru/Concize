@@ -5,7 +5,9 @@
 'use strict';
 
 const { getQdrant } = require('../infra/qdrant');
-const { getEmbedding } = require('../providers/embedding/embedding.service');
+// The retrying variant: the provider caps embeds per minute, which a long meeting goes through
+// in one pass, and a bare 429 leaves the chunk out of the index.
+const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
 const { createChunkSearch } = require('../chat/chunk.search');
 const { createDeriveService } = require('./derive.service');
 const { createEmbedWorker } = require('./embed.worker');
@@ -45,13 +47,13 @@ const reconciler = recorder ? createReconciler({ loadRecording, discardRecording
 let parts = null;
 
 function build() {
-    const index = createChunkSearch({ client: getQdrant(), embed: getEmbedding });
+    const index = createChunkSearch({ client: getQdrant(), embed: getEmbeddingWithRetry });
 
     const embedWorker = createEmbedWorker({
         getUnembedded,
         getDirtyChunks,
         attachVector,
-        embed: getEmbedding,
+        embed: getEmbeddingWithRetry,
         upsert: index.upsert,
     });
 
@@ -113,7 +115,12 @@ function scheduleEmbed(meetingId) {
         try {
             do {
                 entry.again = false;
-                await get().embedWorker.run(meetingId, await meetingMeta(meetingId));
+                // A pass reads a bounded batch, so a long meeting's backlog needs several.
+                // Stop as soon as one makes no progress, or a chunk that always fails spins here.
+                let embedded;
+                do {
+                    ({ embedded } = await get().embedWorker.run(meetingId, await meetingMeta(meetingId)));
+                } while (embedded > 0);
             } while (entry.again);
         } catch (err) {
             logger.error('Embed pass failed', { meetingId, error: err.message });
@@ -202,8 +209,9 @@ async function onSessionEnd(meetingId) {
     await get().derive.finish(meetingId);
 
     try {
-        const layer2 = await get().narrator.flush(meetingId);
-        if (layer2) await insertChunk(meetingId, layer2);
+        for (const layer2 of await get().narrator.flush(meetingId)) {
+            await insertChunk(meetingId, layer2);
+        }
     } catch (err) {
         logger.error('Final narrative chunk failed', { meetingId, error: err.message });
     }
