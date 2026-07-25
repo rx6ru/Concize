@@ -19,18 +19,20 @@ const MAX_WAIT_MS = parseInt(process.env.SARVAM_MAX_WAIT_MS || '300000', 10); //
  * Step 1: Initiate a new batch transcription job.
  */
 async function initiateJob(options = {}) {
+    // num_speakers is optional and the provider detects the count when it is absent. Defaulting
+    // it to 2 forced every meeting into two clusters, however many people were actually talking.
+    const jobParameters = {
+        model: options.model || 'saaras:v3',
+        mode: options.mode || 'transcribe',
+        language_code: options.languageCode || 'unknown',
+        with_diarization: options.withDiarization !== false,
+        with_timestamps: options.withTimestamps !== false,
+    };
+    if (options.numSpeakers) jobParameters.num_speakers = options.numSpeakers;
+
     const { data } = await axios.post(
         `${SARVAM_BASE}/speech-to-text/job/v1`,
-        {
-            job_parameters: {
-                model: options.model || 'saaras:v3',
-                mode: options.mode || 'transcribe',
-                language_code: options.languageCode || 'unknown',
-                with_diarization: options.withDiarization !== false,
-                num_speakers: options.numSpeakers || 2,
-                with_timestamps: options.withTimestamps !== false,
-            },
-        },
+        { job_parameters: jobParameters },
         { headers: { ...sarvamClient.getHeaders(), 'Content-Type': 'application/json' } }
     );
     logger.info('Sarvam job initiated', { jobId: data.job_id, state: data.job_state });
@@ -126,7 +128,9 @@ async function transcribeBatch(audioBuffer, metadata = {}) {
     const filename = metadata.originalFileName || `chunk_${Date.now()}.webm`;
     logger.info('Starting Sarvam batch transcription', { filename });
 
-    const job = await initiateJob({ withDiarization: true, withTimestamps: true });
+    const job = await initiateJob({
+        withDiarization: true, withTimestamps: true, numSpeakers: metadata.numSpeakers,
+    });
     const uploadInfo = await getUploadUrl(job.job_id, filename);
     await uploadFile(uploadInfo, audioBuffer, metadata.mimetype || 'audio/webm');
     await startJob(job.job_id);
