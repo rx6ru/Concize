@@ -167,7 +167,10 @@ const getEmbedding = async (text, opts = {}) => {
  */
 const getEmbeddingWithRetry = async (text, opts = {}, maxRetries = 3) => {
     // Routed through the per-provider concurrency limiter + circuit breaker + jittered retry.
+    // Naming the model is what lets the limiter space calls at the model's recorded request cap
+    // instead of firing a request per chunk and collecting 429s.
     return runResilient('gemini', () => getEmbedding(text, opts), {
+        model: opts.model || MODEL_ID,
         maxRetries,
         baseDelayMs: 1000,
         capDelayMs: 20000,

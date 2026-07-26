@@ -55,4 +55,12 @@ describe('diarization parameters', () => {
 
         expect(jobParameters().num_speakers).toBe(5);
     });
+
+    // The live lane tracks thirty speakers, this provider takes eight. Asking for more is
+    // rejected outright, which loses the whole job rather than the speakers past the ceiling.
+    it('caps the request at the ceiling recorded for the model', async () => {
+        await transcribeBatch(Buffer.from('audio'), { originalFileName: 'a.wav', numSpeakers: 22 });
+
+        expect(jobParameters().num_speakers).toBe(8);
+    });
 });

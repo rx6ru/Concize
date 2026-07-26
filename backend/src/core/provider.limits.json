@@ -1,0 +1,142 @@
+{
+  "_about": [
+    "Single source of truth for provider and model limits. Nothing here should be duplicated at a",
+    "call site: read it through core/provider.limits.js instead. Adding a model is one entry;",
+    "a vendor changing a number is a one-line edit that every caller picks up.",
+    "",
+    "null means 'not established yet', never 'unlimited'. The accessor never invents a value, so a",
+    "null reaches the caller as null and the caller decides what to do about it."
+  ],
+
+  "_howToVerify": {
+    "groq": [
+      "Every response carries x-ratelimit-* headers. Mind the windows, they differ:",
+      "x-ratelimit-limit-requests resets on a daily window (~24h), so it is requestsPerDay.",
+      "x-ratelimit-limit-tokens resets in well under a second, so it is tokensPerMinute.",
+      "curl -sD- -o/dev/null https://api.groq.com/openai/v1/chat/completions -H \"Authorization: Bearer $KEY\" ...",
+      "Groq does publish a per-minute request cap but does not return it in a header; left null."
+    ],
+    "gemini": [
+      "No rate-limit headers at all. The numbers come out of a 429 body:",
+      "error.details[].violations[].quotaId names the window, .quotaValue is the number.",
+      "e.g. GenerateRequestsPerDayPerProjectPerModel-FreeTier -> requestsPerDay."
+    ],
+    "sarvam": "dev-docs/sarvam/04-batch-api.md, job_parameters."
+  },
+
+  "defaults": {
+    "requestsPerMinute": null,
+    "requestsPerDay": null,
+    "tokensPerMinute": null,
+    "maxRequestTokens": null,
+    "maxConcurrent": 6
+  },
+
+  "providers": {
+    "groq": {
+      "tier": "free",
+      "verifiedOn": "2026-08-09",
+      "source": "measured from x-ratelimit-* response headers",
+      "_maxRequestTokens": [
+        "A single request is billed against the per-minute token budget, so one request can never",
+        "exceed tokensPerMinute however long you wait. Confirmed by 413s at 8529 tokens on",
+        "gpt-oss-120b (limit 8000) and at ~12.5k on llama-3.3-70b-versatile (limit 12000).",
+        "This is the number that decides whether a whole transcript can be prompted at all."
+      ],
+      "defaults": {
+        "requestsPerDay": 1000,
+        "tokensPerMinute": 8000,
+        "maxRequestTokens": 8000,
+        "maxConcurrent": 6
+      },
+      "models": {
+        "openai/gpt-oss-120b": {
+          "requestsPerDay": 1000,
+          "tokensPerMinute": 8000,
+          "maxRequestTokens": 8000
+        },
+        "openai/gpt-oss-20b": {
+          "requestsPerDay": 1000,
+          "tokensPerMinute": 8000,
+          "maxRequestTokens": 8000
+        },
+        "llama-3.3-70b-versatile": {
+          "requestsPerDay": 1000,
+          "tokensPerMinute": 12000,
+          "maxRequestTokens": 12000
+        },
+        "llama-3.1-8b-instant": {
+          "requestsPerDay": 14400,
+          "tokensPerMinute": 6000,
+          "maxRequestTokens": 6000
+        },
+        "qwen/qwen3.6-27b": {
+          "requestsPerDay": 1000,
+          "tokensPerMinute": 8000,
+          "maxRequestTokens": 8000
+        }
+      }
+    },
+
+    "gemini": {
+      "tier": "free",
+      "verifiedOn": "2026-08-09",
+      "source": "measured from 429 quota violations",
+      "defaults": {
+        "maxConcurrent": 4
+      },
+      "models": {
+        "gemini-2.5-flash": {
+          "requestsPerDay": 20,
+          "maxRequestTokens": null,
+          "_note": [
+            "Twenty per day, not per minute — quotaId GenerateRequestsPerDayPerProjectPerModel.",
+            "Accepted a 12109-token prompt, so context is not the constraint here, volume is.",
+            "Unusable for any batch job; an evaluation run exhausted it in sixteen calls."
+          ]
+        },
+        "gemini-2.0-flash": {
+          "requestsPerDay": null,
+          "_note": "429s immediately on this key; quota not yet read off a violation body."
+        },
+        "gemini-embedding-001": {
+          "requestsPerMinute": 100,
+          "outputDimensionality": 768,
+          "retryAfterHintMs": 36000,
+          "_note": [
+            "quotaId EmbedContentRequestsPerMinutePerUserPerProjectPerModel-FreeTier.",
+            "One request per chunk, so a 116-chunk meeting exceeds this in a single pass."
+          ]
+        }
+      }
+    },
+
+    "cerebras": {
+      "tier": "unknown",
+      "verifiedOn": null,
+      "source": "not established — the key on file returns 401 and the model it used was retired",
+      "defaults": {},
+      "models": {}
+    },
+
+    "sarvam": {
+      "tier": "unknown",
+      "verifiedOn": "2026-08-09",
+      "source": "vendored docs, not measured",
+      "defaults": {},
+      "models": {
+        "saaras:v3": {
+          "maxSpeakers": 8,
+          "_note": [
+            "num_speakers is optional and the provider detects the count when it is omitted.",
+            "Eight is the ceiling, well under the thirty the live FunASR lane tracks, so batch",
+            "reconciliation cannot confirm speakers beyond the eighth."
+          ]
+        },
+        "saaras:v3-realtime": {
+          "sampleRatesHz": [8000, 16000]
+        }
+      }
+    }
+  }
+}

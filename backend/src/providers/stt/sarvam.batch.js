@@ -5,6 +5,7 @@
 
 const axios = require('axios');
 const sarvamClient = require('../llm/sarvam');
+const { limitsFor } = require('../../core/provider.limits');
 const { createLogger } = require('../../core/logger');
 
 const logger = createLogger('sarvamBatchProvider');
@@ -21,14 +22,27 @@ const MAX_WAIT_MS = parseInt(process.env.SARVAM_MAX_WAIT_MS || '300000', 10); //
 async function initiateJob(options = {}) {
     // num_speakers is optional and the provider detects the count when it is absent. Defaulting
     // it to 2 forced every meeting into two clusters, however many people were actually talking.
+    const model = options.model || 'saaras:v3';
     const jobParameters = {
-        model: options.model || 'saaras:v3',
+        model,
         mode: options.mode || 'transcribe',
         language_code: options.languageCode || 'unknown',
         with_diarization: options.withDiarization !== false,
         with_timestamps: options.withTimestamps !== false,
     };
-    if (options.numSpeakers) jobParameters.num_speakers = options.numSpeakers;
+
+    if (options.numSpeakers) {
+        // Asking for more than the provider supports is rejected outright, which would cost the
+        // whole job rather than the speakers past the ceiling.
+        const ceiling = limitsFor('sarvam', model).maxSpeakers;
+        const asked = ceiling ? Math.min(options.numSpeakers, ceiling) : options.numSpeakers;
+        if (asked < options.numSpeakers) {
+            logger.warn('Capping requested speakers to the provider ceiling', {
+                asked: options.numSpeakers, ceiling, model,
+            });
+        }
+        jobParameters.num_speakers = asked;
+    }
 
     const { data } = await axios.post(
         `${SARVAM_BASE}/speech-to-text/job/v1`,
