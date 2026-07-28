@@ -18,6 +18,7 @@ const searched = [];
 
 jest.mock('../src/providers/embedding/embedding.service', () => ({
     getEmbedding: jest.fn(async () => new Array(768).fill(0.1)),
+    getEmbeddingWithRetry: jest.fn(async () => new Array(768).fill(0.1)),
 }));
 
 const guardScores = { default: 0.001 };

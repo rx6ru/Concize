@@ -1,13 +1,15 @@
 // Composition root for the chat read path: retrieve, screen, render.
 //
 // Wires together the vector index, the injection screen, and context assembly so the
-// controller doesn't have to know about any of them. Sparse (BM25) retrieval and reranking
-// aren't wired in yet; the pipeline just runs dense-only until they land here.
+// controller doesn't have to know about any of them. Dense and sparse both run; reranking is
+// the one slot still empty, so the pipeline falls back to fusion order.
 
 'use strict';
 
 const { getQdrant } = require('../infra/qdrant');
-const { getEmbedding } = require('../providers/embedding/embedding.service');
+// Retrying, like the write path: the question has to be embedded before anything can be
+// retrieved, so a bare 429 here costs the whole answer rather than one chunk's freshness.
+const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
 const { createChunkSearch } = require('./chunk.search');
 const { createRetrieval } = require('./retrieval.pipeline');
 const { assemble } = require('./context.assembly');
@@ -33,7 +35,7 @@ let parts = null;
 
 function get() {
     if (!parts) {
-        const index = createChunkSearch({ client: getQdrant(), embed: getEmbedding });
+        const index = createChunkSearch({ client: getQdrant(), embed: getEmbeddingWithRetry });
         parts = {
             retrieval: createRetrieval({
                 denseSearch: index.denseSearch,
