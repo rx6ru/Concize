@@ -23,6 +23,14 @@ describe('lookup', () => {
         expect(limitsFor('GROQ', 'openai/gpt-oss-120b').tokensPerMinute).toBe(8000);
     });
 
+    // Invisible in every header; it only names itself in a 429 body once the day is spent.
+    // Per model, and the models differ by 2x, so it must not be inherited from a sibling.
+    it('exposes the daily token budget per model', () => {
+        expect(limitsFor('groq', 'openai/gpt-oss-120b').tokensPerDay).toBe(200000);
+        expect(limitsFor('groq', 'llama-3.3-70b-versatile').tokensPerDay).toBe(100000);
+        expect(limitsFor('groq', 'qwen/qwen3.6-27b').tokensPerDay).toBeNull();
+    });
+
     // A missing number must not read as "no limit" — the caller has to be able to tell.
     it('reports an unestablished limit as null rather than guessing', () => {
         expect(limitsFor('groq', 'openai/gpt-oss-120b').requestsPerMinute).toBeNull();

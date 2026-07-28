@@ -28,6 +28,7 @@
     "requestsPerMinute": null,
     "requestsPerDay": null,
     "tokensPerMinute": null,
+    "tokensPerDay": null,
     "maxRequestTokens": null,
     "maxConcurrent": 6
   },
@@ -43,9 +44,19 @@
         "gpt-oss-120b (limit 8000) and at ~12.5k on llama-3.3-70b-versatile (limit 12000).",
         "This is the number that decides whether a whole transcript can be prompted at all."
       ],
+      "_tokensPerDay": [
+        "A fourth window, and the one that stays invisible until it bites: no header reports it,",
+        "it only names itself in a 429 body as 'tokens per day (TPD)'.",
+        "",
+        "It is per model and the models differ — gpt-oss-120b allows 200000, llama-3.3-70b-versatile",
+        "only 100000. Both were read off a 429 an hour apart. It was briefly recorded as a provider",
+        "default of 200000 on the strength of the first measurement, which made llama look twice as",
+        "affordable as it is; hence null here and a number only where one has actually been seen."
+      ],
       "defaults": {
         "requestsPerDay": 1000,
         "tokensPerMinute": 8000,
+        "tokensPerDay": null,
         "maxRequestTokens": 8000,
         "maxConcurrent": 6
       },
@@ -53,6 +64,7 @@
         "openai/gpt-oss-120b": {
           "requestsPerDay": 1000,
           "tokensPerMinute": 8000,
+          "tokensPerDay": 200000,
           "maxRequestTokens": 8000
         },
         "openai/gpt-oss-20b": {
@@ -63,6 +75,7 @@
         "llama-3.3-70b-versatile": {
           "requestsPerDay": 1000,
           "tokensPerMinute": 12000,
+          "tokensPerDay": 100000,
           "maxRequestTokens": 12000
         },
         "llama-3.1-8b-instant": {
