@@ -53,6 +53,23 @@ function fitsInOneRequest(provider, model, estimatedTokens) {
 }
 
 /**
+ * How many tokens the prompt may actually use.
+ *
+ * The reserved completion budget is part of the request as far as the provider is concerned: a
+ * 13-token prompt asking for 9000 completion tokens is billed as "Requested 9013" and rejected.
+ * So the prompt gets the ceiling minus the answer allowance, minus anything the caller knows it
+ * still has to add.
+ *
+ * @returns {?number} null when the model has no recorded ceiling; 0 when the allowance alone
+ *                    already exceeds it, which is a misconfiguration rather than a tight fit.
+ */
+function promptBudget(provider, model, { completionTokens = 0, reserve = 0 } = {}) {
+    const cap = maxRequestTokens(provider, model);
+    if (cap === null) return null;
+    return Math.max(0, cap - completionTokens - reserve);
+}
+
+/**
  * Minimum gap between requests, for a rate limiter.
  *
  * Derived only from a per-minute cap. A daily cap is a volume ceiling and spreading it evenly
@@ -74,5 +91,5 @@ function knownModels(provider) {
 }
 
 module.exports = {
-    limitsFor, maxRequestTokens, fitsInOneRequest, minSpacingMs, maxConcurrent, knownModels,
+    limitsFor, maxRequestTokens, fitsInOneRequest, promptBudget, minSpacingMs, maxConcurrent, knownModels,
 };

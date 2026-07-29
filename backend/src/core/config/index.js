@@ -18,6 +18,7 @@ const storage = require('./storage');
 const auth = require('./auth');
 const inference = require('./inference');
 const queues = require('./queues');
+const { promptBudget, maxRequestTokens } = require('../provider.limits');
 const chunking = require('./chunking');
 
 // --- Startup Validation ---
@@ -68,6 +69,22 @@ if (!database.POSTGRES_URL) {
 
 if (!queues.CLOUDAMQP_URL) {
     warnings.push('CLOUDAMQP_URL is not set in queues config.');
+}
+
+// A task whose answer allowance alone exceeds what its model accepts in one request can never
+// succeed, whatever the prompt is — the provider counts the reserved completion budget as part of
+// the request. Caught at boot because in production it presents as an unexplained 413 per call.
+for (const task of ['chat', 'clean']) {
+    const { provider, model, maxTokens } = inference[task];
+    const budget = promptBudget(provider, model, { completionTokens: maxTokens });
+    if (budget === null) continue;
+    if (budget === 0) {
+        errors.push(`${task}: max_completion_tokens ${maxTokens} is at or over what ${model} `
+            + `accepts in one request (${maxRequestTokens(provider, model)}). Every call will 413.`);
+    } else if (budget < 2000) {
+        warnings.push(`${task}: max_completion_tokens ${maxTokens} leaves only ${budget} tokens `
+            + `for the prompt on ${model}. Retrieved context alone is usually larger than that.`);
+    }
 }
 
 // Auth validation

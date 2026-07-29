@@ -38,18 +38,24 @@ const geminiKeys = parseKeys('GEMINI_API_KEYS', 'GEMINI_API_KEY');
 const sarvamKeys = parseKeys('SARVAM_API_KEYS', 'SARVAM_API_KEY');
 
 // --- Per-task provider + model routing ---
+// maxTokens is the ANSWER allowance, and the provider counts it as part of the request — so every
+// token reserved here is a token the prompt cannot use. See core/provider.limits.js. Both of these
+// were set as though the ceiling applied to the prompt alone; chat left 2000 tokens for a context
+// that is routinely 3300, and clean asked for more than the model accepts in total.
 const chat = {
     provider: validateProvider(process.env.CHAT_PROVIDER || 'cerebras', 'chat'),
     model: process.env.CHAT_MODEL || 'llama3.1-8b',
     temperature: 0.4,
-    maxTokens: 6000,
+    // ~900 words, generous for an answer about a meeting, and leaves 6800 for the context.
+    maxTokens: Number(process.env.CHAT_MAX_TOKENS) || 1200,
 };
 
 const clean = {
     provider: validateProvider(process.env.CLEAN_PROVIDER || 'cerebras', 'clean'),
     model: process.env.CLEAN_MODEL || 'llama3.1-8b',
     temperature: 1,
-    maxTokens: 8192,
+    // Output is a tidied copy of its input, and a chunk is capped at 800 tokens.
+    maxTokens: Number(process.env.CLEAN_MAX_TOKENS) || 1500,
 };
 
 const summary = {

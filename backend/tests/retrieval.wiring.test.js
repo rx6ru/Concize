@@ -82,6 +82,29 @@ beforeEach(() => {
     wiring._resetForTests();
 });
 
+// The budget is derived from the model's recorded ceiling minus the answer allowance. It was
+// silently null once because the provider was read from the wrong level of the config object,
+// which just reverted retrieval to its fixed chunk count with nothing to show for it.
+describe('context budget', () => {
+    it('fills to the answering model\'s real token budget, not a fixed chunk count', async () => {
+        // 40 small chunks: a fixed topN would stop at 8.
+        for (let i = 0; i < 40; i++) {
+            hits.push(point({
+                id: `v${i}`,
+                payload: {
+                    layer: 1, ordinal: i, rev: 0, t0Ms: i * 5000, t1Ms: i * 5000 + 4000,
+                    text: `point number ${i} about pricing`, speakers: ['S1'], hasOverlap: false,
+                    tokens: 40,
+                },
+            }));
+        }
+
+        const built = await ask();
+
+        expect(built.stats.retrieved).toBeGreaterThan(8);
+    });
+});
+
 describe('buildContext', () => {
     it('returns null when the meeting has nothing indexed', async () => {
         expect(await ask()).toBeNull();

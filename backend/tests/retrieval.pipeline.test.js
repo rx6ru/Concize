@@ -152,6 +152,69 @@ describe('retrieve', () => {
         expect(context.filter((c) => c.source === 'recent')).toHaveLength(1);
     });
 
+    // A fixed chunk count means coverage falls as meetings grow: 8 chunks is a quarter of an
+    // 18-minute meeting and a fourteenth of a 71-minute one, while the prompt sits at well under
+    // half the model's budget either way. Filling to the budget keeps coverage roughly flat.
+    describe('token-budgeted context', () => {
+        const sized = (ordinal, tokens) => hit(ordinal, { tokens });
+
+        it('keeps taking candidates until the budget is spent', async () => {
+            const r = createRetrieval({
+                denseSearch: jest.fn(async () => [
+                    sized(1, 300), sized(2, 300), sized(3, 300), sized(4, 300), sized(5, 300),
+                ]),
+            });
+            const { context } = await r.retrieve({
+                query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1], maxContextTokens: 1000,
+            });
+            // 300 + 300 + 300 fits; the fourth would reach 1200.
+            expect(context).toHaveLength(3);
+        });
+
+        it('overrides topN rather than being capped by it', async () => {
+            const r = createRetrieval({
+                denseSearch: jest.fn(async () => Array.from({ length: 30 }, (_, i) => sized(i + 1, 100))),
+            });
+            const { context } = await r.retrieve({
+                query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+                topN: 8, maxContextTokens: 2000,
+            });
+            expect(context.length).toBeGreaterThan(8);
+        });
+
+        it('still returns the best candidate when it alone exceeds the budget', async () => {
+            const r = createRetrieval({
+                denseSearch: jest.fn(async () => [sized(1, 5000), sized(2, 100)]),
+            });
+            const { context } = await r.retrieve({
+                query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1], maxContextTokens: 1000,
+            });
+            expect(context).toHaveLength(1);
+            expect(context[0].ordinal).toBe(1);
+        });
+
+        it('estimates a size for a candidate that carries no token count', async () => {
+            const long = hit(1, { tokens: undefined, text: 'w '.repeat(2000) });
+            const r = createRetrieval({
+                denseSearch: jest.fn(async () => [long, sized(2, 50)]),
+            });
+            const { context } = await r.retrieve({
+                query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1], maxContextTokens: 400,
+            });
+            expect(context).toHaveLength(1);
+        });
+
+        it('falls back to topN when no budget is given', async () => {
+            const r = createRetrieval({
+                denseSearch: jest.fn(async () => Array.from({ length: 20 }, (_, i) => sized(i + 1, 10))),
+            });
+            const { context } = await r.retrieve({
+                query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1], topN: 8,
+            });
+            expect(context).toHaveLength(8);
+        });
+    });
+
     it('returns context in chronological order', async () => {
         const r = createRetrieval({
             denseSearch: jest.fn(async () => [hit(5), hit(1), hit(3)]),

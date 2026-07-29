@@ -1,5 +1,5 @@
 const {
-    limitsFor, maxRequestTokens, fitsInOneRequest, minSpacingMs, maxConcurrent, knownModels,
+    limitsFor, maxRequestTokens, fitsInOneRequest, minSpacingMs, maxConcurrent, knownModels, promptBudget,
 } = require('../src/core/provider.limits');
 
 describe('lookup', () => {
@@ -58,6 +58,28 @@ describe('request sizing', () => {
     it('assumes a prompt fits when the limit is unknown', () => {
         expect(maxRequestTokens('gemini', 'gemini-2.5-flash')).toBeNull();
         expect(fitsInOneRequest('gemini', 'gemini-2.5-flash', 500000)).toBe(true);
+    });
+});
+
+// A provider counts the reserved completion budget as part of the request: a 13-token prompt
+// asking for 9000 completion tokens is billed as "Requested 9013" and rejected. So what a prompt
+// may actually use is the ceiling minus whatever the answer is allowed to be.
+describe('prompt budget', () => {
+    it('subtracts the reserved completion budget from the ceiling', () => {
+        expect(promptBudget('groq', 'openai/gpt-oss-120b', { completionTokens: 1200 })).toBe(6800);
+    });
+
+    it('subtracts a caller-supplied reserve as well', () => {
+        expect(promptBudget('groq', 'openai/gpt-oss-120b', { completionTokens: 1200, reserve: 800 }))
+            .toBe(6000);
+    });
+
+    it('reports zero when the completion budget alone exceeds the ceiling', () => {
+        expect(promptBudget('groq', 'openai/gpt-oss-120b', { completionTokens: 8192 })).toBe(0);
+    });
+
+    it('is null when the model has no recorded ceiling', () => {
+        expect(promptBudget('gemini', 'gemini-2.5-flash', { completionTokens: 1000 })).toBeNull();
     });
 });
 

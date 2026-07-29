@@ -60,6 +60,35 @@ function coverageOf(inner, outer) {
     return Math.max(0, shared) / span;
 }
 
+// Chunks written by the current pipeline carry a token count; anything older, or a recent turn,
+// does not. Four characters a token is close enough to size a context window against.
+const sizeOf = (c) => c.tokens || Math.ceil((c.text || '').length / 4);
+
+/**
+ * Fills the context up to a token budget rather than a fixed number of chunks.
+ *
+ * A fixed count gives a short meeting a quarter of itself as context and a long one a fourteenth,
+ * while leaving most of the model's budget unspent either way. Candidates arrive best-first, and a
+ * chunk that does not fit is skipped rather than ending the loop, since a smaller later one still
+ * adds coverage. The top candidate is always returned even when it alone busts the budget —
+ * sending a too-large prompt fails loudly, whereas returning nothing fails silently.
+ */
+function takeWithinBudget(candidates, budget) {
+    const kept = [];
+    let spent = 0;
+
+    for (const c of candidates) {
+        const size = sizeOf(c);
+        if (spent + size > budget) {
+            if (!kept.length) { kept.push(c); spent += size; }
+            continue;
+        }
+        kept.push(c);
+        spent += size;
+    }
+    return kept;
+}
+
 function dropSubsumed(candidates) {
     const kept = [];
     for (const c of candidates) {
@@ -88,13 +117,14 @@ function createRetrieval({ denseSearch, sparseSearch = null, recentTurns = null,
          * @param {string} opts.ownerId
          * @param {number[]} [opts.layers]
          * @param {number} [opts.perLayer]      candidates fetched per layer per engine
-         * @param {number} [opts.topN]          final context size
+         * @param {number} [opts.topN]          final context size, when no token budget is given
+         * @param {number} [opts.maxContextTokens] fill to this many tokens instead of topN chunks
          * @param {number} [opts.recentMs]      size of the always-included recent window
          * @param {number} [opts.watermarkMs]   how far the indexed transcript reaches
          */
         async retrieve({
             query, meetingId, ownerId,
-            layers = [1, 2, 3], perLayer = 20, topN = 8,
+            layers = [1, 2, 3], perLayer = 20, topN = 8, maxContextTokens = null,
             recentMs = 60000, watermarkMs = null,
         }) {
             const lists = [];
@@ -129,7 +159,10 @@ function createRetrieval({ denseSearch, sparseSearch = null, recentTurns = null,
                 }
             }
 
-            candidates = dropSubsumed(candidates).slice(0, topN);
+            candidates = dropSubsumed(candidates);
+            candidates = maxContextTokens
+                ? takeWithinBudget(candidates, maxContextTokens)
+                : candidates.slice(0, topN);
 
             // Recent turns skip ranking and fusion entirely and are never trimmed off.
             let recent = [];

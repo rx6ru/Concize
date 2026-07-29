@@ -15,6 +15,8 @@ const { createRetrieval } = require('./retrieval.pipeline');
 const { assemble } = require('./context.assembly');
 const { createInjectionGuard } = require('../safety/injection.guard');
 const { runResilient } = require('../providers/llm/resilient.inference');
+const { getChatInference } = require('../providers/llm/inference.provider');
+const { promptBudget } = require('../core/provider.limits');
 const groqService = require('../providers/llm/groq');
 const { getRecentTurns, getWatermarkMs } = require('../transcript/utterance.repository');
 const { searchChunkText } = require('../transcript/chunk.repository');
@@ -30,6 +32,25 @@ const complete = ({ model, messages }) =>
         () => groqService.getClient().chat.completions.create({ model, messages }),
         { maxRetries: 0 }
     );
+
+// Everything in the prompt that is not retrieved context: system prompt, usage instructions,
+// the running summary, recent chat history and the question itself. Retrieval gets what is left.
+const NON_CONTEXT_PROMPT_TOKENS = 1600;
+
+/**
+ * How many tokens of retrieved context the answering model can actually take.
+ *
+ * Derived rather than tuned: the ceiling and the answer allowance both come from config and
+ * core/provider.limits.json, so changing the model or the answer length moves this by itself.
+ * Null when the model has no recorded ceiling, which leaves retrieval on its fixed-count default.
+ */
+function contextBudget() {
+    const { model, taskConfig } = getChatInference();
+    return promptBudget(taskConfig.provider, model, {
+        completionTokens: taskConfig.maxTokens,
+        reserve: NON_CONTEXT_PROMPT_TOKENS,
+    });
+}
 
 let parts = null;
 
@@ -73,7 +94,9 @@ async function buildContext({ query, meetingId, ownerId, nowMs = null }) {
         return null;
     });
 
-    const result = await retrieval.retrieve({ query, meetingId, ownerId, watermarkMs });
+    const result = await retrieval.retrieve({
+        query, meetingId, ownerId, watermarkMs, maxContextTokens: contextBudget(),
+    });
     if (!result.context.length) return null;
 
     // Screening marks lines, it does not remove them (see injection.guard).
