@@ -67,6 +67,54 @@ function validate(llmResponse) {
     return { valid: true, filtered: false, response: llmResponse };
 }
 
+// Long enough to hold any pattern above (the longest is ~35 characters) so one cannot hide by
+// falling across a delta boundary, short enough that the per-delta scan stays cheap.
+const SCAN_WINDOW = 256;
+
+/**
+ * A guard for a streamed answer.
+ *
+ * `validateChunk` below tests a delta on its own, which cannot work: deltas are a few characters
+ * each, so "CRITICAL SECURITY RULES" is never present in any single one. This carries a bounded
+ * tail of what came before, so a pattern spanning several deltas is still seen.
+ *
+ * Streaming means some of a leak has already reached the client before it can be recognised;
+ * stopping at the match is damage limitation, not prevention. The caller should also tell the
+ * client to discard what it rendered.
+ *
+ * @returns {{push: function(string): {blocked: boolean, reason?: string}, scanned: function(): number}}
+ */
+function createStreamGuard() {
+    let tail = '';
+    let blocked = null;
+
+    return {
+        push(delta) {
+            if (blocked) return blocked;
+            if (!delta) return { blocked: false };
+
+            const window = tail + delta;
+            for (const [reason, patterns] of [
+                ['prompt_leakage', LEAKAGE_PATTERNS],
+                ['safety_bypass', BYPASS_PATTERNS],
+            ]) {
+                for (const pattern of patterns) {
+                    if (pattern.test(window)) {
+                        blocked = { blocked: true, reason };
+                        return blocked;
+                    }
+                }
+            }
+
+            tail = window.slice(-SCAN_WINDOW);
+            return { blocked: false };
+        },
+
+        /** Characters currently retained. Bounded by SCAN_WINDOW; exposed so a test can prove it. */
+        scanned: () => tail.length,
+    };
+}
+
 /**
  * Validates a chunk of streamed output (lighter check for performance)
  * @param {string} chunk - A single chunk from the stream
@@ -89,6 +137,7 @@ function validateChunk(chunk) {
 
 module.exports = {
     validate,
+    createStreamGuard,
     validateChunk,
     SAFE_FALLBACK
 };

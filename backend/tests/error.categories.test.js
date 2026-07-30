@@ -27,6 +27,10 @@ jest.mock('../src/safety', () => ({
     isRelevantToMeeting: jest.fn().mockResolvedValue({ relevant: true }),
     recordViolation: jest.fn(),
     checkBlocked: jest.fn().mockReturnValue({ blocked: false, violationCount: 0 }),
+    // The real output guard, not a stub: a permissive fake here would pass whatever the
+    // controller streamed and prove nothing about the screening actually being applied.
+    createStreamGuard: jest.requireActual('../src/safety/output.guardrails').createStreamGuard,
+    SAFE_FALLBACK: jest.requireActual('../src/safety/output.guardrails').SAFE_FALLBACK,
 }));
 jest.mock('../prompts/systemPrompt', () => ({
     SECURE_SYSTEM_PROMPT: 'Mock system prompt',

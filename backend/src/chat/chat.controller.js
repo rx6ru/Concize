@@ -18,7 +18,9 @@ const {
     validateInput,
     isRelevantToMeeting,
     recordViolation,
-    checkBlocked
+    checkBlocked,
+    createStreamGuard,
+    SAFE_FALLBACK
 } = require('../safety');
 const { SECURE_SYSTEM_PROMPT } = require('../../prompts/systemPrompt');
 
@@ -301,6 +303,7 @@ ${userPrompt}`;
             }
 
             let currentResponseChunk = '';
+            let outputBlocked = false;
             try {
 
 
@@ -332,15 +335,32 @@ ${userPrompt}`;
                 // Start heartbeat while streaming
                 startHeartbeat();
 
+                // Screens the answer as it streams. Nothing checked the output on this path before:
+                // validateChunk tests a delta in isolation, and a delta is a few characters, so a
+                // pattern spanning several of them was never going to match.
+                const guard = createStreamGuard();
+
                 for await (const chunk of stream) {
                     if (res.writableEnded || !res.writable) break;
 
                     const chunkText = chunk.choices[0]?.delta?.content || '';
-                    if (chunkText) {
-                        currentResponseChunk += chunkText;
-                        res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+                    if (!chunkText) continue;
+
+                    const verdict = guard.push(chunkText);
+                    if (verdict.blocked) {
+                        logger.warn('Blocked streamed output', { jobId, reason: verdict.reason });
+                        // The client has already rendered what came before, so tell it to drop it.
+                        res.write(`data: ${JSON.stringify({ blocked: true, replace: SAFE_FALLBACK })}\n\n`);
+                        currentResponseChunk = SAFE_FALLBACK;
+                        outputBlocked = true;
+                        break;
                     }
+
+                    currentResponseChunk += chunkText;
+                    res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
                 }
+
+                if (outputBlocked) { clearHeartbeat(); fullResponseText = currentResponseChunk; responseValid = true; break; }
 
                 // Clear heartbeat after this attempt's streaming finished
                 clearHeartbeat();

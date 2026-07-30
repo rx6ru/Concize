@@ -19,6 +19,7 @@ module.exports = {
     // Output validation
     validateOutput: outputGuardrails.validate,
     validateChunk: outputGuardrails.validateChunk,
+    createStreamGuard: outputGuardrails.createStreamGuard,
     SAFE_FALLBACK: outputGuardrails.SAFE_FALLBACK,
 
     // Security monitoring
