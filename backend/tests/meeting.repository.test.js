@@ -22,6 +22,8 @@ const {
     getTranscription,
     updateMeetingStatus,
     getMeetingStatus,
+    listMeetings,
+    deleteMeeting,
 } = require('../src/meetings/meeting.repository');
 
 beforeEach(() => {
@@ -92,6 +94,75 @@ describe('transcription.db (Postgres)', () => {
 
         it('updateMeetingStatus returns false for a missing meeting', async () => {
             expect(await updateMeetingStatus('ghost', 'completed')).toBe(false);
+        });
+    });
+
+    describe('listMeetings', () => {
+        it('returns only the caller\'s meetings, newest first', async () => {
+            await createTranscription('job-1', 'user-A');
+            await createTranscription('job-2', 'user-B');
+            await createTranscription('job-3', 'user-A');
+
+            const mine = await listMeetings('user-A');
+
+            expect(mine.map((m) => m.meetingId).sort()).toEqual(['job-1', 'job-3']);
+            expect(mine.every((m) => 'status' in m && 'createdAt' in m)).toBe(true);
+        });
+
+        it('carries the summary title when there is one, and null when there is not', async () => {
+            await createTranscription('job-1', 'user-A');
+            await createTranscription('job-2', 'user-A');
+            mem.public.none(
+                `INSERT INTO meeting_summaries (job_id, title, content) VALUES ('job-1', 'Q3 pricing', 'x')`
+            );
+
+            const byId = Object.fromEntries((await listMeetings('user-A')).map((m) => [m.meetingId, m]));
+
+            expect(byId['job-1'].title).toBe('Q3 pricing');
+            expect(byId['job-2'].title).toBeNull();
+        });
+
+        it('caps how many it returns', async () => {
+            for (let i = 0; i < 5; i++) await createTranscription(`job-${i}`, 'user-A');
+            expect(await listMeetings('user-A', { limit: 2 })).toHaveLength(2);
+        });
+
+        it('returns an empty list for someone with no meetings', async () => {
+            expect(await listMeetings('nobody')).toEqual([]);
+        });
+    });
+
+    describe('deleteMeeting', () => {
+        it('removes the meeting and everything derived from it', async () => {
+            await createTranscription('job-1', 'user-A');
+            await appendTranscription('job-1', 'some speech');
+            mem.public.none(
+                `INSERT INTO meeting_summaries (job_id, title, content) VALUES ('job-1', 't', 'c')`
+            );
+
+            expect(await deleteMeeting('job-1')).toBe(true);
+
+            expect(await getMeetingOwner('job-1')).toBeNull();
+            // FK cascade, so nothing derived is left pointing at a meeting that is gone
+            expect(mem.public.many(
+                `SELECT count(*)::int AS n FROM meeting_summaries WHERE job_id = 'job-1'`
+            )[0].n).toBe(0);
+            expect(mem.public.many(
+                `SELECT count(*)::int AS n FROM transcription_chunks WHERE job_id = 'job-1'`
+            )[0].n).toBe(0);
+        });
+
+        it('leaves other meetings alone', async () => {
+            await createTranscription('job-1', 'user-A');
+            await createTranscription('job-2', 'user-A');
+
+            await deleteMeeting('job-1');
+
+            expect(await getMeetingOwner('job-2')).toBe('user-A');
+        });
+
+        it('returns false for a meeting that does not exist', async () => {
+            expect(await deleteMeeting('ghost')).toBe(false);
         });
     });
 });

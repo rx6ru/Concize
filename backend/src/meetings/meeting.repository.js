@@ -118,6 +118,59 @@ async function getTranscription(jobId) {
     }
 }
 
+/**
+ * A caller's meetings, newest first, with the summary title when one exists.
+ *
+ * Scoped by owner in the query rather than filtered afterwards, so a bug in the caller cannot
+ * turn this into a list of everyone's meetings.
+ *
+ * @param {string} ownerId
+ * @param {{limit?: number}} [opts]
+ * @returns {Promise<Array<{meetingId: string, status: string, createdAt: Date, title: ?string}>>}
+ */
+async function listMeetings(ownerId, { limit = 50 } = {}) {
+    try {
+        const { rows } = await query(
+            `SELECT m.job_id, m.status, m.created_at, s.title
+               FROM meetings m
+               LEFT JOIN meeting_summaries s ON s.job_id = m.job_id
+              WHERE m.owner_id = $1
+              ORDER BY m.created_at DESC
+              LIMIT ${Number(limit)}`,
+            [ownerId]
+        );
+        return rows.map((r) => ({
+            meetingId: r.job_id,
+            status: r.status,
+            createdAt: r.created_at,
+            // '' is the column default, which is not a title — report it as absent.
+            title: r.title || null,
+        }));
+    } catch (err) {
+        logger.error('Error listing meetings', { ownerId, error: err.message });
+        return [];
+    }
+}
+
+/**
+ * Deletes a meeting. Chunks, utterances, chats, summaries and transcript rows all reference it
+ * with ON DELETE CASCADE, so this one statement removes everything derived from it.
+ *
+ * Vectors live outside Postgres and are NOT covered — the caller must purge those separately.
+ *
+ * @returns {Promise<boolean>} false when there was no such meeting.
+ */
+async function deleteMeeting(jobId) {
+    try {
+        const { rowCount } = await query('DELETE FROM meetings WHERE job_id = $1', [jobId]);
+        if (rowCount) logger.info('Meeting deleted', { jobId });
+        return rowCount > 0;
+    } catch (err) {
+        logger.error('Error deleting meeting', { jobId, error: err.message });
+        return false;
+    }
+}
+
 module.exports = {
     createTranscription,
     getMeetingOwner,
@@ -125,4 +178,6 @@ module.exports = {
     getTranscription,
     updateMeetingStatus,
     getMeetingStatus,
+    listMeetings,
+    deleteMeeting,
 };
