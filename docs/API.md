@@ -54,6 +54,50 @@ Create a meeting owned by the caller. Call this first; everything else needs the
 
 ---
 
+### `GET /api/v1/meetings`
+
+The caller's own meetings, newest first. Everything needed for a list view.
+
+**Query:** `limit` (default 50, max 100).
+
+**200**
+```json
+{
+  "success": true,
+  "meetings": [
+    {
+      "meetingId": "a3f1c9e2-...",
+      "status": "completed",
+      "createdAt": "2026-08-09T14:02:11.000Z",
+      "title": "Q3 pricing review"
+    }
+  ]
+}
+```
+
+`title` comes from the summary and is `null` until one has been generated — expect `null` for a
+meeting that has just started, and render a placeholder rather than an empty string.
+
+**401** if unauthenticated.
+
+---
+
+### `DELETE /api/v1/meetings/:meetingId`
+
+Permanently deletes a meeting and everything derived from it: transcript, chunks, chat history,
+summary, and the search index entries. **Not reversible, and there is no soft delete** — confirm in
+the UI before calling.
+
+**204** with no body on success.
+
+**404** if the meeting is gone or is not yours.
+
+**500** `{"error": "Failed to delete the meeting. Nothing was removed."}` — the delete is atomic
+enough to retry: it removes the search index first and only then the database rows, so a failure
+leaves the meeting intact rather than half-deleted. Safe to call again.
+
+---
+
 ### `GET /api/v1/meetings/:meetingId/transcript`
 
 The stored transcript. Useful for a post-meeting view; during a live meeting the WebSocket is the
@@ -254,12 +298,15 @@ rendering text and stop showing speaker labels. Do not tear down the session.
 ### Typical flow
 
 ```
+GET  /api/v1/meetings                    → list view
 POST /api/v1/meetings                    → meetingId
 open ws /rt?meetingId=…&token=…          → session.ready
-stream PCM frames                        ← partial / final / revision / watermark
+stream PCM frames (seq-prefixed)         ← partial / final / revision / watermark
 poll GET …/summary every ~30s            → running summary
 POST …/chat  (SSE)                       ← answer text
 send {"event":"stop"}, close socket
+GET  …/transcript                        → the stored transcript, after the meeting
+DELETE /api/v1/meetings/:meetingId       → permanent
 ```
 
 ---
@@ -268,9 +315,8 @@ send {"event":"stop"}, close socket
 
 So nobody builds UI against something that does not exist:
 
-- **No transcript pagination** — `GET …/transcript` returns the whole document.
-- **No meeting list endpoint.** The client must remember its own `meetingId`s.
-- **No delete endpoint**, though deletion cascades correctly at the database level when added.
+- **No transcript pagination** — `GET …/transcript` returns the whole document. A three-hour
+  meeting is a large response; assume it is slow and do not call it on a timer.
 - **No WebSocket resume.** Reconnecting starts a new session; audio buffered during a drop is not
   replayed, and speaker attribution degrades after a reconnect.
 - **No overlap lane.** `overlap` and `overlapRatio` are in the contract and currently always
