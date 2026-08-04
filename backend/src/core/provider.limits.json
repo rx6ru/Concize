@@ -136,6 +136,17 @@
       "tier": "unknown",
       "verifiedOn": "2026-08-09",
       "source": "vendored docs, not measured",
+      "_billing": [
+        "Billed by AUDIO DURATION, not tokens — so the token fields here do not apply to it.",
+        "There is no usage endpoint: /v1/usage, /usage, /v1/me, /v1/account, /v1/credits and",
+        "/v1/quota all 404. The remaining balance is visible only on the Sarvam dashboard, so it",
+        "cannot be checked from code and has to be read there and written in below.",
+        "",
+        "Known spend on batch STT: 3.49 hours of audio (209.6 min across 23 jobs) on 2026-08-09",
+        "for the evaluation corpus. Realtime-lane experiments before that are not accounted for."
+      ],
+      "freeTierAudioHours": null,
+      "audioHoursUsed": 3.49,
       "defaults": {},
       "models": {
         "saaras:v3": {
