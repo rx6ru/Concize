@@ -19,9 +19,11 @@ jest.mock('../src/meetings/meeting.repository', () => ({
 jest.mock('../src/chat/chat.controller', () => ({ getLLMStreamResponse: jest.fn() }));
 // Vector purge reaches Qdrant; the composition is tested in meeting.purge.test.js.
 jest.mock('../src/meetings/meeting.purge.wiring', () => ({ purgeMeeting: jest.fn() }));
+jest.mock('../src/transcript/utterance.repository', () => ({ getTranscript: jest.fn() }));
 
 const { getMeetingOwner, getTranscription, listMeetings } = require('../src/meetings/meeting.repository');
 const { purgeMeeting } = require('../src/meetings/meeting.purge.wiring');
+const { getTranscript } = require('../src/transcript/utterance.repository');
 const meetingsRoutes = require('../src/http/routes/v1/meeting.routes');
 
 // Build an app with a controllable stub user.
@@ -64,6 +66,44 @@ describe('RESTful /meetings ownership (end-to-end)', () => {
         getMeetingOwner.mockResolvedValue(null);
         const res = await request(app).get('/api/v1/meetings/ghost/transcript');
         expect(res.status).toBe(404);
+    });
+});
+
+describe('utterances', () => {
+    beforeEach(() => { jest.clearAllMocks(); currentUser = { id: 'user-A' }; });
+
+    it('returns speaker-attributed turns with a cursor for the next page', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        getTranscript.mockResolvedValue([
+            { turnId: 't1', seq: 0, t0Ms: 0, t1Ms: 900, text: 'hello', speakerLabel: 'S1', speakerConfidence: 'confident', overlap: false, overlapRatio: 0 },
+            { turnId: 't2', seq: 1, t0Ms: 1000, t1Ms: 1900, text: 'hi', speakerLabel: 'S2', speakerConfidence: 'provisional', overlap: false, overlapRatio: 0 },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances?limit=2');
+
+        expect(res.status).toBe(200);
+        expect(res.body.utterances).toHaveLength(2);
+        expect(res.body.utterances[0].speaker).toBe('S1');
+        expect(res.body.nextCursor).toBe(1);
+    });
+
+    it('reports no further pages at the end', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        getTranscript.mockResolvedValue([]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances');
+
+        expect(res.body.utterances).toEqual([]);
+        expect(res.body.nextCursor).toBeNull();
+    });
+
+    it('will not serve someone else\'s transcript', async () => {
+        getMeetingOwner.mockResolvedValue('user-B');
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances');
+
+        expect(res.status).toBe(404);
+        expect(getTranscript).not.toHaveBeenCalled();
     });
 });
 

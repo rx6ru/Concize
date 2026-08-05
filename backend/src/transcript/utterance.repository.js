@@ -98,12 +98,30 @@ async function reviseUtterance(meetingId, turnId, changes) {
 }
 
 /** The current transcript, in spoken order. Superseded revisions are excluded. */
-async function getTranscript(meetingId, { limit = null } = {}) {
+/**
+ * The current transcript, in spoken order.
+ *
+ * Pages by `seq` rather than OFFSET: a revision landing between two page fetches would shift an
+ * offset window and make a turn appear twice or disappear. `seq` is assigned once at append and
+ * never moves, so a cursor stays correct whatever else changes.
+ *
+ * @param {string} meetingId
+ * @param {{limit?: number, afterSeq?: number}} [opts] afterSeq is exclusive.
+ */
+async function getTranscript(meetingId, { limit = null, afterSeq = null } = {}) {
+    const params = [meetingId];
+    let where = 'meeting_id = $1 AND superseded_by IS NULL';
+
+    if (afterSeq !== null) {
+        params.push(afterSeq);
+        where += ` AND seq > $${params.length}`;
+    }
+
     const { rows } = await query(
         `SELECT ${COLUMNS} FROM utterances
-          WHERE meeting_id = $1 AND superseded_by IS NULL
+          WHERE ${where}
           ORDER BY seq ASC${limit ? ' LIMIT ' + Number(limit) : ''}`,
-        [meetingId]
+        params
     );
     return rows.map(toUtterance);
 }

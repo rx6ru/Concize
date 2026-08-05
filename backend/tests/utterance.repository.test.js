@@ -113,6 +113,45 @@ describe('revision', () => {
     });
 });
 
+// A three-hour meeting is thousands of turns. Returning them all makes the post-meeting view
+// slow to first paint and impossible to stream into a list.
+describe('paging the transcript', () => {
+    it('returns a page and where the next one starts', async () => {
+        for (let n = 1; n <= 5; n++) await appendUtterance('m1', turn(n));
+
+        const page = await getTranscript('m1', { limit: 2 });
+
+        expect(page.map((u) => u.turnId)).toEqual(['t1', 't2']);
+        expect(page[page.length - 1].seq).toBe(1);
+    });
+
+    it('continues from a cursor without repeating or skipping', async () => {
+        for (let n = 1; n <= 5; n++) await appendUtterance('m1', turn(n));
+
+        const first = await getTranscript('m1', { limit: 2 });
+        const second = await getTranscript('m1', { limit: 2, afterSeq: first[first.length - 1].seq });
+
+        expect(second.map((u) => u.turnId)).toEqual(['t3', 't4']);
+    });
+
+    // Paging by seq rather than offset, so a revision landing mid-page cannot shift the window
+    // and make a turn appear twice or vanish.
+    it('is stable when a turn is revised between pages', async () => {
+        for (let n = 1; n <= 5; n++) await appendUtterance('m1', turn(n));
+        const first = await getTranscript('m1', { limit: 2 });
+
+        await reviseUtterance('m1', 't1', { ...turn(1), text: 'corrected' });
+
+        const second = await getTranscript('m1', { limit: 2, afterSeq: first[first.length - 1].seq });
+        expect(second.map((u) => u.turnId)).toEqual(['t3', 't4']);
+    });
+
+    it('returns nothing past the end', async () => {
+        await appendUtterance('m1', turn(1));
+        expect(await getTranscript('m1', { afterSeq: 99 })).toEqual([]);
+    });
+});
+
 describe('reads', () => {
     it('returns the transcript in spoken order, not insertion order', async () => {
         await appendUtterance('m1', turn(1));
