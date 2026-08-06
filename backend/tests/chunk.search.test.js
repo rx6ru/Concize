@@ -75,24 +75,25 @@ describe('search', () => {
         ]));
     });
 
-    it('still filters by meeting when no owner is supplied', async () => {
+    // Was: "still filters by meeting when no owner is supplied". Scoping by meeting alone is the
+    // bearer-capability model ADR-001 replaced, and a missing owner searching everything is a
+    // fail-open guard. Every caller supplies one, so refusing costs nothing and closes the hole.
+    it('refuses to search without an owner rather than scoping by meeting alone', async () => {
         const { client, search } = make({ client: { search: jest.fn(async () => []) } });
-        await search.denseSearch({ query: 'q', meetingId: 'm1' });
 
-        const keys = client.search.mock.calls[0][1].filter.must.map((m) => m.key);
-        expect(keys).toContain('meetingId');
-        expect(keys).not.toContain('ownerId');
+        await expect(search.denseSearch({ query: 'q', meetingId: 'm1' })).rejects.toThrow(/ownerId/i);
+        expect(client.search).not.toHaveBeenCalled();
     });
 
     it('embeds the query before searching', async () => {
         const { embed, search } = make();
-        await search.denseSearch({ query: 'what about pricing', meetingId: 'm1' });
+        await search.denseSearch({ query: 'what about pricing', meetingId: 'm1', ownerId: 'user-A' });
         expect(embed).toHaveBeenCalledWith('what about pricing');
     });
 
     it('maps hits into the shape the retrieval pipeline expects', async () => {
         const { search } = make({ client: { search: jest.fn(async () => [hit()]) } });
-        const [row] = await search.denseSearch({ query: 'q', meetingId: 'm1' });
+        const [row] = await search.denseSearch({ query: 'q', meetingId: 'm1', ownerId: 'user-A' });
 
         expect(row).toMatchObject({
             vectorId: 'm1:1:0:0', layer: 1, ordinal: 0, rev: 0,
@@ -105,21 +106,21 @@ describe('search', () => {
         const { search } = make({
             client: { search: jest.fn(async () => [{ id: 'x', score: 1, payload: { layer: 1 } }]) },
         });
-        const [row] = await search.denseSearch({ query: 'q', meetingId: 'm1' });
+        const [row] = await search.denseSearch({ query: 'q', meetingId: 'm1', ownerId: 'user-A' });
         expect(row.speakers).toEqual([]);
         expect(row.hasOverlap).toBe(false);
     });
 
     it('throws when the query embedding is empty rather than searching with nothing', async () => {
         const { client, search } = make({ embed: jest.fn(async () => []) });
-        await expect(search.denseSearch({ query: 'q', meetingId: 'm1' }))
+        await expect(search.denseSearch({ query: 'q', meetingId: 'm1', ownerId: 'user-A' }))
             .rejects.toThrow(/no vector/);
         expect(client.search).not.toHaveBeenCalled();
     });
 
     it('honours the limit', async () => {
         const { client, search } = make({ client: { search: jest.fn(async () => []) } });
-        await search.denseSearch({ query: 'q', meetingId: 'm1', limit: 5 });
+        await search.denseSearch({ query: 'q', meetingId: 'm1', ownerId: 'user-A', limit: 5 });
         expect(client.search.mock.calls[0][1].limit).toBe(5);
     });
 });

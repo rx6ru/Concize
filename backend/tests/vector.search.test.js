@@ -38,9 +38,21 @@ describe('vectorSearchService tenant scoping', () => {
         ]));
     });
 
-    it('omits the owner filter when ownerId is absent (legacy safety: still jobId-scoped)', async () => {
-        await queryTranscriptions('hello', 'job-1', undefined, 5);
-        const opts = qdrant.__search.mock.calls[0][1];
-        expect(opts.filter.must).toEqual([{ key: 'jobId', match: { value: 'job-1' } }]);
+    // Was: "omits the owner filter when ownerId is absent (legacy safety: still jobId-scoped)".
+    // Being scoped to a jobId is precisely the bearer-capability model ADR-001 abandoned —
+    // possession of an id meant access. Dropping the filter is a fail-OPEN guard: a caller that
+    // loses its ownerId silently searches the whole meeting instead of matching nothing. Every
+    // production call site passes one (all three originate from requireMeetingAccess), so the
+    // leniency protected nothing and only stood to convert a future regression into a leak.
+    it('refuses to search without an owner rather than searching unscoped', async () => {
+        await expect(queryTranscriptions('hello', 'job-1', undefined, 5))
+            .rejects.toThrow(/ownerId/i);
+
+        expect(qdrant.__search).not.toHaveBeenCalled();
+    });
+
+    it('refuses on the chat collection too', async () => {
+        await expect(queryChats('hello', 'job-1', undefined, 3)).rejects.toThrow(/ownerId/i);
+        expect(qdrant.__search).not.toHaveBeenCalled();
     });
 });

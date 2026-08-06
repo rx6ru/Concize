@@ -38,9 +38,14 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
         return true;
     }
 
+    // Fail closed on the owner. Dropping the filter would leave the search scoped by meetingId
+    // alone, which is the bearer-capability model ADR-001 replaced.
     function filterFor(meetingId, ownerId, layer) {
-        const must = [{ key: 'meetingId', match: { value: meetingId } }];
-        if (ownerId) must.push({ key: 'ownerId', match: { value: ownerId } });
+        if (!ownerId) throw new Error('chunk search: ownerId is required; refusing to search unscoped');
+        const must = [
+            { key: 'meetingId', match: { value: meetingId } },
+            { key: 'ownerId', match: { value: ownerId } },
+        ];
         if (layer != null) must.push({ key: 'layer', match: { value: layer } });
         return { must };
     }

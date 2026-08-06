@@ -80,6 +80,9 @@ function toOrQuery(text) {
  * tests/chunk.text.search.test.js instead of the pg-mem suites.
  */
 async function searchChunkText(meetingId, { text, ownerId = null, layer = null, limit = 20 } = {}) {
+    // Fail closed, like the dense lane: without an owner this used to match on meeting alone.
+    if (!ownerId) throw new Error('searchChunkText: ownerId is required; refusing to search unscoped');
+
     const tsquery = toOrQuery(text || '');
     if (!tsquery) return [];
 
@@ -93,7 +96,7 @@ async function searchChunkText(meetingId, { text, ownerId = null, layer = null, 
                JOIN meetings m ON m.job_id = c.meeting_id
                CROSS JOIN to_tsquery('simple', $2) AS q(tsq)
               WHERE c.meeting_id = $1
-                AND ($3::text IS NULL OR m.owner_id = $3)
+                AND m.owner_id = $3
                 AND ($4::int IS NULL OR c.layer = $4)
                 AND to_tsvector('simple', c.context_prefix || ' ' || c.text) @@ q.tsq
               ORDER BY c.layer, c.ordinal, c.rev DESC

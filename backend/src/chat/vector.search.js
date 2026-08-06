@@ -29,7 +29,14 @@ const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION;
  * @param {number} [limit=5] - The maximum number of relevant transcription chunks to retrieve.
  * @returns {Promise<Array<Object>>} An array of relevant transcription chunk payloads.
  */
+// Fail closed. Dropping the owner filter when ownerId is missing would fall back to scoping by
+// jobId alone — the bearer-capability model ADR-001 replaced, where knowing an id meant access.
+function requireOwner(ownerId, where) {
+    if (!ownerId) throw new Error(`${where}: ownerId is required; refusing to search unscoped`);
+}
+
 const queryTranscriptions = async (userPrompt, jobId, ownerId, limit = 5) => {
+    requireOwner(ownerId, 'queryTranscriptions');
     try {
         logger.debug(`Querying transcriptions`, { collection: TRANSCRIPTION_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
@@ -41,7 +48,7 @@ const queryTranscriptions = async (userPrompt, jobId, ownerId, limit = 5) => {
         }
 
         const must = [{ key: 'jobId', match: { value: jobId } }];
-        if (ownerId) must.push({ key: 'ownerId', match: { value: ownerId } });
+        must.push({ key: 'ownerId', match: { value: ownerId } });
 
         const searchResult = await client.search(TRANSCRIPTION_COLLECTION_NAME, {
             vector: queryVector,
@@ -72,6 +79,7 @@ const queryTranscriptions = async (userPrompt, jobId, ownerId, limit = 5) => {
  * @returns {Promise<Array<Object>>} An array of relevant chat pair payloads (userChat, aiChat).
  */
 const queryChats = async (userPrompt, jobId, ownerId, limit = 3) => {
+    requireOwner(ownerId, 'queryChats');
     try {
         logger.debug(`Querying chat history`, { collection: CHAT_COLLECTION_NAME, jobId, promptSnippet: userPrompt.substring(0, 50) });
 
@@ -83,7 +91,7 @@ const queryChats = async (userPrompt, jobId, ownerId, limit = 3) => {
         }
 
         const must = [{ key: 'jobId', match: { value: jobId } }];
-        if (ownerId) must.push({ key: 'ownerId', match: { value: ownerId } });
+        must.push({ key: 'ownerId', match: { value: ownerId } });
 
         const searchResult = await client.search(CHAT_COLLECTION_NAME, {
             vector: queryVector,
