@@ -98,10 +98,49 @@ leaves the meeting intact rather than half-deleted. Safe to call again.
 
 ---
 
+### `GET /api/v1/meetings/:meetingId/utterances`
+
+**The transcript you almost certainly want.** Speaker-attributed turns with timings, paged.
+
+**Query:** `limit` (default 200, max 500), `after` (a `seq` from a previous page, exclusive).
+
+**200**
+```json
+{
+  "success": true,
+  "utterances": [
+    {
+      "turnId": "1723200412345",
+      "seq": 0,
+      "t0": 0,
+      "t1": 900,
+      "text": "we should revisit pricing",
+      "speaker": "S1",
+      "confidence": "confident",
+      "overlap": false,
+      "overlapRatio": 0
+    }
+  ],
+  "nextCursor": 199
+}
+```
+
+Turns are in spoken order. `nextCursor` is the `seq` to pass as `after` for the next page, or
+**`null` when there are no more** — it is always present, so `null` means "end", not "missing".
+
+Paging is by `seq`, not offset, so a correction landing between two page requests cannot make a
+turn appear twice or vanish. Fields match the WebSocket `final` shape exactly, so one renderer can
+serve both the live and post-meeting views.
+
+**404** if the meeting is not yours or does not exist.
+
+---
+
 ### `GET /api/v1/meetings/:meetingId/transcript`
 
-The stored transcript. Useful for a post-meeting view; during a live meeting the WebSocket is the
-source of truth and is far ahead of this.
+Legacy. Returns flat text with **no speakers and no timings** — the shape the old batch pipeline
+wrote. Prefer `/utterances` for anything new; this exists for older clients and is unpaged, so it
+returns the whole meeting in one response.
 
 **200** — the transcript document. **404** if the meeting has no transcript, or is not yours.
 
@@ -305,7 +344,7 @@ stream PCM frames (seq-prefixed)         ← partial / final / revision / waterm
 poll GET …/summary every ~30s            → running summary
 POST …/chat  (SSE)                       ← answer text
 send {"event":"stop"}, close socket
-GET  …/transcript                        → the stored transcript, after the meeting
+GET  …/utterances?limit&after            → speaker-attributed transcript, paged
 DELETE /api/v1/meetings/:meetingId       → permanent
 ```
 
@@ -315,8 +354,6 @@ DELETE /api/v1/meetings/:meetingId       → permanent
 
 So nobody builds UI against something that does not exist:
 
-- **No transcript pagination** — `GET …/transcript` returns the whole document. A three-hour
-  meeting is a large response; assume it is slow and do not call it on a timer.
 - **No WebSocket resume.** Reconnecting starts a new session; audio buffered during a drop is not
   replayed, and speaker attribution degrades after a reconnect.
 - **No overlap lane.** `overlap` and `overlapRatio` are in the contract and currently always
