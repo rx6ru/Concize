@@ -24,6 +24,68 @@ function makeWorker(over = {}) {
     return { worker: createEmbedWorker(deps), attached, upserted, ...deps };
 }
 
+// One request per chunk is what made a long meeting exceed the provider's per-minute request
+// ceiling inside a single pass. A pass now embeds everything it found in one call.
+describe('batched embedding', () => {
+    const makeBatchWorker = (over = {}) => {
+        const upserted = [];
+        const embedMany = over.embedMany
+            || jest.fn(async (texts) => texts.map(() => [0.1, 0.2, 0.3]));
+        const worker = createEmbedWorker({
+            getUnembedded: async () => Array.from({ length: 5 }, (_, i) => chunk({ ordinal: i })),
+            getDirtyChunks: async () => [],
+            attachVector: jest.fn(async (m, c, id) => ({ ...c, vectorId: id })),
+            embedMany,
+            upsert: jest.fn(async (id, vec, payload) => { upserted.push({ id, vec, payload }); }),
+            ...over,
+        });
+        return { worker, embedMany, upserted };
+    };
+
+    it('embeds a whole pass in one call', async () => {
+        const { worker, embedMany } = makeBatchWorker();
+
+        const result = await worker.run('m1');
+
+        expect(result.embedded).toBe(5);
+        expect(embedMany).toHaveBeenCalledTimes(1);
+        expect(embedMany.mock.calls[0][0]).toHaveLength(5);
+    });
+
+    it('pairs each vector with the chunk that produced it', async () => {
+        const { worker, upserted } = makeBatchWorker({
+            embedMany: async (texts) => texts.map((_, i) => [i]),
+        });
+
+        await worker.run('m1');
+
+        expect(upserted.map((u) => u.vec)).toEqual([[0], [1], [2], [3], [4]]);
+        expect(upserted.map((u) => u.payload.ordinal)).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('leaves the whole pass unembedded when the batch call fails, so it retries', async () => {
+        const { worker, upserted } = makeBatchWorker({
+            embedMany: async () => { throw new Error('provider down'); },
+        });
+
+        const result = await worker.run('m1');
+
+        expect(result.embedded).toBe(0);
+        expect(result.failed).toBe(5);
+        expect(upserted).toHaveLength(0);
+    });
+
+    it('still records the others when one upsert fails', async () => {
+        const { worker } = makeBatchWorker({
+            upsert: jest.fn(async (id) => { if (id.endsWith('x')) throw new Error('nope'); }),
+        });
+
+        const result = await worker.run('m1');
+
+        expect(result.embedded).toBe(5);
+    });
+});
+
 describe('embedding pass', () => {
     it('embeds chunks that have no vector yet', async () => {
         const w = makeWorker({ getUnembedded: async () => [chunk()] });

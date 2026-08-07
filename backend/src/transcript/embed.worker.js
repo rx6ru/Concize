@@ -34,14 +34,20 @@ function uuidFromKey(key) {
  * @param {function} deps.upsert          (vectorId, vector, payload) => void
  * @param {number}   [deps.batchSize]
  */
-function createEmbedWorker({ getUnembedded, getDirtyChunks, attachVector, embed, upsert, batchSize = 32 }) {
+/**
+ * @param {function} [deps.embedMany]  (texts) => vectors; embeds a whole pass in one call.
+ *                                     Falls back to one `embed` call per chunk when absent.
+ */
+function createEmbedWorker({
+    getUnembedded, getDirtyChunks, attachVector, embed, embedMany = null, upsert, batchSize = 32,
+}) {
 
     const chunkKeyFor = (meetingId, c) => `${meetingId}:${c.layer}:${c.ordinal}:${c.rev}`;
     const vectorIdFor = (meetingId, c) => uuidFromKey(chunkKeyFor(meetingId, c));
 
-    async function embedOne(meetingId, chunk, meeting) {
+    async function embedOne(meetingId, chunk, meeting, vector = null) {
         const vectorId = vectorIdFor(meetingId, chunk);
-        const vector = await embed(withContext(chunk, meeting));
+        if (!vector) vector = await embed(withContext(chunk, meeting));
 
         if (!Array.isArray(vector) || vector.length === 0) {
             throw new Error('embedding returned no vector');
@@ -90,9 +96,28 @@ function createEmbedWorker({ getUnembedded, getDirtyChunks, attachVector, embed,
             let embedded = 0;
             const failures = [];
 
-            for (const chunk of queue) {
+            // One call for the whole pass. A 116-chunk meeting was 116 requests against a
+            // 100-per-minute ceiling; batched it is two. A failure here leaves every chunk in the
+            // pass unembedded, which the next pass picks up — the same outcome as before, in bulk.
+            let vectors = null;
+            if (embedMany && queue.length) {
                 try {
-                    await embedOne(meetingId, chunk, meeting);
+                    vectors = await embedMany(queue.map((c) => withContext(c, meeting)));
+                } catch (err) {
+                    logger.error('Batch embed failed, leaving the pass for the next run', {
+                        meetingId, chunks: queue.length, error: err.message,
+                    });
+                    return {
+                        embedded: 0,
+                        failed: queue.length,
+                        failures: queue.map((c) => ({ ordinal: c.ordinal, layer: c.layer, error: err.message })),
+                    };
+                }
+            }
+
+            for (const [i, chunk] of queue.entries()) {
+                try {
+                    await embedOne(meetingId, chunk, meeting, vectors ? vectors[i] : null);
                     embedded += 1;
                 } catch (err) {
                     // Left unembedded so the next run retries it, rather than marked done.

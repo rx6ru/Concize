@@ -8,6 +8,7 @@ const { getQdrant } = require('../infra/qdrant');
 // The retrying variant: the provider caps embeds per minute, which a long meeting goes through
 // in one pass, and a bare 429 leaves the chunk out of the index.
 const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
+const { getEmbeddings } = require('../providers/embedding/embedding.batch');
 const { createChunkSearch } = require('../chat/chunk.search');
 const { createDeriveService } = require('./derive.service');
 const { createEmbedWorker } = require('./embed.worker');
@@ -54,6 +55,9 @@ function build() {
         getDirtyChunks,
         attachVector,
         embed: getEmbeddingWithRetry,
+        // Batched: a pass is one request instead of one per chunk, which is what put long
+        // meetings past the provider's per-minute request ceiling mid-pass.
+        embedMany: getEmbeddings,
         upsert: index.upsert,
     });
 

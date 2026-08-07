@@ -82,10 +82,17 @@ jest.mock('../src/providers/embedding/embedding.service', () => ({
     getEmbeddingWithRetry: jest.fn(async () => new Array(768).fill(0.1)),
 }));
 
+// One vector per text, in order — the real contract. A fake returning a single vector, or
+// ignoring the count, would hide exactly the misalignment the real one refuses to produce.
+jest.mock('../src/providers/embedding/embedding.batch', () => ({
+    getEmbeddings: jest.fn(async (texts) => texts.map(() => new Array(768).fill(0.1))),
+}));
+
 const pipeline = require('../src/transcript/pipeline.wiring');
 const { insertChunk, markDirtyForRange, attachVector } = require('../src/transcript/chunk.repository');
 const { appendUtterance, reviseUtterance } = require('../src/transcript/utterance.repository');
 const { getEmbeddingWithRetry: getEmbedding } = require('../src/providers/embedding/embedding.service');
+const { getEmbeddings } = require('../src/providers/embedding/embedding.batch');
 const { appendTranscription } = require('../src/meetings/meeting.repository');
 const { publishToQueue } = require('../src/infra/queue');
 const { completeMeeting } = require('../src/meetings/meeting.service');
@@ -104,6 +111,7 @@ beforeEach(() => {
     // clearAllMocks resets call counts but not implementations, so a rejection set by one test
     // would otherwise leak into the next.
     getEmbedding.mockReset().mockResolvedValue(new Array(768).fill(0.1));
+    getEmbeddings.mockReset().mockImplementation(async (texts) => texts.map(() => new Array(768).fill(0.1)));
     pipeline._resetForTests();
 });
 
@@ -178,7 +186,7 @@ describe('end of meeting', () => {
         await pipeline.onUtterance('m1', utterance({ speakerLabel: 'S1' }));
         await pipeline.onSessionEnd('m1');
 
-        const embedded = getEmbedding.mock.calls.find((c) => c[0].includes('we should revisit'))[0];
+        const embedded = getEmbeddings.mock.calls[0][0].find((t) => t.includes('we should revisit'));
         expect(embedded).toContain('Q3 planning');
         expect(embedded).toContain('Speakers: S1');
         expect(embedded).toContain('we should revisit pricing');
@@ -232,7 +240,7 @@ describe('embedding passes', () => {
     });
 
     it('stops draining instead of spinning when every chunk fails', async () => {
-        getEmbedding.mockRejectedValue(new Error('provider down'));
+        getEmbeddings.mockRejectedValue(new Error('provider down'));
         for (let i = 0; i < 80; i++) {
             store.chunks.push({
                 meetingId: 'm1', layer: 1, ordinal: i, rev: 0,
@@ -243,11 +251,11 @@ describe('embedding passes', () => {
         await pipeline.scheduleEmbed('m1');
 
         expect(upserted).toHaveLength(0);
-        expect(getEmbedding.mock.calls.length).toBeLessThanOrEqual(80);
+        expect(getEmbeddings.mock.calls.length).toBeLessThanOrEqual(80);
     });
 
     it('leaves a chunk unembedded when the provider is down, rather than marking it indexed', async () => {
-        getEmbedding.mockRejectedValue(new Error('provider down'));
+        getEmbeddings.mockRejectedValue(new Error('provider down'));
 
         await pipeline.onUtterance('m1', utterance());
         await pipeline.onSessionEnd('m1');
@@ -257,7 +265,7 @@ describe('embedding passes', () => {
     });
 
     it('picks up a chunk that failed an earlier pass', async () => {
-        getEmbedding.mockRejectedValueOnce(new Error('transient'));
+        getEmbeddings.mockRejectedValueOnce(new Error('transient'));
 
         await pipeline.onUtterance('m1', utterance());
         await pipeline.onSessionEnd('m1');
@@ -266,7 +274,7 @@ describe('embedding passes', () => {
     });
 
     it('does not let an embedding failure escape into the meeting', async () => {
-        getEmbedding.mockRejectedValue(new Error('provider down'));
+        getEmbeddings.mockRejectedValue(new Error('provider down'));
         await expect(pipeline.onUtterance('m1', utterance())).resolves.toBeUndefined();
         await expect(pipeline.onSessionEnd('m1')).resolves.toBeUndefined();
     });
