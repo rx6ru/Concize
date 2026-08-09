@@ -15,6 +15,10 @@ function createSession({
     ownerId,
     sampleRate = 16000,
     frameMs = 100,
+    // Where this session's clock starts. Non-zero when resuming a meeting whose transcript
+    // already reaches this far: the client's sequence restarts at 0 on reconnect, so without
+    // the offset a resumed session rewrites the timeline instead of continuing it.
+    startOffsetMs = 0,
     onEvent,
     onFrame = null,          // every audio frame, used to spool the recording
     onLaneStatus = () => {},
@@ -85,7 +89,7 @@ function createSession({
             state.lastSeq = Math.max(state.lastSeq, seq);
             state.framesReceived += 1;
 
-            const t0Ms = seq * frameMs;
+            const t0Ms = startOffsetMs + seq * frameMs;
             if (onFrame) {
                 try { onFrame(frame); } catch { /* recording is best effort */ }
             }
@@ -104,7 +108,7 @@ function createSession({
         // how far behind live the indexed transcript is; feeds the staleness indicator.
         // a value that keeps growing is the first sign ingestion is falling behind.
         freshness() {
-            const elapsedMs = (state.lastSeq + 1) * frameMs;
+            const elapsedMs = startOffsetMs + (state.lastSeq + 1) * frameMs;
             return {
                 watermarkMs: state.watermarkMs,
                 elapsedMs,

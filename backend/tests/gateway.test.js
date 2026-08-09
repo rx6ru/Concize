@@ -384,3 +384,47 @@ describe('fusion integration', () => {
         ws.close(); await c.gw.closeAll(); await new Promise((r) => c.server.close(r));
     });
 });
+
+// A dropped socket ends the session. The client reconnects with its sequence back at 0, so the
+// gateway has to shift lane timestamps past what is already stored — otherwise the resumed meeting
+// overwrites its own timeline from the beginning.
+describe('resuming a meeting', () => {
+    it('shifts timestamps past what is already stored', async () => {
+        const c = await startGateway({ getWatermarkMs: async () => 600000 });
+        const ws = connect(c.port, 'token=good-token&meetingId=m1');
+        await collect(ws, (m) => m.some((x) => x.type === 'session.ready'));
+
+        const got = collect(ws, (m) => m.some((x) => x.type === 'final'));
+        c.lane.emit({ lane: 'words', kind: 'final', text: 'resumed', t0Ms: 0, t1Ms: 900 });
+        const msgs = await got;
+
+        expect(msgs.find((m) => m.type === 'final')).toMatchObject({ t0: 600000, t1: 600900 });
+
+        ws.close(); await c.gw.closeAll(); await new Promise((r) => c.server.close(r));
+    });
+
+    it('leaves a fresh meeting starting at zero', async () => {
+        const c = await startGateway({ getWatermarkMs: async () => 0 });
+        const ws = connect(c.port, 'token=good-token&meetingId=m1');
+        await collect(ws, (m) => m.some((x) => x.type === 'session.ready'));
+
+        const got = collect(ws, (m) => m.some((x) => x.type === 'final'));
+        c.lane.emit({ lane: 'words', kind: 'final', text: 'first', t0Ms: 0, t1Ms: 900 });
+        const msgs = await got;
+
+        expect(msgs.find((m) => m.type === 'final')).toMatchObject({ t0: 0 });
+
+        ws.close(); await c.gw.closeAll(); await new Promise((r) => c.server.close(r));
+    });
+
+    // Losing the watermark must not stop the meeting; it only costs correct resume timing.
+    it('still connects when the watermark cannot be read', async () => {
+        const c = await startGateway({ getWatermarkMs: async () => { throw new Error('db down'); } });
+        const ws = connect(c.port, 'token=good-token&meetingId=m1');
+
+        const msgs = await collect(ws, (m) => m.some((x) => x.type === 'session.ready'));
+        expect(msgs.some((m) => m.type === 'session.ready')).toBe(true);
+
+        ws.close(); await c.gw.closeAll(); await new Promise((r) => c.server.close(r));
+    });
+});

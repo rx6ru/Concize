@@ -51,6 +51,35 @@ describe('session clock', () => {
     });
 });
 
+// A dropped socket ends the session; the client reconnects and starts its sequence at 0 again.
+// Without an offset the resumed meeting rewrites its own timeline from the beginning, and the new
+// utterances collide with the ones already stored rather than continuing after them.
+describe('resuming after a reconnect', () => {
+    it('continues the clock from where the stored transcript reaches', () => {
+        const { session } = makeSession({ startOffsetMs: 600000 });   // ten minutes already stored
+        session.registerLane('words', fakeLane());
+
+        expect(session.pushAudio(Buffer.alloc(2), 0)).toBe(600000);
+        expect(session.pushAudio(Buffer.alloc(2), 1)).toBe(600100);
+    });
+
+    it('starts at zero for a fresh meeting', () => {
+        const { session } = makeSession();
+        session.registerLane('words', fakeLane());
+
+        expect(session.pushAudio(Buffer.alloc(2), 0)).toBe(0);
+    });
+
+    // Otherwise a resumed session reports itself as ten minutes behind live from the first frame.
+    it('reports elapsed time including what came before', () => {
+        const { session } = makeSession({ startOffsetMs: 600000 });
+        session.registerLane('words', fakeLane());
+        session.pushAudio(Buffer.alloc(2), 0);
+
+        expect(session.freshness().elapsedMs).toBe(600100);
+    });
+});
+
 describe('fan-out', () => {
     it('sends every frame to every lane so they share one timeline', () => {
         const { session } = makeSession();

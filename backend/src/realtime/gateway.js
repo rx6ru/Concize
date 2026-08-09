@@ -51,6 +51,9 @@ function attachGateway({
     createSpeakerLane = null,
     onUtterance = () => {}, onRevision = () => {}, onSessionEnd = () => {},
     onFrame = null,
+    // How far the stored transcript already reaches. A reconnecting client restarts its sequence
+    // at 0, so without this a resumed meeting rewrites its own timeline from the beginning.
+    getWatermarkMs = async () => 0,
 }) {
     const wss = new WebSocketServer({ noServer: true });
     const sessions = new Map();
@@ -75,12 +78,22 @@ function attachGateway({
             return reject(socket, 404, 'Not Found');
         }
 
+        // Best effort: a meeting that cannot read its watermark still runs, it just resumes
+        // from zero. Losing the timeline is better than refusing the connection.
+        let startOffsetMs = 0;
+        try {
+            startOffsetMs = (await getWatermarkMs(params.meetingId)) || 0;
+        } catch (err) {
+            logger.warn('Could not read watermark, resuming from zero',
+                { meetingId: params.meetingId, error: err.message });
+        }
+
         wss.handleUpgrade(req, socket, head, (ws) => {
-            attachSession(ws, params.meetingId, userId);
+            attachSession(ws, params.meetingId, userId, startOffsetMs);
         });
     });
 
-    function attachSession(ws, meetingId, ownerId) {
+    function attachSession(ws, meetingId, ownerId, startOffsetMs = 0) {
         const send = (payload) => {
             if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
         };
@@ -115,8 +128,16 @@ function attachGateway({
         const session = createSession({
             meetingId,
             ownerId,
+            startOffsetMs,
             onFrame: onFrame ? (frame) => onFrame(meetingId, frame) : null,
-            onEvent: (event) => {
+            onEvent: (rawEvent) => {
+                // Lane timestamps are relative to the lane's own stream, which restarts on
+                // reconnect. Shifting here, before fusion, keeps every downstream consumer —
+                // fusion, the emitted payload, the stored utterance — on one timeline.
+                const event = startOffsetMs
+                    ? { ...rawEvent, t0Ms: rawEvent.t0Ms + startOffsetMs, t1Ms: rawEvent.t1Ms + startOffsetMs }
+                    : rawEvent;
+
                 if (event.lane === 'speaker') {
                     fusion.addSpeakerInterval(event);
                     return flushRevisions();

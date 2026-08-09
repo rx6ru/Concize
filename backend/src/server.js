@@ -16,6 +16,7 @@ const { createSarvamRealtimeLane } = require("./providers/stt/sarvam.realtime");
 const { createFunasrSpeakerLane } = require("./providers/speaker/funasr.lane");
 const transcriptPipeline = require("./transcript/pipeline.wiring");
 const { getMeetingOwner } = require("./meetings/meeting.repository");
+const { getWatermarkMs } = require("./transcript/utterance.repository");
 const { createTokenVerifier } = require("./http/middleware/token.verifier");
 const appConfig = require("./core/config");
 
@@ -140,6 +141,8 @@ const startServer = async () => {
       server: serverInstance,
       verifyAccessToken,
       getMeetingOwner,
+      // Resumes a reconnecting client past the stored transcript instead of over it.
+      getWatermarkMs,
       createSpeakerLane: speakerLane,
       createLane: createSarvamRealtimeLane,
       onUtterance: transcriptPipeline.onUtterance,
