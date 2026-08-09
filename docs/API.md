@@ -354,8 +354,11 @@ DELETE /api/v1/meetings/:meetingId       → permanent
 
 So nobody builds UI against something that does not exist:
 
-- **No WebSocket resume.** Reconnecting starts a new session; audio buffered during a drop is not
-  replayed, and speaker attribution degrades after a reconnect.
+- **Reconnecting is partial.** Timestamps now continue past the stored transcript rather than
+  restarting at zero, so a reconnect no longer overwrites the meeting's own timeline — send your
+  sequence numbers from 0 again and the server places them correctly. What is still missing:
+  audio buffered during the drop is not replayed, and speaker attribution degrades after a
+  reconnect because the diarizer's clustering restarts with no history.
 - **No overlap lane.** `overlap` and `overlapRatio` are in the contract and currently always
   `false` / `0`. The field is stable; the data is not there yet.
 - **No speaker naming.** Speakers are `S1`, `S2`, … and cannot be renamed.
