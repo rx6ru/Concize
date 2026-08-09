@@ -10,6 +10,7 @@
 'use strict';
 
 const config = require('../../core/config');
+const { runResilient } = require('../llm/resilient.inference');
 const { createLogger } = require('../../core/logger');
 
 const logger = createLogger('embeddingBatch');
@@ -71,9 +72,18 @@ async function getEmbeddings(texts, opts = {}) {
     const model = opts.model || MODEL_ID;
     const outputDimensionality = opts.outputDimensionality ?? DEFAULT_OUTPUT_DIMENSIONALITY;
 
+    // Through the resilient wrapper, exactly as the single-text path was: per-model request
+    // spacing from provider.limits.json, jittered retry, breaker. Batching makes each failure
+    // more expensive — a 429 now costs a whole pass rather than one chunk — so this matters more
+    // here, not less.
     const out = [];
     for (const batch of chunked(texts, BATCH_SIZE)) {
-        out.push(...await embedBatch(batch, { model, outputDimensionality, apiKey }));
+        const vectors = await runResilient(
+            'gemini',
+            () => embedBatch(batch, { model, outputDimensionality, apiKey }),
+            { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
+        );
+        out.push(...vectors);
     }
 
     logger.debug('Batch embedding complete', { texts: texts.length, requests: Math.ceil(texts.length / BATCH_SIZE) });

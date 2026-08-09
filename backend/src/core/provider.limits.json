@@ -114,11 +114,19 @@
         },
         "gemini-embedding-001": {
           "requestsPerMinute": 100,
+          "requestsPerDay": 1000,
+          "maxBatchSize": 50,
           "outputDimensionality": 768,
           "retryAfterHintMs": 36000,
           "_note": [
-            "quotaId EmbedContentRequestsPerMinutePerUserPerProjectPerModel-FreeTier.",
-            "One request per chunk, so a 116-chunk meeting exceeds this in a single pass."
+            "Two separate quotas, both read off 429 bodies:",
+            "EmbedContentRequestsPerMinutePerUserPerProjectPerModel-FreeTier = 100",
+            "EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier    = 1000",
+            "",
+            "The daily one is the tighter constraint in practice and is what one-request-per-chunk",
+            "spent: five meetings of a few hundred chunks each exhausted 1000 in an afternoon.",
+            "batchEmbedContents takes up to 100 per request (50 used, for headroom on long chunks),",
+            "which turns a 116-chunk meeting from 116 requests into 3."
           ]
         }
       }
