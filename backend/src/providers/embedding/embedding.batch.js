@@ -11,6 +11,7 @@
 
 const config = require('../../core/config');
 const { runResilient } = require('../llm/resilient.inference');
+const { ledger } = require('../../core/usage.ledger');
 const { createLogger } = require('../../core/logger');
 
 const logger = createLogger('embeddingBatch');
@@ -84,6 +85,8 @@ async function getEmbeddings(texts, opts = {}) {
             { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
         );
         out.push(...vectors);
+        // Metered per request, not per token, so the count is what matters here.
+        ledger.record('gemini', model, 0);
     }
 
     logger.debug('Batch embedding complete', { texts: texts.length, requests: Math.ceil(texts.length / BATCH_SIZE) });

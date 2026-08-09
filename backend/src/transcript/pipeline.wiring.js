@@ -25,6 +25,7 @@ const { completeMeeting } = require('../meetings/meeting.service');
 const { getMeetingSummary } = require('../summary/summary.repository');
 const { publishToQueue } = require('../infra/queue');
 const config = require('../core/config');
+const { ledger } = require('../core/usage.ledger');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('transcriptPipeline');
@@ -65,8 +66,12 @@ function build() {
     // narrative rather than raw disfluent speech. Same provider the summary uses.
     const narrator = createNarrator({
         complete: async (args) => {
-            const { client, model } = getSummaryInference();
-            return client.chat.completions.create({ ...args, model });
+            const { client, model, taskConfig } = getSummaryInference();
+            const res = await client.chat.completions.create({ ...args, model });
+            // Narration is the largest LLM consumer in the system — a full corpus ingest costs
+            // about a day's token budget on its own — so it is the one that most needs counting.
+            ledger.record(taskConfig.provider, model, res?.usage?.total_tokens || 0);
+            return res;
         },
         model: null,
         nextOrdinal,
