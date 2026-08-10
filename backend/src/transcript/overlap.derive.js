@@ -1,12 +1,15 @@
 // Where two people were talking at once, derived from speaker intervals we already have.
 //
-// The design called for a third lane running pyannote to detect overlap. That is gated behind an
-// HF token and a GPU service, and it turns out not to be necessary for a usable signal: a
-// diarizer already emits per-speaker intervals, and two different speakers whose intervals
-// intersect *is* overlapping speech. Measured on AMI, deriving it this way finds contested spans
-// covering 27% of adjacent turns against a reference figure of 16% — it over-detects, which for
-// this purpose is the safe direction, because the consequence of a flag is hedging rather than
-// discarding.
+// A stopgap, and measured to be a weak one. Two different speakers whose diarization intervals
+// intersect *is* overlapping speech, so this needs no extra model — but scored frame-wise against
+// AMI word-level ground truth it manages only:
+//
+//     precision 32.9%   recall 18.9%   F1 23.6%      (eval/overlap-accuracy.js, 3 AMI meetings)
+//
+// against roughly 0.60–0.70 F1 for a dedicated detector such as pyannote segmentation-3.0. It
+// misses four fifths of real overlap, so the downstream hedging it feeds mostly does not fire.
+// Keep it as a floor until a real overlapped-speech-detection lane exists; do not mistake it for
+// one. The interface is deliberately the same shape a real lane would use.
 //
 // This is deliberately a pure function over intervals, so the same code serves the live lane, the
 // batch reconciliation pass, and a real pyannote lane later if one is ever wired.
