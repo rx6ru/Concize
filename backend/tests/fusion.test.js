@@ -163,3 +163,30 @@ describe('retention', () => {
         expect(f.stats().speakers).toBe(2);
     });
 });
+
+// The overlap flag has a long journey: fusion -> utterance -> chunk -> context prefix -> the
+// prompt's instruction to hedge. Every stage of that plumbing already existed and nothing ever
+// set the flag, so this asserts the whole path from the only input that can start it.
+describe('overlap reaches the utterance without a separate detector', () => {
+    it('flags a turn spoken over another speaker', () => {
+        const f = createFusion();
+        f.addSpeakerInterval({ t0Ms: 0, t1Ms: 4000, speaker: 'S1' });
+        f.addSpeakerInterval({ t0Ms: 1000, t1Ms: 5000, speaker: 'S2' });
+
+        const u = f.fuse({ turnId: 't1', t0Ms: 1200, t1Ms: 3800, text: 'talking over you' });
+
+        expect(u.overlap).toBe(true);
+        expect(u.overlapRatio).toBeGreaterThan(0.15);
+    });
+
+    it('leaves a clean turn unflagged', () => {
+        const f = createFusion();
+        f.addSpeakerInterval({ t0Ms: 0, t1Ms: 2000, speaker: 'S1' });
+        f.addSpeakerInterval({ t0Ms: 2000, t1Ms: 4000, speaker: 'S2' });
+
+        const u = f.fuse({ turnId: 't1', t0Ms: 200, t1Ms: 1800, text: 'my turn alone' });
+
+        expect(u.overlap).toBe(false);
+        expect(u.overlapRatio).toBe(0);
+    });
+});

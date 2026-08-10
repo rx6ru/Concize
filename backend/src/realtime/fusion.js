@@ -4,6 +4,8 @@
 
 'use strict';
 
+const { deriveOverlaps } = require('../transcript/overlap.derive');
+
 const CONFIDENCE = { CONFIDENT: 'confident', PROVISIONAL: 'provisional', UNKNOWN: 'unknown' };
 
 // Sarvam gives segment-level timestamps, not word-level, so we use the midpoint as the
@@ -83,6 +85,15 @@ function createFusion({ overlapThreshold = 0.15, retentionMs = 60000 } = {}) {
     return {
         addSpeakerInterval(iv) {
             speakers.push(iv);
+            prune(iv.t1Ms);
+
+            // Two different speakers whose intervals intersect were talking at once. Deriving it
+            // here means the overlap signal exists without a separate detector; a real overlap
+            // lane, if one is ever wired, simply adds better intervals through the same door.
+            for (const span of deriveOverlaps(speakers)) {
+                const known = overlaps.some((o) => o.t0Ms === span.t0Ms && o.t1Ms === span.t1Ms);
+                if (!known) overlaps.push(span);
+            }
             prune(iv.t1Ms);
         },
 
