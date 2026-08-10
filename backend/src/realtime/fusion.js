@@ -8,18 +8,47 @@ const { deriveOverlaps } = require('../transcript/overlap.derive');
 
 const CONFIDENCE = { CONFIDENT: 'confident', PROVISIONAL: 'provisional', UNKNOWN: 'unknown' };
 
-// Sarvam gives segment-level timestamps, not word-level, so we use the midpoint as the
-// best guess for which speaker owns this span. anything fancier would imply precision
-// we don't actually have.
+// Which speaker owns this span: the one holding the most of it.
+//
+// This used to ask who was speaking at the midpoint, which is a bad estimator when segments are
+// long — and ours are, 8s at p90 and 22s at worst. A half-second "mhm" landing on the midpoint of
+// a twenty-second segment took the whole segment, so one backchannel could misattribute a
+// paragraph. Summing intersection per speaker and taking the argmax is what WhisperX does
+// (assign_word_speakers), and it costs nothing extra: we already have the intervals.
+//
+// Midpoint survives only as a tiebreak, where the two rules agree by construction anyway.
 function speakerAt(intervals, t0Ms, t1Ms) {
     const mid = (t0Ms + t1Ms) / 2;
-    let best = null;
+
+    const byLabel = new Map();
     for (const iv of intervals) {
-        if (iv.t0Ms <= mid && mid < iv.t1Ms) {
-            if (!best || iv.t1Ms - iv.t0Ms < best.t1Ms - best.t0Ms) best = iv; // tightest wins
+        const shared = Math.min(iv.t1Ms, t1Ms) - Math.max(iv.t0Ms, t0Ms);
+        if (shared <= 0) continue;
+
+        const prev = byLabel.get(iv.speakerLabel);
+        const coversMid = iv.t0Ms <= mid && mid < iv.t1Ms;
+        if (!prev) {
+            byLabel.set(iv.speakerLabel, { iv, shared, coversMid });
+            continue;
+        }
+        // One speaker can hold several intervals inside the span; they count together, and the
+        // tightest of them represents the speaker for the later tiebreaks.
+        prev.shared += shared;
+        prev.coversMid = prev.coversMid || coversMid;
+        if (iv.t1Ms - iv.t0Ms < prev.iv.t1Ms - prev.iv.t0Ms) prev.iv = iv;
+    }
+
+    let best = null;
+    for (const cand of byLabel.values()) {
+        if (!best
+            || cand.shared > best.shared
+            || (cand.shared === best.shared && cand.coversMid && !best.coversMid)
+            || (cand.shared === best.shared && cand.coversMid === best.coversMid
+                && cand.iv.t1Ms - cand.iv.t0Ms < best.iv.t1Ms - best.iv.t0Ms)) {
+            best = cand;
         }
     }
-    return best;
+    return best ? best.iv : null;
 }
 
 // union of overlap intervals clipped to [t0,t1], as a fraction of the span.

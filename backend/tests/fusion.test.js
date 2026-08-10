@@ -5,23 +5,36 @@ const spk = (t0, t1, label, confidence) => ({ t0Ms: t0, t1Ms: t1, speakerLabel: 
 const ov = (t0, t1) => ({ t0Ms: t0, t1Ms: t1 });
 
 describe('speaker assignment', () => {
-    it('assigns the speaker whose interval covers the midpoint', () => {
+    it('assigns the speaker holding the span', () => {
         const intervals = [spk(0, 1000, 'S1'), spk(1000, 2000, 'S2')];
         expect(speakerAt(intervals, 1200, 1800).speakerLabel).toBe('S2');
     });
 
-    it('prefers the tightest interval when several cover the midpoint', () => {
+    // The reason midpoint was replaced. A backchannel landing mid-segment used to take the whole
+    // segment away from the person who spoke for almost all of it.
+    it('does not let a brief interjection at the midpoint take the whole span', () => {
+        const intervals = [spk(0, 4900, 'S1'), spk(4900, 5300, 'S2'), spk(5300, 10000, 'S3')];
+        expect(speakerAt(intervals, 0, 10000).speakerLabel).toBe('S1');
+    });
+
+    it('adds up a speaker who holds several intervals inside the span', () => {
+        // S2 wins on total time despite S1 owning the single longest interval.
+        const intervals = [spk(0, 3000, 'S1'), spk(3000, 5500, 'S2'), spk(6000, 8000, 'S2')];
+        expect(speakerAt(intervals, 0, 8000).speakerLabel).toBe('S2');
+    });
+
+    it('prefers the tightest interval when several hold the span equally', () => {
         const intervals = [spk(0, 10000, 'S1'), spk(900, 1100, 'S2')];
         expect(speakerAt(intervals, 950, 1050).speakerLabel).toBe('S2');
     });
 
-    it('returns null when nothing covers the midpoint', () => {
+    it('returns null when no interval touches the span', () => {
         expect(speakerAt([spk(0, 500, 'S1')], 1000, 2000)).toBeNull();
     });
 
-    it('treats an interval as half-open so adjacent turns do not both match', () => {
+    it('breaks an exact tie on the midpoint, so adjacent turns do not both match', () => {
         const intervals = [spk(0, 1000, 'S1'), spk(1000, 2000, 'S2')];
-        expect(speakerAt(intervals, 500, 1500).speakerLabel).toBe('S2'); // midpoint 1000
+        expect(speakerAt(intervals, 500, 1500).speakerLabel).toBe('S2'); // 500ms each, midpoint 1000
     });
 });
 
