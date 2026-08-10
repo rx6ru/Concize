@@ -133,11 +133,48 @@
     },
 
     "cerebras": {
-      "tier": "unknown",
-      "verifiedOn": null,
-      "source": "not established — the key on file returns 401 and the model it used was retired",
-      "defaults": {},
-      "models": {}
+      "tier": "free",
+      "verifiedOn": "2026-08-10",
+      "source": "measured from x-ratelimit-*-{minute,hour,day} response headers",
+      "_why": [
+        "Far roomier than Groq on the same model: 1M tokens/day against 200k, 30k/min against 8k,",
+        "and a 65k context against an effective 8k per request. That last one is what decides",
+        "whether a whole transcript can be prompted at all.",
+        "",
+        "The catch is requests, not tokens: 5 per minute. Fine for batch evaluation, too slow for",
+        "a live chat path, which is why production stays on Groq for latency and this is the",
+        "better home for long-context and bulk work.",
+        "",
+        "Model ids differ from Groq's for the same model — 'gpt-oss-120b', not 'openai/gpt-oss-120b'."
+      ],
+      "defaults": {
+        "requestsPerMinute": 5,
+        "requestsPerDay": 2400,
+        "tokensPerMinute": 30000,
+        "tokensPerDay": 1000000,
+        "maxRequestTokens": 65000,
+        "maxConcurrent": 2
+      },
+      "models": {
+        "gpt-oss-120b": {
+          "requestsPerMinute": 5,
+          "requestsPerDay": 2400,
+          "tokensPerMinute": 30000,
+          "tokensPerDay": 1000000,
+          "maxRequestTokens": 65000
+        },
+        "gemma-4-31b": {
+          "requestsPerMinute": 5,
+          "requestsPerDay": 2400,
+          "tokensPerMinute": 30000,
+          "tokensPerDay": 1000000,
+          "maxRequestTokens": 65000
+        },
+        "zai-glm-4.7": {
+          "maxRequestTokens": 64000,
+          "_note": "preview model, may be withdrawn at short notice"
+        }
+      }
     },
 
     "sarvam": {

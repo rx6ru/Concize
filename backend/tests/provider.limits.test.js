@@ -34,7 +34,17 @@ describe('lookup', () => {
     // A missing number must not read as "no limit" — the caller has to be able to tell.
     it('reports an unestablished limit as null rather than guessing', () => {
         expect(limitsFor('groq', 'openai/gpt-oss-120b').requestsPerMinute).toBeNull();
-        expect(limitsFor('cerebras', 'anything').tokensPerMinute).toBeNull();
+        expect(limitsFor('nobody-yet', 'anything').tokensPerMinute).toBeNull();
+    });
+
+    it('knows cerebras hosts the same model with far more headroom than groq', () => {
+        const groq = limitsFor('groq', 'openai/gpt-oss-120b');
+        const cerebras = limitsFor('cerebras', 'gpt-oss-120b');
+
+        expect(cerebras.maxRequestTokens).toBeGreaterThan(groq.maxRequestTokens * 8);
+        expect(cerebras.tokensPerDay).toBeGreaterThan(groq.tokensPerDay * 4);
+        // The trade: requests are the scarce thing there, which rules it out for a live path.
+        expect(cerebras.requestsPerMinute).toBe(5);
     });
 
     it('ignores the annotation keys', () => {

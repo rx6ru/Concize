@@ -22,7 +22,10 @@ const MAX_WAIT_MS = parseInt(process.env.SARVAM_MAX_WAIT_MS || '300000', 10); //
 async function initiateJob(options = {}) {
     // num_speakers is optional and the provider detects the count when it is absent. Defaulting
     // it to 2 forced every meeting into two clusters, however many people were actually talking.
-    const model = options.model || 'saaras:v3';
+    // v4 is available and accepts language_code 'unknown' exactly as v3 does, so auto-detection
+    // still works. Configurable rather than hardcoded so the two can be compared on real audio.
+    // (v4-multispk is a different model: it is beta-gated AND does require an explicit language.)
+    const model = options.model || process.env.SARVAM_BATCH_MODEL || 'saaras:v3';
     const jobParameters = {
         model,
         mode: options.mode || 'transcribe',
