@@ -64,6 +64,20 @@ function coverageOf(inner, outer) {
 // does not. Four characters a token is close enough to size a context window against.
 const sizeOf = (c) => c.tokens || Math.ceil((c.text || '').length / 4);
 
+// Most of a layer's share of the context window, by layer.
+//
+// Narrative chunks were taking 68% of the budget on a 71-minute meeting, measured. They earn it
+// on rank — a summary is written in the same register as a question, so it scores well against
+// one — and then spend it on size, averaging 353 tokens against a verbatim chunk's 111. The
+// effect grows with the meeting: at 18 minutes there are eight narratives and they cannot crowd
+// anything out, at 71 minutes there are twenty-six and they alone are nearly twice the budget.
+//
+// That is the wrong way round. A summary is a paraphrase, and answering a specific question from
+// a paraphrase is how a system ends up confidently vague, which matches what the long-meeting
+// arm of the sweep actually looked like. Capping the abstract layers leaves room for the words
+// that were really said; anything unspent still goes to the best remaining candidate.
+const LAYER_CAPS = { 2: 0.35, 3: 0.25 };
+
 /**
  * Fills the context up to a token budget rather than a fixed number of chunks.
  *
@@ -73,20 +87,40 @@ const sizeOf = (c) => c.tokens || Math.ceil((c.text || '').length / 4);
  * adds coverage. The top candidate is always returned even when it alone busts the budget —
  * sending a too-large prompt fails loudly, whereas returning nothing fails silently.
  */
-function takeWithinBudget(candidates, budget) {
-    const kept = [];
+function takeWithinBudget(candidates, budget, { layerCaps = LAYER_CAPS } = {}) {
+    const taken = new Set();
+    const spentByLayer = new Map();
     let spent = 0;
 
-    for (const c of candidates) {
+    const take = (c) => {
         const size = sizeOf(c);
-        if (spent + size > budget) {
-            if (!kept.length) { kept.push(c); spent += size; }
-            continue;
-        }
-        kept.push(c);
+        taken.add(c);
         spent += size;
+        spentByLayer.set(c.layer, (spentByLayer.get(c.layer) || 0) + size);
+    };
+
+    // The top candidate always goes in, even when it alone busts the budget and whatever its
+    // layer: sending a too-large prompt fails loudly, returning nothing fails silently.
+    if (candidates.length) take(candidates[0]);
+
+    // Two passes in rank order. The first honours each layer's ceiling; the second spends
+    // whatever is left on the best remaining candidates regardless of layer, so a capped budget
+    // is never handed back underfilled.
+    for (const useCaps of [true, false]) {
+        for (const c of candidates) {
+            if (taken.has(c)) continue;
+            const size = sizeOf(c);
+            if (spent + size > budget) continue;
+
+            const cap = useCaps ? layerCaps[c.layer] : null;
+            if (cap != null && (spentByLayer.get(c.layer) || 0) + size > budget * cap) continue;
+
+            take(c);
+        }
     }
-    return kept;
+
+    // Rank order, so the second pass cannot shuffle a later candidate ahead of an earlier one.
+    return candidates.filter((c) => taken.has(c));
 }
 
 function dropSubsumed(candidates) {
@@ -100,12 +134,16 @@ function dropSubsumed(candidates) {
 
 /**
  * @param {object} deps
- * @param {function} deps.denseSearch     ({query, meetingId, ownerId, layer, limit}) => hits
+ * @param {function} deps.denseSearch     ({query, meetingId, ownerId, layer, limit, vector}) => hits
  * @param {function} [deps.sparseSearch]  same shape; omit to run dense-only
  * @param {function} [deps.recentTurns]   ({meetingId, sinceMs}) => utterances
  * @param {function} [deps.rerank]        ({query, candidates, topN}) => candidates
+ * @param {function} [deps.embedQuery]    (text) => vector, so one question is embedded once
+ *   rather than once per layer. Optional: without it each layer embeds for itself.
  */
-function createRetrieval({ denseSearch, sparseSearch = null, recentTurns = null, rerank = null }) {
+function createRetrieval({
+    denseSearch, sparseSearch = null, recentTurns = null, rerank = null, embedQuery = null,
+}) {
 
     const keyOf = (c) => c.vectorId || `${c.layer}:${c.ordinal}:${c.rev ?? 0}`;
 
@@ -129,8 +167,21 @@ function createRetrieval({ denseSearch, sparseSearch = null, recentTurns = null,
         }) {
             const lists = [];
 
+            // One embedding for the whole question, reused by every layer. Embedding per layer
+            // tripled both the latency and the daily embedding quota a single question cost.
+            let vector = null;
+            if (embedQuery) {
+                try {
+                    vector = await embedQuery(query);
+                } catch (err) {
+                    // Let each layer try for itself rather than lose the answer outright.
+                    logger.warn('Query embedding failed, falling back to per-layer',
+                        { meetingId, error: err.message });
+                }
+            }
+
             for (const layer of layers) {
-                const args = { query, meetingId, ownerId, layer, limit: perLayer };
+                const args = { query, meetingId, ownerId, layer, limit: perLayer, vector };
                 const [dense, sparse] = await Promise.all([
                     denseSearch(args).catch((err) => {
                         logger.error('Dense search failed', { meetingId, layer, error: err.message });
@@ -203,4 +254,6 @@ function createRetrieval({ denseSearch, sparseSearch = null, recentTurns = null,
     };
 }
 
-module.exports = { createRetrieval, rrfFuse, dropSubsumed, overlapsInTime, RRF_K };
+module.exports = {
+    createRetrieval, rrfFuse, dropSubsumed, overlapsInTime, takeWithinBudget, RRF_K, LAYER_CAPS,
+};

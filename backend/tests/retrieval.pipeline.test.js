@@ -3,7 +3,7 @@ jest.mock('../src/core/logger', () => ({
 }));
 
 const {
-    createRetrieval, rrfFuse, dropSubsumed, overlapsInTime,
+    createRetrieval, rrfFuse, dropSubsumed, overlapsInTime, takeWithinBudget,
 } = require('../src/chat/retrieval.pipeline');
 
 const hit = (ordinal, over = {}) => ({
@@ -104,6 +104,49 @@ function makeRetrieval(over = {}) {
     });
 }
 
+describe('one embedding per question', () => {
+    it('embeds the question once and shares the vector across every layer', async () => {
+        const embedQuery = jest.fn(async () => [0.1, 0.2]);
+        const denseSearch = jest.fn(async () => []);
+        const r = createRetrieval({ denseSearch, embedQuery });
+
+        await r.retrieve({ query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1, 2, 3] });
+
+        expect(embedQuery).toHaveBeenCalledTimes(1);
+        expect(denseSearch).toHaveBeenCalledTimes(3);
+        for (const call of denseSearch.mock.calls) {
+            expect(call[0].vector).toEqual([0.1, 0.2]);
+        }
+    });
+
+    // Losing the shared vector should cost a round-trip, not the answer.
+    it('lets each layer embed for itself when the shared embedding fails', async () => {
+        const denseSearch = jest.fn(async () => [hit(1)]);
+        const r = createRetrieval({
+            denseSearch,
+            embedQuery: jest.fn(async () => { throw new Error('embedding 429'); }),
+        });
+
+        const { context } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+        });
+
+        expect(denseSearch.mock.calls[0][0].vector).toBeNull();
+        expect(context).toHaveLength(1);
+    });
+
+    it('still works with no embedQuery injected at all', async () => {
+        const denseSearch = jest.fn(async () => [hit(1)]);
+        const r = createRetrieval({ denseSearch });
+
+        const { context } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+        });
+
+        expect(context).toHaveLength(1);
+    });
+});
+
 describe('retrieve', () => {
     it('runs dense and sparse per layer and fuses them', async () => {
         const denseSearch = jest.fn(async () => [hit(1)]);
@@ -155,6 +198,47 @@ describe('retrieve', () => {
     // A fixed chunk count means coverage falls as meetings grow: 8 chunks is a quarter of an
     // 18-minute meeting and a fourteenth of a 71-minute one, while the prompt sits at well under
     // half the model's budget either way. Filling to the budget keeps coverage roughly flat.
+    // Measured on a 71-minute meeting: narrative chunks took 68% of the window because they rank
+    // well (written in the same register as the question) and cost 3x a verbatim chunk.
+    describe('layer budget caps', () => {
+        const at = (ordinal, layer, tokens) => hit(ordinal, { layer, tokens });
+
+        it('stops summaries crowding out the words that were actually said', () => {
+            // Every narrative outranks every verbatim chunk, which is the real failure.
+            const candidates = [
+                at(1, 2, 350), at(2, 2, 350), at(3, 2, 350), at(4, 2, 350),
+                at(5, 1, 110), at(6, 1, 110), at(7, 1, 110), at(8, 1, 110),
+            ];
+            const kept = takeWithinBudget(candidates, 1000);
+
+            const narrative = kept.filter((c) => c.layer === 2).reduce((n, c) => n + c.tokens, 0);
+            expect(narrative).toBeLessThanOrEqual(350);      // 35% of 1000, so one chunk
+            expect(kept.some((c) => c.layer === 1)).toBe(true);
+        });
+
+        it('spends leftover budget rather than returning it unused', () => {
+            // Nothing but narratives available: the cap must not leave the window half empty.
+            const candidates = [at(1, 2, 300), at(2, 2, 300), at(3, 2, 300)];
+            const kept = takeWithinBudget(candidates, 1000);
+
+            expect(kept).toHaveLength(3);
+        });
+
+        it('leaves verbatim uncapped', () => {
+            const candidates = Array.from({ length: 10 }, (_, i) => at(i + 1, 1, 100));
+            expect(takeWithinBudget(candidates, 1000)).toHaveLength(10);
+        });
+
+        it('still returns something when the best candidate alone busts the budget', () => {
+            expect(takeWithinBudget([at(1, 2, 9000)], 1000)).toHaveLength(1);
+        });
+
+        it('keeps rank order within what it selects', () => {
+            const candidates = [at(1, 1, 100), at(2, 2, 100), at(3, 1, 100)];
+            expect(takeWithinBudget(candidates, 1000).map((c) => c.ordinal)).toEqual([1, 2, 3]);
+        });
+    });
+
     describe('token-budgeted context', () => {
         const sized = (ordinal, tokens) => hit(ordinal, { tokens });
 

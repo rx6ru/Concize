@@ -60,6 +60,7 @@ function get() {
         parts = {
             retrieval: createRetrieval({
                 denseSearch: index.denseSearch,
+                embedQuery: index.embedQuery,
                 sparseSearch: ({ query: text, meetingId, ownerId, layer, limit }) =>
                     searchChunkText(meetingId, { text, ownerId, layer, limit }),
                 recentTurns: ({ meetingId, sinceMs }) =>
@@ -85,8 +86,13 @@ async function checkQuery(text) {
  * @param {object} opts
  * @param {number} [opts.nowMs] current session time, for the staleness line. The chat request
  *   does not carry a session clock yet, so staleness is normally omitted rather than faked.
+ * @param {number} [opts.maxContextTokens] override the derived budget. Production leaves this
+ *   alone; it exists because an evaluation that swaps the answering model would otherwise still
+ *   size retrieval against the *configured* model. That mismatch silently handed the
+ *   whole-transcript arm 12.8k tokens while retrieval got 4.8k, and the resulting gap looked
+ *   like a retrieval failure rather than the budget difference it partly was.
  */
-async function buildContext({ query, meetingId, ownerId, nowMs = null }) {
+async function buildContext({ query, meetingId, ownerId, nowMs = null, maxContextTokens }) {
     const { retrieval, guard } = get();
 
     const watermarkMs = await getWatermarkMs(meetingId).catch((err) => {
@@ -95,7 +101,8 @@ async function buildContext({ query, meetingId, ownerId, nowMs = null }) {
     });
 
     const result = await retrieval.retrieve({
-        query, meetingId, ownerId, watermarkMs, maxContextTokens: contextBudget(),
+        query, meetingId, ownerId, watermarkMs,
+        maxContextTokens: maxContextTokens ?? contextBudget(),
     });
     if (!result.context.length) return null;
 

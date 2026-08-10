@@ -50,8 +50,18 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
         return { must };
     }
 
+    /** Embeds a question once so every layer's search can share the vector. */
+    async function embedQuery(text) {
+        const vector = await embed(text);
+        if (!Array.isArray(vector) || !vector.length) {
+            throw new Error('query embedding returned no vector');
+        }
+        return vector;
+    }
+
     return {
         ensureCollection,
+        embedQuery,
 
         async upsert(id, vector, payload) {
             await client.upsert(collection, {
@@ -60,15 +70,19 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
             });
         },
 
-        /** Matches the denseSearch contract expected by retrieval.pipeline. */
-        async denseSearch({ query, meetingId, ownerId, layer, limit = 20 }) {
-            const vector = await embed(query);
-            if (!Array.isArray(vector) || !vector.length) {
-                throw new Error('query embedding returned no vector');
-            }
+        /**
+         * Matches the denseSearch contract expected by retrieval.pipeline.
+         *
+         * `vector` is optional and lets the caller embed the question once for all layers.
+         * Without it this embeds per call, which meant one question cost an embedding per layer:
+         * three requests against a 1000/day quota, three round-trips of latency, and one of them
+         * for a layer that holds no chunks.
+         */
+        async denseSearch({ query, meetingId, ownerId, layer, limit = 20, vector = null }) {
+            const queryVector = vector || await embedQuery(query);
 
             const hits = await client.search(collection, {
-                vector,
+                vector: queryVector,
                 filter: filterFor(meetingId, ownerId, layer),
                 limit,
                 with_payload: true,
