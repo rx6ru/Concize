@@ -152,3 +152,37 @@ describe('alignment', () => {
         expect(revisions[0].text).toBe('first second');
     });
 });
+
+// Measured word-weighted against AMI ground truth on three meetings: batch diarization scores
+// 55.0% speaker error, the live lane 34.4%. Letting batch overwrite attribution was reliably
+// trading a better label for a worse one.
+describe('who owns speaker attribution', () => {
+    it('keeps the live label when the live lane made a call', () => {
+        const [r] = align(
+            [live('t1', 0, 5000, 'rough words', 'S1')],
+            [bat(0, 5000, 'the corrected words', '7')],
+        ).revisions;
+
+        expect(r.text).toBe('the corrected words');   // batch still wins the wording
+        expect(r.speakerLabel).toBe('S1');            // but not the speaker
+    });
+
+    it('fills in attribution the live lane never made', () => {
+        const [r] = align(
+            [live('t1', 0, 5000, 'rough words', null)],
+            [bat(0, 5000, 'the corrected words', '7')],
+        ).revisions;
+
+        expect(r.speakerLabel).toBeTruthy();
+    });
+
+    it('does not raise a revision when only the batch speaker disagrees', () => {
+        // Same wording, live already attributed: there is nothing left worth rewriting.
+        const { revisions } = align(
+            [live('t1', 0, 5000, 'same words', 'S1')],
+            [bat(0, 5000, 'same words', '7')],
+        );
+
+        expect(revisions).toHaveLength(0);
+    });
+});
