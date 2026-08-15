@@ -27,7 +27,25 @@ function buildUserMessage(chunks) {
     return `Speakers: ${speakers}\nTime range: ${t0}ms to ${t1}ms\n\n${lines.join('\n')}`;
 }
 
+// Same reasoning as the floor in chunk.boundary, one layer up. A narrative spans several verbatim
+// chunks, so "any source chunk was contested" flags nearly every narrative in a real meeting and
+// the marker stops carrying information. Weight by how long each source chunk ran.
+const CONTESTED_FLOOR = 0.25;
+
+function contestedShare(chunks) {
+    let overlapped = 0;
+    let total = 0;
+    for (const c of chunks) {
+        const ms = Math.max(0, (c.t1Ms ?? 0) - (c.t0Ms ?? 0));
+        if (!ms) continue;
+        overlapped += (c.contestedShare ?? (c.hasOverlap ? 1 : 0)) * ms;
+        total += ms;
+    }
+    return total ? overlapped / total : 0;
+}
+
 function buildChunk(chunks, ordinal, text) {
+    const contested = contestedShare(chunks);
     return {
         layer: 2,
         ordinal,
@@ -35,7 +53,8 @@ function buildChunk(chunks, ordinal, text) {
         t1Ms: chunks[chunks.length - 1].t1Ms,
         text,
         speakers: unionSpeakers(chunks),
-        hasOverlap: chunks.some((c) => c.hasOverlap),
+        hasOverlap: contested >= CONTESTED_FLOOR,
+        contestedShare: Number(contested.toFixed(3)),
         turnIds: chunks.flatMap((c) => c.turnIds || []),
         tokens: estimateTokens(text),
         sourceOrdinals: chunks.map((c) => c.ordinal),

@@ -285,3 +285,47 @@ describe('a burst of chunks', () => {
         expect(new Set(ordinals).size).toBe(ordinals.length);
     });
 });
+
+// One layer up from chunk.boundary, and the same trap: a narrative covers several verbatim
+// chunks, so flagging on "any source was contested" marks nearly every narrative in a real
+// meeting and the marker stops meaning anything.
+describe('contested narratives', () => {
+    const src = (t0, t1, share) => ({
+        ordinal: n++, t0Ms: t0, t1Ms: t1, text: 'x', speakers: ['S1'], turnIds: [`turn${n}`],
+        contestedShare: share, hasOverlap: share >= 0.25,
+    });
+
+    const narrate = async (sources) => {
+        const { narrator } = makeNarrator();
+        let out = null;
+        for (const s of sources) out = await narrator.add('m1', s) || out;
+        return out || narrator.flush('m1').then((cs) => cs[0]);
+    };
+
+    it('does not flag a long narrative for one short contested chunk', async () => {
+        const out = await narrate([
+            src(0, 60000, 0), src(60000, 120000, 0), src(120000, 180000, 0), src(180000, 183000, 1),
+        ]);
+        expect(out.hasOverlap).toBe(false);
+        expect(out.contestedShare).toBeLessThan(0.05);
+    });
+
+    it('flags a narrative whose sources were mostly contested', async () => {
+        const out = await narrate([
+            src(0, 60000, 1), src(60000, 120000, 1), src(120000, 180000, 0.5), src(180000, 240000, 0),
+        ]);
+        expect(out.hasOverlap).toBe(true);
+    });
+
+    it('falls back to the flag for chunks stored before shares existed', async () => {
+        const legacy = (t0, t1, flag) => ({
+            ordinal: n++, t0Ms: t0, t1Ms: t1, text: 'x', speakers: ['S1'], turnIds: [`t${n}`],
+            hasOverlap: flag,
+        });
+        const out = await narrate([
+            legacy(0, 1000, true), legacy(1000, 2000, true), legacy(2000, 3000, true),
+            legacy(3000, 4000, false),
+        ]);
+        expect(out.hasOverlap).toBe(true);
+    });
+});
