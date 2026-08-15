@@ -6,10 +6,14 @@
 //
 //     precision 32.9%   recall 18.9%   F1 23.6%      (eval/overlap-accuracy.js, 3 AMI meetings)
 //
-// against roughly 0.60–0.70 F1 for a dedicated detector such as pyannote segmentation-3.0. It
-// misses four fifths of real overlap, so the downstream hedging it feeds mostly does not fire.
-// Keep it as a floor until a real overlapped-speech-detection lane exists; do not mistake it for
-// one. The interface is deliberately the same shape a real lane would use.
+// against 69.2% for pyannote segmentation-3.0 measured on the same three meetings, and 63.3% for
+// that model streaming frame by frame through speaker-service/overlap.py, which is what actually
+// ships. It misses four fifths of real overlap, so the hedging it feeds mostly does not fire.
+//
+// This is now the fallback, used only when the speaker service has no overlap model loaded. The
+// gap is structural rather than a matter of tuning: a clustering backend gives each segment
+// exactly one speaker, so two people talking at once inside a segment is invisible to it and
+// there is nothing to intersect.
 //
 // This is deliberately a pure function over intervals, so the same code serves the live lane, the
 // batch reconciliation pass, and a real pyannote lane later if one is ever wired.
