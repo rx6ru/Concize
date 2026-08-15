@@ -6,7 +6,12 @@
 #   client ->  {"event":"flush"} | {"event":"end"} | {"event":"ping"}
 #   server ->  {"event":"ready"}
 #              {"event":"speaker","t0_ms":..,"t1_ms":..,"speaker":"3","confidence":"confident"}
+#              {"event":"overlap","t0_ms":..,"t1_ms":..}
 #              {"event":"error","message":"..","fatal":true}
+#
+# Overlap rides this socket rather than a second one: the detector reads the audio the diarizer is
+# already being fed, so both signals share one clock. It is optional — without an HF_TOKEN the
+# model does not load and the session runs exactly as it did before.
 
 import argparse
 import asyncio
@@ -18,6 +23,7 @@ from urllib.parse import urlparse, parse_qs
 
 import websockets
 
+from overlap import OverlapSession, load_model as load_overlap_model
 from speaker import SpeakerSession, build_tracker, SAMPLE_RATE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -41,6 +47,9 @@ def load_models(device):
     _models["vad"] = _models["vad_factory"]()
     _models["tracker_cls"] = HybridSpeakerTracker
     _models["device"] = device
+    # Deliberately on CPU: it is 1.5M parameters against CAM++ already holding the GPU, and the
+    # box this runs on has 4GB of VRAM.
+    _models["overlap"] = load_overlap_model()
     log.info("models ready")
 
 
@@ -59,6 +68,7 @@ async def handle(ws):
 
     tracker = build_tracker(_models["spk"], _models["device"], _models["tracker_cls"])
     session = SpeakerSession(session_id, tracker, _models["vad_factory"](), sample_rate)
+    overlap = OverlapSession(_models.get("overlap"), sample_rate)
 
     await ws.send(json.dumps({"event": "ready"}))
     log.info("session open: %s", session_id)
@@ -68,6 +78,9 @@ async def handle(ws):
         async for message in ws:
             if isinstance(message, bytes):
                 intervals = await run(session.add_audio, message)
+                # Same audio, second opinion. Runs outside the model lock: it is a separate
+                # CPU model, so serialising it behind the GPU one would only add latency.
+                intervals += await asyncio.to_thread(overlap.add_audio, message)
             else:
                 try:
                     event = json.loads(message).get("event")
@@ -77,6 +90,7 @@ async def handle(ws):
                     continue
                 if event in ("flush", "end"):
                     intervals = await run(session.flush)
+                    intervals += await asyncio.to_thread(overlap.flush)
                 else:
                     continue
                 if event == "end":
