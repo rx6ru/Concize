@@ -7,7 +7,12 @@
 //   client →  {"event":"flush"} | {"event":"end"} | {"event":"ping"}
 //   server →  {"event":"ready"}
 //             {"event":"speaker","t0_ms":0,"t1_ms":1500,"speaker":"0","confidence":"confident"}
+//             {"event":"overlap","t0_ms":900,"t1_ms":1400,"speakers":["0","1"]}
 //             {"event":"error","message":"...","fatal":true}
+//
+// Overlap arrives on this same socket rather than a third connection: the detector reads the
+// audio the diarizer is already being fed, and one stream means one clock. The gateway routes
+// on the normalised `lane`, not on which socket delivered it.
 //
 // Speaker intervals are advisory: fusion joins them to words by timestamp and emits text
 // either way. A dead speaker service costs attribution, not transcription, so this lane
@@ -30,6 +35,21 @@ const RECONNECT_MAX_MS = 10000;
 const PRECONNECT_MAX_FRAMES = 100;
 
 function normalise(msg) {
+    // A dedicated detector's spans, when the service has one. Deriving overlap from intersecting
+    // speaker intervals scores 23.6% F1 against 69.2% for pyannote segmentation-3.0 on the same
+    // AMI meetings, because a clustering backend gives each segment exactly one speaker and so
+    // cannot represent two people at once — there is nothing to intersect.
+    if (msg.event === 'overlap') {
+        return {
+            lane: 'overlap',
+            kind: 'interval',
+            t0Ms: msg.t0_ms,
+            t1Ms: msg.t1_ms,
+            speakers: (msg.speakers || []).map((s) => `S${s}`),
+            raw: msg,
+        };
+    }
+
     if (msg.event !== 'speaker') return null;
     return {
         lane: 'speaker',
