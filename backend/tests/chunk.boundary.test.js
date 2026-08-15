@@ -115,7 +115,42 @@ describe('chunk contents', () => {
         expect(chunk.turnIds).toHaveLength(3);
     });
 
-    it('flags a chunk containing any overlapped utterance', () => {
+    it('flags a chunk that was mostly people talking over each other', () => {
+        const c = createChunker({ maxDurationMs: 2000, overlapRatio: 0 });
+        c.add(utt(0, 1000, 'a', 'S1'));
+        const chunk = c.add(utt(1000, 3000, 'b', 'S2', { overlap: true, overlapRatio: 1 }));
+        expect(chunk.hasOverlap).toBe(true);
+        expect(chunk.contestedShare).toBeGreaterThan(0.5);
+    });
+
+    // The reason this is a share and not `some()`. About a tenth of real meeting speech is
+    // overlapped, so once detection actually works a long chunk nearly always contains a little.
+    // Flagging on any of it marks everything, and a model told to hedge everywhere is no more
+    // useful than one told to hedge nowhere.
+    it('does not flag a long clean chunk for one crossed word', () => {
+        const c = createChunker({ maxDurationMs: 60000, maxTokens: 10000, overlapRatio: 0 });
+        for (let i = 0; i < 10; i++) c.add(utt(i * 5000, i * 5000 + 5000, `turn ${i}`, 'S1'));
+        c.add(utt(50000, 50600, 'mhm', 'S1', { overlap: true, overlapRatio: 1 }));
+        const chunk = c.flush();
+
+        expect(chunk.hasOverlap).toBe(false);
+        expect(chunk.contestedShare).toBeLessThan(0.05);
+    });
+
+    it('weights by how long each turn ran, not how many turns there were', () => {
+        const c = createChunker({ maxDurationMs: 30000, overlapRatio: 0 });
+        // Three short contested turns against one long clean one: by count it looks contested,
+        // by time it is not, and time is what the listener actually experienced.
+        for (let i = 0; i < 3; i++) {
+            c.add(utt(i * 500, i * 500 + 500, 'x', 'S2', { overlap: true, overlapRatio: 1 }));
+        }
+        const chunk = c.add(utt(1500, 31500, 'the long clean explanation', 'S1'));
+
+        expect(chunk.contestedShare).toBeLessThan(0.1);
+        expect(chunk.hasOverlap).toBe(false);
+    });
+
+    it('falls back to the flag for turns recorded before ratios existed', () => {
         const c = createChunker({ maxDurationMs: 2000, overlapRatio: 0 });
         c.add(utt(0, 1000, 'a', 'S1'));
         const chunk = c.add(utt(1000, 3000, 'b', 'S2', { overlap: true }));

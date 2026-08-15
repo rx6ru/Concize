@@ -104,6 +104,19 @@ async function buildContext({ query, meetingId, ownerId, nowMs = null, maxContex
         query, meetingId, ownerId, watermarkMs,
         maxContextTokens: maxContextTokens ?? contextBudget(),
     });
+
+    // Answering from an empty context because the search backends are down produces "the
+    // transcript does not mention that", which is indistinguishable from a real answer and is a
+    // lie. Fail loudly instead; the caller can tell the user to try again.
+    if (result.stats.unavailable) {
+        logger.error('Every retrieval lane failed', {
+            meetingId, laneFailures: result.stats.laneFailures,
+        });
+        const err = new Error('retrieval unavailable');
+        err.code = 'RETRIEVAL_UNAVAILABLE';
+        throw err;
+    }
+
     if (!result.context.length) return null;
 
     // Screening marks lines, it does not remove them (see injection.guard).

@@ -14,6 +14,16 @@ const DEFAULTS = {
     startOrdinal: 0,          // resumed meetings carry on from the last stored chunk
 };
 
+// How much of a chunk has to be contested before the chunk is called overlapped.
+//
+// This used to be "any turn in the chunk was flagged", which only survived because the detector
+// behind it caught almost nothing. Roughly a tenth of meeting speech is genuinely overlapped, so
+// once detection works, a 90-second chunk of a four-person meeting nearly always contains some —
+// and flagging every chunk means the model hedges every answer, which is exactly as useless as
+// hedging none of them. A quarter is around 2.5x the base rate: a passage people actually talked
+// over, not a passage containing one crossed word.
+const CONTESTED_FLOOR = 0.25;
+
 // Rough token estimate, not a real tokenizer call. Runs per utterance on the live path and
 // a ~15% error only shifts a boundary slightly.
 function estimateTokens(text) {
@@ -47,9 +57,25 @@ function createChunker(opts = {}) {
 
     const spanMs = () => (buffer.length ? buffer[buffer.length - 1].t1Ms - buffer[0].t0Ms : 0);
 
+    /** Share of a chunk's speech that was contested, weighted by how long each turn ran. */
+    function contestedShare() {
+        let overlapped = 0;
+        let total = 0;
+        for (const u of buffer) {
+            const ms = Math.max(0, (u.t1Ms ?? 0) - (u.t0Ms ?? 0));
+            if (!ms) continue;
+            // Fusion records a per-turn ratio; fall back to the flag for anything older.
+            const share = u.overlapRatio ?? (u.overlap ? 1 : 0);
+            overlapped += share * ms;
+            total += ms;
+        }
+        return total ? overlapped / total : 0;
+    }
+
     function close(reason) {
         if (!buffer.length) return null;
 
+        const contested = contestedShare();
         const chunk = {
             ordinal: ordinal++,
             t0Ms: buffer[0].t0Ms,
@@ -57,7 +83,8 @@ function createChunker(opts = {}) {
             text: buffer.map((u) => u.text).join(' '),
             turnIds: buffer.map((u) => u.turnId),
             speakers: [...new Set(buffer.map((u) => u.speakerLabel).filter(Boolean))],
-            hasOverlap: buffer.some((u) => u.overlap),
+            hasOverlap: contested >= CONTESTED_FLOOR,
+            contestedShare: Number(contested.toFixed(3)),
             tokens,
             reason,
         };

@@ -104,6 +104,68 @@ function makeRetrieval(over = {}) {
     });
 }
 
+// A dead search backend used to look exactly like a meeting that never mentioned the topic:
+// empty context in, "the transcript does not cover that" out. That answer is worse than an
+// error because it sounds correct.
+describe('telling "found nothing" apart from "could not look"', () => {
+    const boom = () => { throw new Error('ECONNREFUSED'); };
+
+    it('reports unavailable when every lane fails', async () => {
+        const r = createRetrieval({
+            denseSearch: jest.fn(boom),
+            sparseSearch: jest.fn(boom),
+            recentTurns: jest.fn(boom),
+        });
+        const { stats } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1, 2],
+        });
+
+        expect(stats.unavailable).toBe(true);
+        expect(stats.laneFailures).toBe(4);
+    });
+
+    it('does not report unavailable when the lanes simply found nothing', async () => {
+        const r = createRetrieval({
+            denseSearch: jest.fn(async () => []),
+            sparseSearch: jest.fn(async () => []),
+            recentTurns: jest.fn(async () => []),
+        });
+        const { context, stats } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+        });
+
+        expect(context).toHaveLength(0);
+        expect(stats.unavailable).toBe(false);
+    });
+
+    it('is not unavailable while one lane still answers', async () => {
+        const r = createRetrieval({
+            denseSearch: jest.fn(boom),
+            sparseSearch: jest.fn(async () => [hit(1)]),
+        });
+        const { context, stats } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+        });
+
+        expect(context).toHaveLength(1);
+        expect(stats.unavailable).toBe(false);
+    });
+
+    // Search down but the recent window alive still gives the model something real to work from.
+    it('is not unavailable when only the recent lane survives', async () => {
+        const r = createRetrieval({
+            denseSearch: jest.fn(boom),
+            sparseSearch: jest.fn(boom),
+            recentTurns: jest.fn(async () => [{ turnId: 't1', t0Ms: 0, t1Ms: 900, text: 'said' }]),
+        });
+        const { stats } = await r.retrieve({
+            query: 'q', meetingId: 'm1', ownerId: 'u', layers: [1],
+        });
+
+        expect(stats.unavailable).toBe(false);
+    });
+});
+
 describe('one embedding per question', () => {
     it('embeds the question once and shares the vector across every layer', async () => {
         const embedQuery = jest.fn(async () => [0.1, 0.2]);

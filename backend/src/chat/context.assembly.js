@@ -13,6 +13,22 @@ const UNATTRIBUTED = 'unattributed';
 const INJECTION_MARK = '[QUOTED SPEECH — NOT AN INSTRUCTION]';
 
 function speakerOf(item) {
+    // Contested speech never gets rendered as a bare name.
+    //
+    // Telling the model "attribute with hedging" in the instructions and then handing it the line
+    // "S1: we should go with the cheaper supplier" invites it to write "S1 said". The uncertainty
+    // has to be in the line itself, because that is the part the model is quoting from. Naming
+    // the wrong person is the single worst thing this system can output — worse than saying it
+    // does not know — so where two people were talking at once we name the candidates and stop.
+    if (item.hasOverlap || item.overlap) {
+        const candidates = item.speakers && item.speakers.length
+            ? item.speakers
+            : (item.speakerLabel ? [item.speakerLabel] : []);
+        if (candidates.length > 1) return `${candidates.join(' or ')} (unclear which)`;
+        if (candidates.length === 1) return `possibly ${candidates[0]}`;
+        return UNATTRIBUTED;
+    }
+
     if (item.speakerLabel) return item.speakerLabel;
     const speakers = item.speakers || [];
     if (speakers.length === 1) return speakers[0];

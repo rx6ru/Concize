@@ -180,19 +180,29 @@ function createRetrieval({
                 }
             }
 
+            // A lane that throws is tolerated — dense can carry sparse and vice versa — but the
+            // count is kept, because every lane failing is a different situation from every lane
+            // returning nothing, and the caller has to be able to tell them apart.
+            let attempted = 0;
+            let failed = 0;
+
             for (const layer of layers) {
                 const args = { query, meetingId, ownerId, layer, limit: perLayer, vector };
-                const [dense, sparse] = await Promise.all([
-                    denseSearch(args).catch((err) => {
-                        logger.error('Dense search failed', { meetingId, layer, error: err.message });
+                attempted += sparseSearch ? 2 : 1;
+
+                // Invoked through Promise.resolve().then so a lane that throws synchronously
+                // degrades like one that rejects, instead of taking the whole answer with it.
+                const run = (fn, name) => Promise.resolve()
+                    .then(() => fn(args))
+                    .catch((err) => {
+                        logger.error(`${name} search failed`, { meetingId, layer, error: err.message });
+                        failed += 1;
                         return [];
-                    }),
-                    sparseSearch
-                        ? sparseSearch(args).catch((err) => {
-                            logger.error('Sparse search failed', { meetingId, layer, error: err.message });
-                            return [];
-                        })
-                        : Promise.resolve(null),
+                    });
+
+                const [dense, sparse] = await Promise.all([
+                    run(denseSearch, 'Dense'),
+                    sparseSearch ? run(sparseSearch, 'Sparse') : Promise.resolve(null),
                 ]);
                 lists.push(dense);
                 if (sparse) lists.push(sparse);
@@ -217,11 +227,14 @@ function createRetrieval({
 
             // Recent turns skip ranking and fusion entirely and are never trimmed off.
             let recent = [];
+            let recentFailed = false;
             if (recentTurns) {
                 try {
-                    recent = await recentTurns({ meetingId, sinceMs: recentMs }) || [];
+                    recent = await Promise.resolve()
+                        .then(() => recentTurns({ meetingId, sinceMs: recentMs })) || [];
                 } catch (err) {
                     logger.error('Recent turns failed', { meetingId, error: err.message });
+                    recentFailed = true;
                 }
             }
 
@@ -247,6 +260,13 @@ function createRetrieval({
                     recent: recent.length,
                     hasOverlap: deduped.some((c) => c.hasOverlap),
                     unattributed: deduped.some((c) => !c.speakerLabel && !(c.speakers || []).length),
+                    // Every search lane down is not the same as the meeting not mentioning it.
+                    // Left undistinguished, a dead database reads to the user as a confident
+                    // "that was never discussed" — which is worse than an error, because it
+                    // sounds like an answer.
+                    unavailable: attempted > 0 && failed === attempted
+                        && (!recentTurns || recentFailed),
+                    laneFailures: failed,
                 },
                 freshness: watermarkMs == null ? null : { watermarkMs },
             };
