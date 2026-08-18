@@ -1,8 +1,5 @@
-// Qdrant adapter for the chunk collection.
-//
-// Fusion happens in retrieval.pipeline, not here, since that pipeline fuses across layers as
-// well as engines. Every query filters on both meetingId and ownerId; the ownerId filter
-// duplicates the API's auth gate on purpose, so tenant isolation doesn't rest on one layer.
+// Qdrant adapter for the chunk collection. Fusion happens in retrieval.pipeline, not here, since that pipeline fuses across layers as well as engines.
+// Every query filters on both meetingId and ownerId; the ownerId filter duplicates the API's auth gate on purpose, so tenant isolation doesn't rest on one layer.
 
 'use strict';
 
@@ -28,8 +25,7 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
             vectors: { size: VECTOR_SIZE, distance: 'Cosine' },
         });
 
-        // unindexed payload filters are a classic vector-search performance cliff, and every
-        // query we issue filters on both of these fields.
+        // unindexed payload filters are a classic vector-search performance cliff, and every query filters on both of these fields.
         for (const field of ['meetingId', 'ownerId']) {
             await client.createPayloadIndex(collection, { field_name: field, field_schema: 'keyword' })
                 .catch((err) => logger.warn('Payload index failed', { field, error: err.message }));
@@ -38,8 +34,7 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
         return true;
     }
 
-    // Fail closed on the owner. Dropping the filter would leave the search scoped by meetingId
-    // alone, which is the bearer-capability model ADR-001 replaced.
+    // Fail closed on the owner: dropping the filter would leave the search scoped by meetingId alone, the bearer-capability model ADR-001 replaced.
     function filterFor(meetingId, ownerId, layer) {
         if (!ownerId) throw new Error('chunk search: ownerId is required; refusing to search unscoped');
         const must = [
@@ -72,11 +67,7 @@ function createChunkSearch({ client, embed, collection = 'concize_chunks' }) {
 
         /**
          * Matches the denseSearch contract expected by retrieval.pipeline.
-         *
-         * `vector` is optional and lets the caller embed the question once for all layers.
-         * Without it this embeds per call, which meant one question cost an embedding per layer:
-         * three requests against a 1000/day quota, three round-trips of latency, and one of them
-         * for a layer that holds no chunks.
+         * `vector` is optional, letting the caller embed the question once for all layers instead of once per layer: previously three requests against a 1000/day quota per question.
          */
         async denseSearch({ query, meetingId, ownerId, layer, limit = 20, vector = null }) {
             const queryVector = vector || await embedQuery(query);

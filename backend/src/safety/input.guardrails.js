@@ -1,17 +1,9 @@
 
 
 /**
- * Input Guardrails - Lightweight pre-LLM validation
- * 
- * DESIGN PHILOSOPHY:
- * We intentionally DO NOT use banned keyword lists because:
- * - Meetings about LLM security would legitimately discuss "jailbreak", "prompt injection", etc.
- * - Keyword blocking creates false positives and frustrates users.
- * 
- * Instead, we rely on:
- * 1. Basic sanity checks (length, empty)
- * 2. Summary-based relevance filtering (see relevanceFilter.js)
- * 3. The hardened system prompt (instructs LLM to stay on topic)
+ * Input guardrails: lightweight pre-LLM validation.
+ * Deliberately no banned-keyword list: meetings about LLM security legitimately discuss "jailbreak", "prompt injection", etc, and keyword blocking creates false positives.
+ * Relies instead on basic sanity checks here, summary-based relevance filtering (relevance.filter.js), and the hardened system prompt.
  */
 
 const MAX_INPUT_LENGTH = 10000;
@@ -22,7 +14,6 @@ const MAX_INPUT_LENGTH = 10000;
  * @returns {Object} { valid: boolean, blocked: boolean, reason?: string, error?: object }
  */
 function validate(userInput) {
-    // Empty input check
     if (!userInput || typeof userInput !== 'string') {
         return {
             valid: false,
@@ -42,7 +33,7 @@ function validate(userInput) {
         };
     }
 
-    // Length check (prevent abuse/DoS)
+    // Prevents abuse/DoS.
     if (userInput.length > MAX_INPUT_LENGTH) {
         return {
             valid: false,
@@ -52,7 +43,6 @@ function validate(userInput) {
         };
     }
 
-    // All checks passed
     return { valid: true, blocked: false };
 }
 

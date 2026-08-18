@@ -1,17 +1,8 @@
-//
-// Outbound LLM/embedding calls run through:  limiter( retry-with-full-jitter( fn ) )  per provider.
-//
-// - Bottleneck limiter (per provider): bounds in-flight concurrency + min spacing so the worker
-//   fleet never exceeds the provider's RPM/concurrency ceiling — this PREVENTS most 429s rather
-//   than reacting to them.
-// - withRetry: full-jitter, Retry-After-aware retry on 429/5xx (see resilientCall.js).
-//
-// Tunable via env: <PROVIDER>_MAX_CONCURRENT, <PROVIDER>_MIN_TIME_MS (e.g. GROQ_MAX_CONCURRENT=4),
-// or the LLM_MAX_CONCURRENT default.
-//
-// NOTE: a per-provider circuit breaker + cross-provider failover (Groq→Cerebras) is the remaining
-// piece of this workstream. It's deferred deliberately — it needs a cross-provider model mapping
-// and careful timer lifecycle — and lands together with the queue-level retry (workstream E).
+// Outbound LLM/embedding calls run through: limiter( retry-with-full-jitter( fn ) ) per provider.
+// Bottleneck limiter (per provider): bounds in-flight concurrency + min spacing so the worker fleet never exceeds the provider's RPM/concurrency ceiling, this prevents most 429s rather than reacting to them.
+// withRetry: full-jitter, Retry-After-aware retry on 429/5xx (see resilient.call.js).
+// Tunable via env: <PROVIDER>_MAX_CONCURRENT, <PROVIDER>_MIN_TIME_MS (e.g. GROQ_MAX_CONCURRENT=4), or the LLM_MAX_CONCURRENT default.
+// NOTE: no circuit breaker or cross-provider failover yet: deferred, needs a cross-provider model mapping and careful timer lifecycle.
 
 const Bottleneck = require('bottleneck');
 const { withRetry } = require('./resilient.call');
@@ -27,10 +18,7 @@ function envNum(name, fallback) {
     return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
-/**
- * One limiter per model, because the ceilings are per model: on Groq the same key allows 6k
- * tokens a minute on one model and 12k on another.
- */
+/** One limiter per model, because the ceilings are per model: on Groq the same key allows 6k tokens a minute on one model and 12k on another. */
 function getLimiter(provider, model) {
     const key = `${provider}:${model || ''}`;
     if (!limiters.has(key)) {
@@ -38,8 +26,7 @@ function getLimiter(provider, model) {
         limiters.set(key, new Bottleneck({
             maxConcurrent: envNum(`${P}_MAX_CONCURRENT`,
                 envNum('LLM_MAX_CONCURRENT', maxConcurrent(provider, model) ?? 6)),
-            // Spacing is what actually prevents a 429; it was 0 for every provider until the
-            // ceilings were recorded in core/provider.limits.json.
+            // Spacing is what actually prevents a 429; it was 0 for every provider until the ceilings were recorded in core/provider.limits.json.
             minTime: envNum(`${P}_MIN_TIME_MS`, minSpacingMs(provider, model)),
         }));
     }
@@ -66,7 +53,7 @@ function runResilient(provider, fn, retryOpts = {}) {
     );
 }
 
-/** Releases limiter timers — call on graceful shutdown (and in test teardown). */
+/** Releases limiter timers, call on graceful shutdown (and in test teardown). */
 async function shutdown() {
     for (const limiter of limiters.values()) {
         try { await limiter.disconnect(); } catch { /* noop */ }

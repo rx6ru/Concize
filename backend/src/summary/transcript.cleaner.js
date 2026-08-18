@@ -11,11 +11,9 @@ const { createLogger } = require('../core/logger');
 const logger = createLogger('transcriptCleaner');
 
 /**
- * Processes a raw text transcript, converting it into a structured JSON array
- * of narrative chunks with summaries. Includes retry mechanism.
- *
- * @param {string} text - The raw transcript text (may include speaker labels)
- * @param {{ hasSpeakers?: boolean, provider?: string }} context - Context for prompt selection
+ * Processes a raw transcript into structured narrative chunks with summaries, retrying on malformed responses.
+ * @param {string} text raw transcript text (may include speaker labels)
+ * @param {{ hasSpeakers?: boolean, provider?: string }} context for prompt selection
  * @returns {Promise<Array<{ summary: string, narrative: string, mentionedNames: string[] }>>}
  */
 const clean = async (text, context = {}) => {
@@ -31,17 +29,15 @@ const clean = async (text, context = {}) => {
         provider: context.provider || 'unknown',
     });
 
-    // The outer loop retries ONLY malformed-JSON responses. Network/429/5xx resilience lives in
-    // runResilient (limiter + jittered retry + breaker) — kept separate so the two retry layers
-    // don't stack and amplify load.
+    // The outer loop retries ONLY malformed-JSON responses.
+    // Network/429/5xx resilience lives in runResilient (limiter + jittered retry + breaker), kept separate so the two retry layers don't stack and amplify load.
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         logger.info('Attempting to clean transcription', { attempt, maxRetries: MAX_RETRIES });
 
-        // Get inference client routed by config
         const { client, model, taskConfig } = getCleanInference();
         logger.debug('Cleaning using model', { provider: taskConfig.provider, model });
 
-        // Transport errors (429/5xx exhausted) propagate out — do NOT loop on them here.
+        // Transport errors (429/5xx exhausted) propagate out: do NOT loop on them here.
         const chatCompletion = await runResilient(taskConfig.provider, () =>
             client.chat.completions.create({
                 messages: [

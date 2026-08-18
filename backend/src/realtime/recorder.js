@@ -1,6 +1,5 @@
 // Spools live meeting audio to disk as WAV so reconciliation can batch-transcribe it later.
-// One write stream per meeting holds a placeholder header; close() patches in the real
-// sizes once the byte count is known, so the meeting is never held in memory.
+// One write stream per meeting holds a placeholder header; close() patches in the real sizes once the byte count is known, so the meeting is never held in memory.
 
 'use strict';
 
@@ -15,8 +14,7 @@ const logger = createLogger('recorder');
 
 const HEADER_BYTES = 44;
 
-// Strips anything that could escape the spool directory. The hash keeps two ids that sanitise
-// to the same slug (a/b and a_b) from writing to one file and corrupting each other.
+// Strips anything that could escape the spool directory. The hash keeps two ids that sanitise to the same slug (a/b and a_b) from writing to one file and corrupting each other.
 function safeName(meetingId) {
     const id = String(meetingId);
     const slug = id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
@@ -47,8 +45,7 @@ function wavHeader(dataBytes, sampleRate = 16000) {
     return header;
 }
 
-// slices a WAV buffer by time and returns a new self-contained WAV, since each
-// segment is uploaded to the batch API as its own file.
+// slices a WAV buffer by time and returns a new self-contained WAV, since each segment is uploaded to the batch API as its own file.
 function sliceAudio(buffer, t0Ms, t1Ms, sampleRate = 16000) {
     const samplesPerMs = sampleRate / 1000;
     const dataBytes = Math.max(0, buffer.length - HEADER_BYTES);
@@ -74,8 +71,7 @@ function createRecorder({ dir = os.tmpdir(), sampleRate = 16000 } = {}) {
             try {
                 let entry = spools.get(meetingId);
                 if (!entry) {
-                    // a frame arriving after close would otherwise open a fresh stream and
-                    // truncate the finished recording
+                    // a frame arriving after close would otherwise open a fresh stream and truncate the finished recording
                     if (fs.existsSync(filePath(meetingId))) return;
                     const stream = fs.createWriteStream(filePath(meetingId));
                     stream.on('error', (err) =>

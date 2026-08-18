@@ -1,4 +1,4 @@
-// Shared TranscriptionResult contract — all providers must normalize to this shape.
+// Shared TranscriptionResult contract: all providers must normalize to this shape.
 
 'use strict';
 
@@ -21,12 +21,7 @@
  * @property {string} [error] - Error message if success is false
  */
 
-/**
- * Validates a TranscriptionResult has the required shape.
- * Does not throw — returns { valid, errors }.
- * @param {Object} result
- * @returns {{ valid: boolean, errors: string[] }}
- */
+/** Validates a TranscriptionResult has the required shape. Does not throw, returns { valid, errors }. */
 function validateResult(result) {
     const errors = [];
 
@@ -46,7 +41,6 @@ function validateResult(result) {
         return { valid: errors.length === 0, errors };
     }
 
-    // Success case: validate full shape
     if (typeof result.transcription !== 'string') {
         errors.push('result.transcription must be a string');
     }
@@ -69,12 +63,6 @@ function validateResult(result) {
     return { valid: errors.length === 0, errors };
 }
 
-/**
- * Creates a failed TranscriptionResult.
- * @param {string} provider
- * @param {string} errorMessage
- * @returns {TranscriptionResult}
- */
 function createFailureResult(provider, errorMessage) {
     return {
         success: false,

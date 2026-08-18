@@ -1,10 +1,8 @@
+// Idempotency guard for at-least-once delivery: any queue (RabbitMQ or BullMQ) can re-deliver a message, so a consumer must not double-process.
+// `claimOnce` atomically reserves a one-time slot for a key (Redis SET NX EX); only the first caller within the TTL window gets `true`.
 //
-// Idempotency guard for at-least-once delivery: any queue (RabbitMQ or BullMQ) can re-deliver a
-// message, so a consumer must not double-process. `claimOnce` atomically reserves a one-time slot for
-// a key (Redis SET NX EX); only the first caller within the TTL window gets `true`.
-//
-// Queue-agnostic on purpose — the HELPER is reusable regardless of which queue we keep; wiring it into a
-// specific consumer is done alongside the queue choice. `redis` is injectable for tests.
+// Queue-agnostic on purpose: the helper is reusable regardless of which queue we keep; wiring it into a specific consumer is done alongside the queue choice.
+// `redis` is injectable for tests.
 
 const { getRedis } = require('./redis');
 

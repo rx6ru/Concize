@@ -1,10 +1,7 @@
-//
 // Single Postgres access point (node-postgres Pool) for Supabase Postgres.
 //
-// Connection guidance (grounded in Supabase docs, 2026): use the DIRECT connection or the
-// SESSION-mode pooler — both on port 5432 — for this backend, because it runs explicit
-// transactions / SELECT ... FOR UPDATE. Do NOT use the transaction-mode pooler (port 6543):
-// it recycles connections between statements and is unsafe for session/row-locking workloads.
+// Use the DIRECT connection or SESSION-mode pooler (port 5432): this backend runs explicit transactions and SELECT ... FOR UPDATE.
+// Do NOT use the transaction-mode pooler (port 6543): it recycles connections between statements and breaks session/row-locking.
 
 const { Pool } = require('pg');
 const config = require('../core/config');

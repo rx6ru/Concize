@@ -6,7 +6,6 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('cloudinaryUtils');
 
-// Initialize Cloudinary once
 const initialiseCloudinary = () => {
   cloudinary.config({
     cloud_name: config.storage.CLOUDINARY_CLOUD_NAME,
@@ -16,7 +15,6 @@ const initialiseCloudinary = () => {
   logger.info("Cloudinary initialized");
 };
 
-// Upload audio
 const storeAudioFile = (audioData, fileName, jobId) => {
   return new Promise((resolve, reject) => {
     // Remove extension from fileName to prevent double extensions
@@ -46,7 +44,6 @@ const storeAudioFile = (audioData, fileName, jobId) => {
   });
 };
 
-// Fetch audio as Buffer from Cloudinary
 const fetchAudioFile = async (publicId, resourceType = "video") => {
   if (!publicId) throw new Error("A publicId is required to fetch the audio file.");
 
@@ -57,13 +54,12 @@ const fetchAudioFile = async (publicId, resourceType = "video") => {
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
-      timeout: 30000 // 30 second timeout
+      timeout: 30000
     });
     return Buffer.from(response.data);
   } catch (error) {
     console.error('Error downloading audio from Cloudinary:', error);
 
-    // Enhanced error logging
     if (error.response) {
       logger.error('Error downloading audio', {
         status: error.response.status,
@@ -78,7 +74,6 @@ const fetchAudioFile = async (publicId, resourceType = "video") => {
   }
 };
 
-// Delete audio
 const deleteAudioFile = async (publicId) => {
   try {
     const result = await cloudinary.uploader.destroy(publicId, { resource_type: "video" });

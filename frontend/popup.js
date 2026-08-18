@@ -25,7 +25,7 @@ const signUpButton = document.getElementById("signUpButton");
 const signOutButton = document.getElementById("signOutButton");
 const authMessageDiv = document.getElementById("authMessage");
 
-let fullTranscriptionText = ''; // To store the transcription
+let fullTranscriptionText = '';
 
 /**
  * Toggles the popup between the login form and the app based on auth state.
@@ -89,11 +89,6 @@ async function handleSignOut() {
     await applyAuthState();
 }
 
-/**
- * Displays a general status message to the user.
- * @param {string} message - The message to display.
- * @param {boolean} isError - True if it's an error message, false otherwise.
- */
 function showStatusMessage(message, isError = false) {
     statusMessageDiv.textContent = message;
     statusMessageDiv.style.display = "block";
@@ -104,93 +99,63 @@ function showStatusMessage(message, isError = false) {
     }
 }
 
-/**
- * Hides the general status message.
- */
 function hideStatusMessage() {
     statusMessageDiv.style.display = "none";
     statusMessageDiv.textContent = "";
 }
 
-/**
- * Displays a permission-related message to the user.
- * @param {string} message - The permission message to display.
- */
 function showPermissionMessage(message) {
     permissionStatusDiv.textContent = message;
     permissionStatusDiv.style.display = "block";
 }
 
-/**
- * Hides the permission-related message.
- */
 function hidePermissionMessage() {
     permissionStatusDiv.style.display = "none";
     permissionStatusDiv.textContent = "";
 }
 
-/**
- * Updates the worker status text and badge color.
- * @param {'Stopped' | 'Recording' | 'Running'} status - The new status.
- */
+/** @param {'Stopped' | 'Recording' | 'Running'} status */
 function updateWorkerStatus(status) {
     workerStatusSpan.textContent = status;
     workerStatusSpan.classList.remove('stopped', 'recording', 'running');
     workerStatusSpan.classList.add(status.toLowerCase());
 }
 
-/**
- * Updates the UI based on whether recording is active or not.
- * This includes button visibility, wrapper color, and recording indicator.
- * @param {boolean} isRecording - True if recording is active, false otherwise.
- */
+/** Updates the UI for recording state: button visibility, wrapper color, and the recording indicator. */
 function updateUIForRecording(isRecording) {
     if (isRecording) {
-        // Show stop button, hide start button
         startButton.classList.remove("visible");
         stopButton.classList.add("visible");
 
-        // Change button wrapper to red (stop state)
         toggleButtonWrapper.classList.add("stop");
 
-        // Show and animate recording indicator
         recordingIndicatorDiv.classList.remove("hidden");
         recordingGlyphDiv.classList.add("blink");
 
-        // Update worker status
         updateWorkerStatus('Recording');
     } else {
-        // Show start button, hide stop button
         stopButton.classList.remove("visible");
         startButton.classList.add("visible");
 
-        // Change button wrapper to blue (start state)
         toggleButtonWrapper.classList.remove("stop");
 
-        // Hide and stop animating recording indicator
         recordingIndicatorDiv.classList.add("hidden");
         recordingGlyphDiv.classList.remove("blink");
 
-        // Update worker status
         updateWorkerStatus('Stopped');
     }
 }
 
-/**
- * Checks for microphone permission.
- * @returns {Promise<boolean>} - True if permission is granted, false otherwise.
- */
 async function checkMicrophonePermission() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         // Stop the stream immediately after checking to release resources
         stream.getTracks().forEach(track => track.stop());
-        hidePermissionMessage(); // Hide message if permission is granted
+        hidePermissionMessage();
         return true;
     } catch (error) {
         if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
             showPermissionMessage("Microphone access denied. Please grant permission in your browser settings to record.");
-            // Open permission.html to guide the user to grant permission
             chrome.tabs.create({ url: "permission.html" });
         } else {
             showPermissionMessage("Could not access microphone: " + error.message);
@@ -199,12 +164,10 @@ async function checkMicrophonePermission() {
     }
 }
 
-/**
- * Checks the current recording state from the offscreen document and updates UI.
- */
+/** Checks the current recording state from the offscreen document and updates UI. */
 async function checkRecordingState() {
-    hideStatusMessage(); // Clear any old status messages on load
-    hidePermissionMessage(); // Clear any old permission messages on load
+    hideStatusMessage();
+    hidePermissionMessage();
 
     const hasPermission = await checkMicrophonePermission();
     if (!hasPermission) {
@@ -227,10 +190,9 @@ signInButton.addEventListener("click", handleSignIn);
 signUpButton.addEventListener("click", handleSignUp);
 signOutButton.addEventListener("click", handleSignOut);
 
-// Add button click listeners
 startButton.addEventListener("click", async () => {
-    hideStatusMessage(); // Clear any old status messages when starting
-    hidePermissionMessage(); // Clear any old permission messages when starting
+    hideStatusMessage();
+    hidePermissionMessage();
 
     const hasPermission = await checkMicrophonePermission();
     if (!hasPermission) {
@@ -269,7 +231,6 @@ startButton.addEventListener("click", async () => {
             return;
         }
 
-        // Update UI immediately to show recording state
         updateUIForRecording(true);
 
         const contexts = await chrome.runtime.getContexts({});
@@ -305,10 +266,9 @@ startButton.addEventListener("click", async () => {
 });
 
 stopButton.addEventListener("click", () => {
-    hideStatusMessage(); // Clear any old status messages when stopping
-    hidePermissionMessage(); // Clear any old permission messages when stopping
+    hideStatusMessage();
+    hidePermissionMessage();
     
-    // Update UI immediately to show stopped state
             updateUIForRecording(false);
 
     chrome.runtime.sendMessage({
@@ -317,11 +277,10 @@ stopButton.addEventListener("click", () => {
     });
 });
 
-// Event listener for the Get Transcription button
 getTranscriptionButton.addEventListener("click", async () => {
     hideStatusMessage();
     hidePermissionMessage();
-    downloadButtonWrapper.classList.add('hidden'); // Hide download button initially
+    downloadButtonWrapper.classList.add('hidden');
 
     try {
         const result = await chrome.storage.local.get('meetingId');
@@ -353,13 +312,13 @@ getTranscriptionButton.addEventListener("click", async () => {
 
             transcriptionTextContent.textContent = fullTranscriptionText;
             transcriptionDisplayArea.classList.remove('hidden');
-            downloadButtonWrapper.classList.remove('hidden'); // Show download button
+            downloadButtonWrapper.classList.remove('hidden');
             showStatusMessage("Transcription loaded successfully.");
         } else {
             fullTranscriptionText = ''; // Keep empty to prevent downloading placeholder
             transcriptionTextContent.textContent = "No transcription available for this session yet.";
             transcriptionDisplayArea.classList.remove('hidden');
-            downloadButtonWrapper.classList.add('hidden'); // Keep download hidden
+            downloadButtonWrapper.classList.add('hidden');
             showStatusMessage("No transcription available.", true);
         }
     } catch (error) {
@@ -370,7 +329,6 @@ getTranscriptionButton.addEventListener("click", async () => {
     }
 });
 
-// Event listener for the Download Transcription button
 downloadTranscriptionButton.addEventListener("click", async () => {
     if (!fullTranscriptionText) {
         showStatusMessage("No transcription text to download.", true);
@@ -381,18 +339,16 @@ downloadTranscriptionButton.addEventListener("click", async () => {
         const result = await chrome.storage.local.get('meetingId');
         const meetingId = result.meetingId || 'session';
 
-        // Create a Blob from the transcription text
         const blob = new Blob([fullTranscriptionText], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
 
-        // Create a temporary anchor element and trigger download
         const a = document.createElement('a');
         a.href = url;
         a.download = `transcription-${meetingId}.txt`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url); // Clean up the object URL
+        URL.revokeObjectURL(url);
         
         showStatusMessage("Download started.", false);
 
@@ -419,10 +375,10 @@ chrome.runtime.onMessage.addListener((message) => {
         switch (message.type) {
             case "recording-error":
                 showStatusMessage(message.error, true);
-                updateUIForRecording(false); // Ensure UI is reset to stopped
+                updateUIForRecording(false);
                 break;
             case "recording-stopped":
-                updateUIForRecording(false); // Ensure UI is reset to stopped
+                updateUIForRecording(false);
                 break;
         }
     }

@@ -1,6 +1,5 @@
-// Decides where one retrievable chunk ends and the next begins.
-// Boundaries come from speaker change + silence gap + semantic shift (soft), or hitting
-// the token/duration cap (hard). Chunks overlap slightly so a boundary can't split a sentence.
+// Decides where one retrievable chunk ends and the next begins. Boundaries come from speaker change + silence gap + semantic shift (soft), or hitting the token/duration cap (hard).
+// Chunks overlap slightly so a boundary can't split a sentence.
 
 'use strict';
 
@@ -14,18 +13,11 @@ const DEFAULTS = {
     startOrdinal: 0,          // resumed meetings carry on from the last stored chunk
 };
 
-// How much of a chunk has to be contested before the chunk is called overlapped.
-//
-// This used to be "any turn in the chunk was flagged", which only survived because the detector
-// behind it caught almost nothing. Roughly a tenth of meeting speech is genuinely overlapped, so
-// once detection works, a 90-second chunk of a four-person meeting nearly always contains some —
-// and flagging every chunk means the model hedges every answer, which is exactly as useless as
-// hedging none of them. A quarter is around 2.5x the base rate: a passage people actually talked
-// over, not a passage containing one crossed word.
+// Share of a chunk that must be contested before the chunk is flagged overlapped.
+// 0.25 is about 2.5x the base rate: roughly a tenth of meeting speech is genuinely overlapped, and flagging on any contested turn would mark nearly every chunk.
 const CONTESTED_FLOOR = 0.25;
 
-// Rough token estimate, not a real tokenizer call. Runs per utterance on the live path and
-// a ~15% error only shifts a boundary slightly.
+// Rough token estimate, not a real tokenizer call: runs per utterance on the live path, and a ~15% error only shifts a boundary slightly.
 function estimateTokens(text) {
     if (!text) return 0;
     return Math.ceil(text.trim().split(/\s+/).filter(Boolean).length * 1.3);
@@ -89,8 +81,7 @@ function createChunker(opts = {}) {
             reason,
         };
 
-        // Carry a tail of the closed chunk into the next one so a boundary cannot split
-        // a question from its answer.
+        // Carry a tail of the closed chunk into the next one so a boundary cannot split a question from its answer.
         const carry = Math.floor(buffer.length * cfg.overlapRatio);
         buffer = carry > 0 ? buffer.slice(-carry) : [];
         tokens = buffer.reduce((n, u) => n + estimateTokens(u.text), 0);
@@ -100,16 +91,14 @@ function createChunker(opts = {}) {
 
     return {
         /**
-         * Feed one finalised utterance. Returns a closed chunk, or null if the chunk is
-         * still open. `embedding` is optional, without it the semantic signal is skipped
-         * and boundaries rely on turn, silence and the hard cap.
+         * Feed one finalised utterance. Returns a closed chunk, or null if still open.
+         * `embedding` is optional; without it boundaries rely on turn, silence and the hard cap.
          */
         add(utterance, embedding = null) {
             const prev = buffer[buffer.length - 1];
             const prevEmbedding = prev ? prev._embedding : null;
 
-            // Evaluate the soft signals against the utterance about to be appended,
-            // so the boundary falls BEFORE it rather than after.
+            // Evaluate soft signals against the utterance about to be appended, so the boundary falls BEFORE it rather than after.
             let closed = null;
             if (buffer.length && spanMs() >= cfg.minDurationMs) {
                 const turnChanged = prev.speakerLabel !== utterance.speakerLabel;
@@ -134,9 +123,8 @@ function createChunker(opts = {}) {
         },
 
         /**
-         * Patch an utterance still sitting in the open buffer, after a correction. Without this
-         * a late speaker label never reaches the chunk, and dropping the buffer instead would
-         * lose the text entirely.
+         * Patch an utterance still in the open buffer, after a correction.
+         * Without this a late speaker label never reaches the chunk, and dropping the buffer instead would lose the text entirely.
          */
         revise(turnId, changes) {
             const hit = buffer.find((u) => u.turnId === turnId);

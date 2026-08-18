@@ -1,9 +1,6 @@
-//
-// Shared, long-lived RabbitMQ publisher for the API process. RabbitMQ/AMQP assume long-lived
-// connections — opening a connection per message is an anti-pattern (each handshake is ~7 TCP
-// round-trips) and quickly exhausts CloudAMQP's connection cap (shared "Little Lemur" = 20).
-// We keep ONE connection + ONE confirm channel, reused across all publishes, and transparently
-// reconnect if the broker drops it. (See CloudAMQP "13 Common Mistakes" + RabbitMQ Connections docs.)
+// Shared, long-lived RabbitMQ publisher for the API process.
+// RabbitMQ/AMQP assume long-lived connections: opening one per message is an anti-pattern (~7 TCP round-trips per handshake) and quickly exhausts CloudAMQP's connection cap (shared "Little Lemur" = 20).
+// We keep ONE connection + ONE confirm channel, reused across all publishes, and reconnect transparently if the broker drops it.
 
 const amqp = require('amqplib');
 const config = require('../core/config');

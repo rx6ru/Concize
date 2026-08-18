@@ -1,6 +1,5 @@
-// Storage for derived retrievable chunks.
-// Everything here can be rebuilt from `utterances` by replay. A correction writes a new
-// `rev` instead of mutating in place, so a reader mid-query never sees a chunk change under it.
+// Storage for derived retrievable chunks. Everything here can be rebuilt from `utterances` by replay.
+// A correction writes a new `rev` instead of mutating in place, so a reader mid-query never sees a chunk change under it.
 
 'use strict';
 
@@ -53,13 +52,8 @@ async function insertChunk(meetingId, chunk) {
 
 /**
  * Turns a question into an OR query over its terms.
- *
- * plainto_tsquery ANDs everything, so "what's the budget?" only matches a chunk containing all
- * of those words, which is almost never. Lexical retrieval wants any-term matching with the
- * ranking deciding, the same bag-of-words behaviour BM25 has.
- *
- * Punctuation is stripped rather than escaped, so nothing the user types can be read as tsquery
- * syntax. Single characters go too, they match everything and rank nothing.
+ * plainto_tsquery ANDs everything, so "what's the budget?" would only match a chunk containing all those words, almost never; any-term matching with ranking deciding is what lexical retrieval (BM25-style) wants.
+ * Punctuation is stripped rather than escaped, so user input can't be read as tsquery syntax; single characters are dropped too since they match everything and rank nothing.
  */
 function toOrQuery(text) {
     const terms = String(text)
@@ -72,12 +66,8 @@ function toOrQuery(text) {
 
 /**
  * Lexical search over stored chunks, the sparse half of retrieval.
- *
- * Matches the shape denseSearch returns so retrieval can fuse the two without caring which
- * engine produced what. Ranking only has to order sensibly, since fusion works on rank.
- *
- * Needs real Postgres. pg-mem has no full text search, so this is covered by
- * tests/chunk.text.search.test.js instead of the pg-mem suites.
+ * Matches the shape denseSearch returns so retrieval can fuse the two without caring which engine produced what; ranking only needs to order sensibly, since fusion works on rank.
+ * Needs real Postgres: pg-mem has no full text search, so this is covered by tests/chunk.text.search.test.js instead of the pg-mem suites.
  */
 async function searchChunkText(meetingId, { text, ownerId = null, layer = null, limit = 20 } = {}) {
     // Fail closed, like the dense lane: without an owner this used to match on meeting alone.
@@ -121,8 +111,7 @@ async function searchChunkText(meetingId, { text, ownerId = null, layer = null, 
 }
 
 /**
- * Next free ordinal for a layer. A meeting resumed after a restart has to keep numbering from
- * here, otherwise the insert collides with a pre-restart chunk on the primary key.
+ * Next free ordinal for a layer; a meeting resumed after a restart keeps numbering from here, or the insert collides with a pre-restart chunk on the primary key.
  */
 async function nextOrdinal(meetingId, layer = 1) {
     const { rows } = await query(
@@ -134,9 +123,7 @@ async function nextOrdinal(meetingId, layer = 1) {
 
 /**
  * Latest revision of each chunk in a layer, in spoken order.
- *
- * Deduped in JS rather than by a correlated subquery: the SQL form is not portable across
- * our test engine, and a meeting holds hundreds of chunks, not millions.
+ * Deduped in JS rather than a correlated subquery: not portable to the test engine, and a meeting holds hundreds of chunks, not millions.
  */
 async function getChunks(meetingId, layer = 1) {
     const { rows } = await query(
@@ -158,10 +145,7 @@ async function getChunks(meetingId, layer = 1) {
 
 /**
  * Flags every chunk whose time range intersects a corrected utterance.
- *
- * Intersection on time rather than turn-id membership: it is portable SQL, and a revision
- * that shifts an utterance's boundaries should dirty the chunks it moved *into* as well as
- * the ones it left.
+ * Intersection on time rather than turn-id membership: portable SQL, and a revision that shifts an utterance's boundaries should dirty the chunks it moved *into* as well as the ones it left.
  */
 async function markDirtyForRange(meetingId, t0Ms, t1Ms) {
     const { rows } = await query(

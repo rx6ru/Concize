@@ -1,9 +1,5 @@
-//
-// Prometheus metrics for the API process (prom-client). Exposes default Node/process metrics
-// (event-loop lag, heap, GC) plus HTTP request latency. Scrape at GET /metrics.
-//
-// NOTE: metrics are per-process. The transcription/summary workers would each need their own
-// /metrics endpoint (or a push gateway) to be scraped — wired later alongside the queue work.
+// Prometheus metrics for the API process (prom-client): default Node/process metrics plus HTTP request latency. Scrape at GET /metrics.
+// NOTE: metrics are per-process: transcription/summary workers need their own /metrics endpoint or a push gateway to be scraped.
 
 const client = require('prom-client');
 
@@ -26,10 +22,7 @@ const chunkProcessed = new client.Counter({
     registers: [register],
 });
 
-/**
- * Express middleware that records request latency. Labels by the matched route PATTERN
- * (not the raw URL) to keep label cardinality bounded.
- */
+// Labels by the matched route pattern (not the raw URL) to keep label cardinality bounded.
 function httpMetricsMiddleware(req, res, next) {
     const end = httpDuration.startTimer();
     res.on('finish', () => {

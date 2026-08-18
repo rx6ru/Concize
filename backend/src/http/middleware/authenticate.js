@@ -1,10 +1,6 @@
+// Dual-mode authentication: accepts EITHER a valid Supabase JWT (Authorization: Bearer) OR a legacy x-auth-code (behind a flag, mapped to one synthetic ownerId) so the current extension keeps working until it ships a real login. Sets `req.user = { id, mode, ... }`.
 //
-// Dual-mode authentication. Accepts EITHER a valid Supabase JWT (Authorization: Bearer)
-// OR a legacy x-auth-code (behind a flag, mapped to one synthetic ownerId) so the current
-// extension keeps working until it ships a real login. Sets `req.user = { id, mode, ... }`.
-//
-// Authorization (does this user own this resource?) is enforced separately by
-// requireMeetingAccess — this middleware only answers "who is the caller?".
+// Authorization (does this user own this resource?) is enforced separately by requireMeetingAccess, this middleware only answers "who is the caller?".
 
 const crypto = require('crypto');
 const { createLogger } = require('../../core/logger');
@@ -37,7 +33,7 @@ function createAuthenticate({ verifyAccessToken, legacy }) {
         const authHeader = req.headers.authorization || '';
         const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
 
-        // 1) A Bearer token, if present, is authoritative — never fall back to legacy on failure.
+        // 1) A Bearer token, if present, is authoritative: never fall back to legacy on failure.
         if (bearer) {
             try {
                 const claims = await verifyAccessToken(bearer);

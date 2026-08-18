@@ -1,12 +1,10 @@
 // Round-robin across a provider's API keys, skipping the ones that cannot currently be used.
 //
-// Plain round-robin assumes every key works. Keys collected from several places do not: one may be
-// revoked, another may have spent its daily quota. Left in rotation, a dead key makes every Nth
-// request fail with no pattern a caller can see.
+// Plain round-robin assumes every key works. Keys collected from several places do not: one may be revoked, another may have spent its daily quota. Left in rotation, a dead key makes every Nth request fail with no pattern a caller can see.
 //
 // Two failure modes, handled differently because they mean different things:
-//   401/403 — the key is invalid. Permanent; drop it for this process.
-//   429     — the key is fine, its quota is not. Rest it and try again later.
+//   401/403: the key is invalid. Permanent; drop it for this process.
+//   429    : the key is fine, its quota is not. Rest it and try again later.
 
 const { createLogger } = require('../../core/logger');
 const logger = createLogger('keyRotation');
@@ -14,11 +12,7 @@ const logger = createLogger('keyRotation');
 const DEFAULT_COOLDOWN_MS = 60 * 1000;
 
 class BaseKeyRotationService {
-    /**
-     * @param {string[]} keys
-     * @param {string} name
-     * @param {{now?: function}} [deps] `now` is injectable so cooldowns are testable without waiting.
-     */
+    /** @param {{now?: function}} [deps] `now` is injectable so cooldowns are testable without waiting. */
     constructor(keys, name, { now = () => Date.now() } = {}) {
         this.keys = keys || [];
         this.currentIndex = 0;
@@ -55,8 +49,7 @@ class BaseKeyRotationService {
             return key;
         }
 
-        // Nothing usable. Everything dead is a configuration problem and must say so; everything
-        // merely resting is temporary, so hand one back and let the caller's retry handle the 429.
+        // Nothing usable. Everything dead is a configuration problem and must say so; everything merely resting is temporary, so hand one back and let the caller's retry handle the 429.
         const live = this.keys.filter((k) => !this.dead.has(k));
         if (!live.length) {
             throw new Error(`All ${this.name} API keys are invalid (${this.keys.length} tried)`);
@@ -69,8 +62,6 @@ class BaseKeyRotationService {
 
     /**
      * Tells the rotator a key just failed, so it can stop handing it out.
-     * @param {string} key
-     * @param {number} status HTTP status from the provider
      * @param {{retryAfterMs?: number}} [opts]
      */
     reportFailure(key, status, { retryAfterMs } = {}) {

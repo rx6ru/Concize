@@ -24,5 +24,4 @@ class GeminiService extends BaseKeyRotationService {
     }
 }
 
-// Singleton instance
 module.exports = new GeminiService();

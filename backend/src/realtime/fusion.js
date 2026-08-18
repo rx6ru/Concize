@@ -1,6 +1,5 @@
 // Joins the words, speaker, and overlap lanes on the session timeline into finalised utterances.
-// Text is never held back waiting for a speaker: words outrank speakers outrank overlap, so a
-// dead speaker lane costs attribution, not transcription. Late data just produces a revision.
+// Text is never held back waiting for a speaker: words outrank speakers outrank overlap, so a dead speaker lane costs attribution, not transcription. Late data just produces a revision.
 
 'use strict';
 
@@ -9,13 +8,8 @@ const { deriveOverlaps } = require('../transcript/overlap.derive');
 const CONFIDENCE = { CONFIDENT: 'confident', PROVISIONAL: 'provisional', UNKNOWN: 'unknown' };
 
 // Which speaker owns this span: the one holding the most of it.
-//
-// This used to ask who was speaking at the midpoint, which is a bad estimator when segments are
-// long — and ours are, 8s at p90 and 22s at worst. A half-second "mhm" landing on the midpoint of
-// a twenty-second segment took the whole segment, so one backchannel could misattribute a
-// paragraph. Summing intersection per speaker and taking the argmax is what WhisperX does
-// (assign_word_speakers), and it costs nothing extra: we already have the intervals.
-//
+// Was midpoint, which is a bad estimator when segments are long (8s at p90, 22s at worst), a half-second "mhm" at the midpoint of a 20s segment took the whole segment, misattributing the paragraph.
+// Summing intersection per speaker and taking the argmax is what WhisperX does (assign_word_speakers), and costs nothing extra since we already have the intervals.
 // Midpoint survives only as a tiebreak, where the two rules agree by construction anyway.
 function speakerAt(intervals, t0Ms, t1Ms) {
     const mid = (t0Ms + t1Ms) / 2;
@@ -31,8 +25,7 @@ function speakerAt(intervals, t0Ms, t1Ms) {
             byLabel.set(iv.speakerLabel, { iv, shared, coversMid });
             continue;
         }
-        // One speaker can hold several intervals inside the span; they count together, and the
-        // tightest of them represents the speaker for the later tiebreaks.
+        // One speaker can hold several intervals inside the span; they count together, and the tightest of them represents the speaker for the later tiebreaks.
         prev.shared += shared;
         prev.coversMid = prev.coversMid || coversMid;
         if (iv.t1Ms - iv.t0Ms < prev.iv.t1Ms - prev.iv.t0Ms) prev.iv = iv;
@@ -116,9 +109,7 @@ function createFusion({ overlapThreshold = 0.15, retentionMs = 60000 } = {}) {
             speakers.push(iv);
             prune(iv.t1Ms);
 
-            // Two different speakers whose intervals intersect were talking at once. Deriving it
-            // here means the overlap signal exists without a separate detector; a real overlap
-            // lane, if one is ever wired, simply adds better intervals through the same door.
+            // Two different speakers whose intervals intersect were talking at once. Deriving it here means the overlap signal exists without a separate detector; a real overlap lane, if one is ever wired, simply adds better intervals through the same door.
             for (const span of deriveOverlaps(speakers)) {
                 const known = overlaps.some((o) => o.t0Ms === span.t0Ms && o.t1Ms === span.t1Ms);
                 if (!known) overlaps.push(span);
@@ -140,8 +131,7 @@ function createFusion({ overlapThreshold = 0.15, retentionMs = 60000 } = {}) {
 
         /**
          * Re-evaluate already-emitted utterances after late lane data.
-         * Returns only those whose attribution actually changed, so callers can emit
-         * revisions without republishing the whole transcript.
+         * Returns only those whose attribution actually changed, so callers can emit revisions without republishing the whole transcript.
          */
         revise() {
             const changed = [];

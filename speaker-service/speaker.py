@@ -1,5 +1,5 @@
-# Per-session speaker tracking: VAD finds the speech segments, FunASR's tracker decides who
-# each one belongs to. No websocket code here so the logic can be driven from a test.
+# Per-session speaker tracking: VAD finds the speech segments, FunASR's tracker decides who each one belongs to.
+# No websocket code here so the logic can be driven from a test.
 
 import numpy as np
 
@@ -7,35 +7,32 @@ SAMPLE_RATE = 16000
 VAD_CHUNK_MS = 200
 
 # Measured on an L40S against LibriSpeech ground truth, 40 speaker sessions.
-# threshold 0.60 -> 0.70 moved turn accuracy 0.854 -> 0.942 and halved the number of ids
-# holding more than one person, with no latency cost across the whole sweep. The roster cap
-# is deliberately far above any real meeting: when it fills, the matcher stops applying the
-# threshold and force matches to the nearest centroid (cosine 0.3185 accepted against 0.6),
-# which merges two people into one id with nothing downstream able to tell.
+# threshold 0.60 -> 0.70 moved turn accuracy 0.854 -> 0.942 and halved the number of ids holding more than one person, with no latency cost across the whole sweep.
+# The roster cap is deliberately far above any real meeting: when it fills, the matcher stops applying the threshold and force matches to the nearest centroid (cosine 0.3185 accepted against 0.6), which merges two people into one id with nothing downstream able to tell.
 THRESHOLD = 0.70
 MAX_SPEAKERS = 500
 MAX_NUM_SPKS = 30
 MAX_HISTORY_CHUNKS = 384
 
 # The tracker needs about 20 chunks of history before its cluster assignment means anything.
-# Measured as 8.6 to 15.0 seconds of speech, consistent across 39 runs. Segments before that
-# get an id, but it is not trustworthy, so they go out as unknown.
+# Measured as 8.6 to 15.0 seconds of speech, consistent across 39 runs.
+# Segments before that get an id, but it is not trustworthy, so they go out as unknown.
 COLD_START_MS = 15000
 
 # Short segments give noisy embeddings. Long enough to get an id, not long enough to bet on.
 MIN_CONFIDENT_MS = 1000
 
-# A segment longer than this is almost certainly two people the VAD ran together. Splitting it
-# would be guessing, so it is passed through and flagged instead.
+# A segment longer than this is almost certainly two people the VAD ran together.
+# Splitting it would be guessing, so it is passed through and flagged instead.
 MAX_TRUSTED_SEGMENT_MS = 30000
 
 
 class SpeakerSession:
+    
     """
     Feed it PCM, get back speaker intervals.
 
-    Audio is buffered only as far back as the currently open segment, otherwise a five hour
-    meeting holds five hours of float32 in memory.
+    Audio is buffered only as far back as the currently open segment, otherwise a five hour meeting holds five hours of float32 in memory.
     """
 
     def __init__(self, session_id, tracker, vad, sample_rate=SAMPLE_RATE):

@@ -1,7 +1,5 @@
 // WebSocket gateway for live meetings.
-// Auth happens on the HTTP upgrade, before the socket exists, so bad or non-owning clients
-// never get a WebSocket. Ownership mismatch returns 404, not 403, so we don't confirm to a
-// stranger that the meeting exists.
+// Auth happens on the HTTP upgrade, before the socket exists, so bad or non-owning clients never get a WebSocket. Ownership mismatch returns 404, not 403, so we don't confirm to a stranger that the meeting exists.
 
 'use strict';
 
@@ -51,8 +49,7 @@ function attachGateway({
     createSpeakerLane = null,
     onUtterance = () => {}, onRevision = () => {}, onSessionEnd = () => {},
     onFrame = null,
-    // How far the stored transcript already reaches. A reconnecting client restarts its sequence
-    // at 0, so without this a resumed meeting rewrites its own timeline from the beginning.
+    // How far the stored transcript already reaches. A reconnecting client restarts its sequence at 0, so without this a resumed meeting rewrites its own timeline from the beginning.
     getWatermarkMs = async () => 0,
 }) {
     const wss = new WebSocketServer({ noServer: true });
@@ -78,8 +75,7 @@ function attachGateway({
             return reject(socket, 404, 'Not Found');
         }
 
-        // Best effort: a meeting that cannot read its watermark still runs, it just resumes
-        // from zero. Losing the timeline is better than refusing the connection.
+        // Best effort: a meeting that cannot read its watermark still runs, it just resumes from zero. Losing the timeline is better than refusing the connection.
         let startOffsetMs = 0;
         try {
             startOffsetMs = (await getWatermarkMs(params.meetingId)) || 0;
@@ -116,8 +112,7 @@ function attachGateway({
             logger.error('Persist failed', { meetingId, error: err.message })
         );
 
-        // late speaker or overlap data can re-attribute turns already on screen, so we send
-        // a revision instead of holding the text back until attribution is known.
+        // late speaker or overlap data can re-attribute turns already on screen, so we send a revision instead of holding the text back until attribution is known.
         const flushRevisions = () => {
             for (const revised of fusion.revise()) {
                 emit('revision', revised);
@@ -131,9 +126,7 @@ function attachGateway({
             startOffsetMs,
             onFrame: onFrame ? (frame) => onFrame(meetingId, frame) : null,
             onEvent: (rawEvent) => {
-                // Lane timestamps are relative to the lane's own stream, which restarts on
-                // reconnect. Shifting here, before fusion, keeps every downstream consumer —
-                // fusion, the emitted payload, the stored utterance — on one timeline.
+                // Lane timestamps are relative to the lane's own stream, which restarts on reconnect. Shifting here, before fusion, keeps every downstream consumer, fusion, the emitted payload, the stored utterance, on one timeline.
                 const event = startOffsetMs
                     ? { ...rawEvent, t0Ms: rawEvent.t0Ms + startOffsetMs, t1Ms: rawEvent.t1Ms + startOffsetMs }
                     : rawEvent;
@@ -147,8 +140,7 @@ function attachGateway({
                     return flushRevisions();
                 }
 
-                // partials are volatile and never attributed, just there to make the
-                // overlay feel live until the final replaces them.
+                // partials are volatile and never attributed, just there to make the overlay feel live until the final replaces them.
                 if (event.kind === 'partial') {
                     return emit('partial', { ...event, speakerLabel: null });
                 }
@@ -173,8 +165,7 @@ function attachGateway({
             return ws.close(CLOSE.SERVER_ERROR, 'lane unavailable');
         }
 
-        // speaker lane is optional: if the service is missing or fails to start, the
-        // meeting just runs unattributed.
+        // speaker lane is optional: if the service is missing or fails to start, the meeting just runs unattributed.
         if (createSpeakerLane) {
             try {
                 session.registerLane('speaker', createSpeakerLane({
@@ -189,9 +180,7 @@ function attachGateway({
             }
         }
 
-        // a meeting can end by the client closing, a stop message, or shutdown, all three land
-        // here and the hook only runs once. the last chunk is still open at this point and
-        // would otherwise never get stored.
+        // a meeting can end by the client closing, a stop message, or shutdown, all three land here and the hook only runs once. the last chunk is still open at this point and would otherwise never get stored.
         let ended = false;
         const endSession = async () => {
             if (ended) return;
@@ -233,8 +222,7 @@ function attachGateway({
         ws.on('error', (err) => logger.warn('Socket error', { meetingId, error: err.message }));
     }
 
-    // every audio frame is prefixed with a uint32 sequence number, so the session clock
-    // survives reordering and can detect loss.
+    // every audio frame is prefixed with a uint32 sequence number, so the session clock survives reordering and can detect loss.
     function readSeq(buf) {
         if (!Buffer.isBuffer(buf) || buf.length < 5) return null;
         return buf.readUInt32BE(0);

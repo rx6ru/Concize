@@ -1,27 +1,11 @@
-// Where two people were talking at once, derived from speaker intervals we already have.
-//
-// A stopgap, and measured to be a weak one. Two different speakers whose diarization intervals
-// intersect *is* overlapping speech, so this needs no extra model — but scored frame-wise against
-// AMI word-level ground truth it manages only:
-//
-//     precision 32.9%   recall 18.9%   F1 23.6%      (eval/overlap-accuracy.js, 3 AMI meetings)
-//
-// against 69.2% for pyannote segmentation-3.0 measured on the same three meetings, and 63.3% for
-// that model streaming frame by frame through speaker-service/overlap.py, which is what actually
-// ships. It misses four fifths of real overlap, so the hedging it feeds mostly does not fire.
-//
-// This is now the fallback, used only when the speaker service has no overlap model loaded. The
-// gap is structural rather than a matter of tuning: a clustering backend gives each segment
-// exactly one speaker, so two people talking at once inside a segment is invisible to it and
-// there is nothing to intersect.
-//
-// This is deliberately a pure function over intervals, so the same code serves the live lane, the
-// batch reconciliation pass, and a real pyannote lane later if one is ever wired.
+// Where two people were talking at once, derived from speaker intervals crossing. A stopgap, measured weak: precision 32.9%, recall 18.9%, F1 23.6% against AMI ground truth (eval/overlap-accuracy.js, 3 meetings), vs 69.2% for pyannote segmentation-3.0 offline and 63.3% streaming through speaker-service/overlap.py, which is what ships.
+// This is now the fallback, used only when the speaker service has no overlap model loaded.
+// The gap is structural, not a tuning issue: a clustering backend gives each segment exactly one speaker, so overlap inside a segment is invisible to it.
+// Pure function over intervals, so the same code serves the live lane, batch reconciliation, and a real pyannote lane later.
 
 'use strict';
 
-// Below this, an "overlap" is two segment boundaries disagreeing by a few frames rather than two
-// people speaking. Flagging those would mark most of a meeting and make the signal worthless.
+// Below this, an "overlap" is boundary disagreement by a few frames, not two people speaking. Flagging those would mark most of a meeting.
 const MIN_OVERLAP_MS = 120;
 
 /**

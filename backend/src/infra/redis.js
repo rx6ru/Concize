@@ -1,10 +1,7 @@
+// Single Redis access point (ioredis). Used for idempotency, rate-limit cooldowns, and, in Tier 2, live session state + reconnect/sticky-session backplane.
+// ioredis is BullMQ-compatible, so if we later consolidate the batch queue onto BullMQ it runs on this same client.
 //
-// Single Redis access point (ioredis). Used for idempotency, rate-limit cooldowns, and — in Tier 2 —
-// live session state + reconnect/sticky-session backplane. ioredis is BullMQ-compatible, so if we later
-// consolidate the batch queue onto BullMQ it runs on this same client.
-//
-// LAZY: the connection is only created when getRedis() is first called, so the app boots fine without
-// REDIS_URL until a Redis-backed feature is actually exercised.
+// LAZY: the connection is only created when getRedis() is first called, so the app boots fine without REDIS_URL until a Redis-backed feature is actually exercised.
 
 const Redis = require('ioredis');
 const config = require('../core/config');

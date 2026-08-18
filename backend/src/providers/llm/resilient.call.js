@@ -1,12 +1,5 @@
-//
-// Resilient retry for third-party LLM/embedding calls. Grounded in AWS "Exponential Backoff
-// and Jitter" (https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/):
-// retries use FULL JITTER so concurrent workers don't retry in synchronized bursts (which
-// turns a transient 429 into a retry storm / metastable failure). 429 responses honor the
-// provider's Retry-After header when present; retries are hard-capped.
-//
-// This is the single wrapper all provider calls should go through. Concurrency shaping
-// (Bottleneck) and circuit-breaking (opossum) layer on top of this in later steps.
+// Resilient retry for third-party LLM/embedding calls. Uses full jitter so concurrent workers don't retry in synchronized bursts (which turns a transient 429 into a retry storm). 429 responses honor the provider's Retry-After header when present; retries are hard-capped.
+// The single wrapper all provider calls should go through; concurrency shaping and circuit-breaking layer on top of this.
 
 /** True if the error represents an HTTP 429 rate-limit, across SDK error shapes. */
 function isRateLimit(err) {
@@ -32,11 +25,7 @@ function getRetryAfterMs(err) {
 }
 
 /**
- * Full-jitter backoff delay for a given attempt:
- *   delay = random(0, min(cap, base * 2^attempt))
- * @param {number} attempt 0-based attempt index
- * @param {number} base base delay (ms)
- * @param {number} cap maximum delay (ms)
+ * Full-jitter backoff delay: delay = random(0, min(cap, base * 2^attempt))
  * @param {() => number} [rand] injectable RNG (tests)
  */
 function fullJitterDelay(attempt, base, cap, rand = Math.random) {
@@ -46,11 +35,6 @@ function fullJitterDelay(attempt, base, cap, rand = Math.random) {
 
 /**
  * Runs `fn`, retrying on rate-limit/5xx with full jitter (or Retry-After) up to a cap.
- * @param {() => Promise<any>} fn
- * @param {Object} [opts]
- * @param {number} [opts.maxRetries=3]
- * @param {number} [opts.baseDelayMs=500]
- * @param {number} [opts.capDelayMs=20000]
  * @param {(err:any)=>boolean} [opts.retryOn] predicate (default: 429 or 5xx)
  * @param {(ms:number)=>Promise<void>} [opts.sleep] injectable sleep (tests)
  * @param {()=>number} [opts.rand] injectable RNG (tests)

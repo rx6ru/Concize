@@ -1,4 +1,4 @@
-// Sarvam API client with key rotation — follows the same pattern as groqService, cerebrasService.
+// Sarvam API client with key rotation: follows the same pattern as groqService, cerebrasService.
 // Unlike OpenAI-compatible providers, Sarvam uses raw HTTP with api-subscription-key header.
 
 'use strict';
@@ -13,7 +13,6 @@ class SarvamService extends BaseKeyRotationService {
 
     /**
      * Returns the auth headers for the next API key in rotation.
-     * Sarvam doesn't use an SDK — this returns headers for axios calls.
      * @returns {{ 'api-subscription-key': string }}
      */
     getHeaders() {
@@ -25,5 +24,4 @@ class SarvamService extends BaseKeyRotationService {
     }
 }
 
-// Singleton instance
 module.exports = new SarvamService();

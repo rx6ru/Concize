@@ -1,17 +1,6 @@
 // What has been spent against today's provider caps.
-//
-// The daily caps are the ones that actually bite (tokens/day on Groq, requests/day on Gemini
-// embeddings), and no provider reports how much is left — you find out from a 429, by which point
-// the day is gone. Recording spend locally is the only way to know before starting work whether
-// it can finish.
-//
-// Append-only JSONL because more than one process spends against the same budget: the backend
-// during a meeting, the evaluation harness during a run. A single-line append is atomic enough
-// for that; nothing here rewrites earlier lines.
-//
-// Worth knowing what this measures: on 2026-08-09 an evaluation run accounted for 39k of the 196k
-// spent on gpt-oss-120b that day. The rest was layer-2 narration on the write path. The expensive
-// thing was not the thing being measured.
+// Daily caps are the ones that actually bite (tokens/day on Groq, requests/day on Gemini embeddings) and no provider reports how much is left, you find out from a 429, by which point the day is gone. Recording spend locally is the only way to know beforehand whether work can finish.
+// Append-only JSONL: more than one process spends against the same budget (backend during a meeting, eval harness during a run). A single-line append is atomic enough; nothing here rewrites earlier lines.
 
 'use strict';
 
@@ -26,11 +15,7 @@ const DEFAULT_FILE = path.join(process.env.USAGE_LEDGER_DIR || '/tmp', 'concize-
 
 const isoDay = () => new Date().toISOString().slice(0, 10);
 
-/**
- * @param {object} [deps]
- * @param {string} [deps.file]    where the ledger lives
- * @param {function} [deps.today] returns the current day as YYYY-MM-DD; injectable for tests
- */
+// deps.today is injectable so tests can control the current day.
 function createUsageLedger({ file = DEFAULT_FILE, today = isoDay } = {}) {
 
     function totals(provider, model) {
@@ -78,10 +63,7 @@ function createUsageLedger({ file = DEFAULT_FILE, today = isoDay } = {}) {
             return totals(provider, model).requests;
         },
 
-        /**
-         * What is left of today's caps.
-         * A null means no cap is recorded for that model — not that nothing is left.
-         */
+        /** What is left of today's caps. A null means no cap is recorded for that model, not that nothing is left. */
         remainingToday(provider, model) {
             const { tokens, requests } = totals(provider, model);
             const limits = limitsFor(provider, model);

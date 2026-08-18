@@ -1,6 +1,5 @@
-// Rewrites a run of layer-1 chunks into third-person narrative prose for layer 2, so retrieval
-// can match abstract questions against prose instead of raw disfluent speech. Buffered per
-// meeting, drained once enough chunks accumulate or on flush at meeting end.
+// Rewrites a run of layer-1 chunks into third-person narrative prose for layer 2, so retrieval can match abstract questions against prose instead of raw disfluent speech.
+// Buffered per meeting, drained once enough chunks accumulate or on flush at meeting end.
 
 'use strict';
 
@@ -27,9 +26,7 @@ function buildUserMessage(chunks) {
     return `Speakers: ${speakers}\nTime range: ${t0}ms to ${t1}ms\n\n${lines.join('\n')}`;
 }
 
-// Same reasoning as the floor in chunk.boundary, one layer up. A narrative spans several verbatim
-// chunks, so "any source chunk was contested" flags nearly every narrative in a real meeting and
-// the marker stops carrying information. Weight by how long each source chunk ran.
+// Same reasoning as the floor in chunk.boundary, one layer up: a narrative spans several verbatim chunks, so "any source chunk was contested" would flag nearly every narrative and the marker would stop carrying information.
 const CONTESTED_FLOOR = 0.25;
 
 function contestedShare(chunks) {
@@ -73,8 +70,7 @@ function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, ma
     // One buffer per live meeting: { buffer: layer1Chunk[], ordinal: number }.
     const meetings = new Map();
 
-    // Synchronous: an await here lets two concurrent chunks both pass the length check and
-    // both start narrating the same span. The ordinal is resolved at emit time instead.
+    // Synchronous: an await here lets two concurrent chunks both pass the length check and both start narrating the same span. The ordinal is resolved at emit time instead.
     function stateFor(meetingId) {
         if (!meetings.has(meetingId)) {
             meetings.set(meetingId, { buffer: [], ordinal: null, busy: false });
@@ -129,8 +125,7 @@ function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, ma
             const state = stateFor(meetingId);
             state.buffer.push(layer1Chunk);
 
-            // one narration per meeting at a time. without this a burst of chunks starts a call
-            // per chunk, they all narrate overlapping spans and the provider times them out.
+            // one narration per meeting at a time: without this a burst of chunks starts a call per chunk, they all narrate overlapping spans, and the provider times them out.
             if (state.busy) return null;
             if (state.buffer.length < minChunks && state.buffer.length < maxChunks) return null;
 
@@ -161,10 +156,7 @@ function createNarrator({ complete, model, nextOrdinal = null, minChunks = 4, ma
 
         /**
          * Emit everything pending for a meeting, even below minChunks, and forget it.
-         *
-         * Chunks that queued behind an in-flight narration are still here, so the backlog can be
-         * far wider than maxChunks. It goes out in maxChunks-sized spans: as one request it
-         * exceeds the provider's per-request token limit, and the whole tail is lost.
+         * Chunks queued behind an in-flight narration are still here, so the backlog can be far wider than maxChunks; it goes out in maxChunks-sized spans since one request would exceed the provider's per-request token limit and lose the whole tail.
          */
         async flush(meetingId) {
             const state = meetings.get(meetingId);

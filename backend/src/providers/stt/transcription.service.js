@@ -17,12 +17,8 @@ const { createLogger } = require('../../core/logger');
 const logger = createLogger('transcriptionService');
 
 /**
- * Transcribes audio using the configured provider.
- * Returns a unified TranscriptionResult regardless of provider.
- *
- * @param {Buffer} audioBuffer - The audio data as a Buffer
- * @param {Object} metadata - File metadata including originalFileName, mimetype, etc.
- * @returns {Promise<import('./transcription/transcriptionResult').TranscriptionResult>}
+ * @param {Object} metadata - originalFileName, mimetype, etc.
+ * @returns {Promise<import('./transcription.result').TranscriptionResult>}
  */
 async function transcribe(audioBuffer, metadata = {}) {
   const provider = config.inference.transcription.provider;
@@ -48,15 +44,12 @@ async function transcribe(audioBuffer, metadata = {}) {
 
 /**
  * Transcribes audio using Groq's Whisper API with verbose_json format.
- * @param {Buffer} audioBuffer
- * @param {Object} metadata
- * @returns {Promise<import('./transcription/transcriptionResult').TranscriptionResult>}
+ * @returns {Promise<import('./transcription.result').TranscriptionResult>}
  */
 async function transcribeWithGroq(audioBuffer, metadata) {
   let tempFilePath = null;
 
   try {
-    // Create a temporary file from the buffer
     const tempDir = os.tmpdir();
     const tempFileName = `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.webm`;
     tempFilePath = path.join(tempDir, tempFileName);
@@ -65,16 +58,13 @@ async function transcribeWithGroq(audioBuffer, metadata) {
     fs.writeFileSync(tempFilePath, audioBuffer);
     logger.debug('Temporary file created', { size: fs.statSync(tempFilePath).size });
 
-    // Create file stream for Groq API
     const fileStream = fs.createReadStream(tempFilePath);
     const model = config.inference.transcription.model;
 
     logger.info('Calling Groq API for transcription', { model, format: 'verbose_json' });
 
-    // Get rotated Groq client
     const groq = groqService.getClient();
 
-    // Call Groq transcription API with verbose_json for rich metadata
     const groqResponse = await groq.audio.transcriptions.create({
       file: fileStream,
       model,
@@ -88,7 +78,6 @@ async function transcribeWithGroq(audioBuffer, metadata) {
       language: groqResponse?.language,
     });
 
-    // Normalize Groq response → unified TranscriptionResult
     const result = normalizeGroqResult(groqResponse);
 
     logger.info('Transcription completed', {
@@ -111,7 +100,6 @@ async function transcribeWithGroq(audioBuffer, metadata) {
     return createFailureResult('groq', error.message);
 
   } finally {
-    // Clean up temporary file
     if (tempFilePath) {
       try {
         if (fs.existsSync(tempFilePath)) {
@@ -128,9 +116,7 @@ async function transcribeWithGroq(audioBuffer, metadata) {
 
 /**
  * Transcribes audio using the Sarvam Batch API with diarization.
- * @param {Buffer} audioBuffer
- * @param {Object} metadata
- * @returns {Promise<import('./transcription/transcriptionResult').TranscriptionResult>}
+ * @returns {Promise<import('./transcription.result').TranscriptionResult>}
  */
 async function transcribeWithSarvam(audioBuffer, metadata) {
   try {

@@ -1,9 +1,4 @@
-// Per-task inference routing — returns the correct LLM client + model for each task
-//
-// Usage:
-//   const { getChatInference } = require('../utils/llm/inferenceProvider');
-//   const { client, model, taskConfig } = getChatInference();
-//   const stream = await client.chat.completions.create({ model, ... });
+// Per-task inference routing: returns the correct LLM client + model for each task
 
 const config = require('../../core/config');
 const groqService = require('./groq');
@@ -25,9 +20,6 @@ function getService(provider) {
     }
 }
 
-/**
- * Returns { client, model, taskConfig } for the chat task.
- */
 function getChatInference() {
     const taskConfig = config.inference.chat;
     const service = getService(taskConfig.provider);
@@ -38,9 +30,6 @@ function getChatInference() {
     };
 }
 
-/**
- * Returns { client, model, taskConfig } for the clean task.
- */
 function getCleanInference() {
     const taskConfig = config.inference.clean;
     const service = getService(taskConfig.provider);
@@ -51,9 +40,6 @@ function getCleanInference() {
     };
 }
 
-/**
- * Returns { client, model, taskConfig } for the summary task.
- */
 function getSummaryInference() {
     const taskConfig = config.inference.summary;
     const service = getService(taskConfig.provider);

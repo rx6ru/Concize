@@ -1,17 +1,11 @@
-// frontend/auth.js
-//
-// Supabase authentication for an MV3 extension WITHOUT the SDK — calls the Supabase Auth
-// REST API directly (grounded in Supabase docs: the SDK doesn't work cleanly in MV3 service
-// workers — no localStorage, remote-code ban). Session is stored in chrome.storage.local so
-// it's reachable from the popup, offscreen document, and service worker.
-//
-// Exposes `ConcizeAuth` globally: signUp, signIn, signOut, isAuthenticated, getSession, authedFetch.
+// Supabase authentication for an MV3 extension WITHOUT the SDK: it doesn't work cleanly in MV3 service workers (no localStorage, remote-code ban), so this calls the Supabase Auth REST API directly.
+// Session is stored in chrome.storage.local so it's reachable from the popup, offscreen document, and service worker.
 
 (function () {
     const SB_URL = CONCIZE_CONFIG.SUPABASE_URL;
-    // New Supabase API keys (2025+): the publishable key (sb_publishable_...) replaces the
-    // legacy anon key. It goes in the `apikey` header ONLY — never in Authorization (it's not
-    // a JWT). Fall back to a legacy anon key if that's what the project still uses.
+    // New Supabase API keys (2025+): the publishable key (sb_publishable_...) replaces the legacy anon key.
+    // It goes in the `apikey` header ONLY: never in Authorization (it's not a JWT).
+    // Fall back to a legacy anon key if that's what the project still uses.
     const SB_KEY = CONCIZE_CONFIG.SUPABASE_PUBLISHABLE_KEY || CONCIZE_CONFIG.SUPABASE_ANON_KEY;
     const SESSION_KEY = 'sb_session';
 
@@ -65,7 +59,7 @@
         return !!(await getSession());
     }
 
-    // Refresh tokens. Supabase ROTATES the refresh token — we always persist the new one.
+    // Refresh tokens. Supabase ROTATES the refresh token: we always persist the new one.
     async function refresh(refreshToken) {
         const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
             method: 'POST', headers: authHeaders(), body: JSON.stringify({ refresh_token: refreshToken }),
@@ -108,8 +102,7 @@
         return res;
     }
 
-    // Proactively refresh if the token is near expiry. Called by the service-worker alarm so
-    // the session stays alive even while the popup is closed.
+    // Proactively refresh if the token is near expiry. Called by the service-worker alarm so the session stays alive even while the popup is closed.
     async function maybeRefresh(thresholdSec = 300) {
         const session = await getSession();
         if (!session || !session.refresh_token) return;

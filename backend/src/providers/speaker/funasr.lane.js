@@ -1,7 +1,5 @@
 // Speaker lane, talks to the local FunASR diarization service.
-//
-// PROTOCOL (this file is the contract; the Python service implements it)
-//
+// PROTOCOL (this file is the contract; the Python service implements it):
 //   connect   ws://<host>/speaker?session=<id>&sample_rate=16000
 //   client →  binary frames: raw little-endian 16-bit mono PCM
 //   client →  {"event":"flush"} | {"event":"end"} | {"event":"ping"}
@@ -9,14 +7,8 @@
 //             {"event":"speaker","t0_ms":0,"t1_ms":1500,"speaker":"0","confidence":"confident"}
 //             {"event":"overlap","t0_ms":900,"t1_ms":1400,"speakers":["0","1"]}
 //             {"event":"error","message":"...","fatal":true}
-//
-// Overlap arrives on this same socket rather than a third connection: the detector reads the
-// audio the diarizer is already being fed, and one stream means one clock. The gateway routes
-// on the normalised `lane`, not on which socket delivered it.
-//
-// Speaker intervals are advisory: fusion joins them to words by timestamp and emits text
-// either way. A dead speaker service costs attribution, not transcription, so this lane
-// reconnects quietly in the background instead of failing loud.
+// Overlap arrives on this same socket rather than a third connection: the detector reads the audio the diarizer is already being fed, and one stream means one clock. The gateway routes on the normalised `lane`, not on which socket delivered it.
+// Speaker intervals are advisory: fusion joins them to words by timestamp and emits text either way. A dead speaker service costs attribution, not transcription, so this lane reconnects quietly in the background instead of failing loud.
 
 'use strict';
 
@@ -28,17 +20,11 @@ const logger = createLogger('speakerLane');
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 10000;
 
-// Audio that arrives before the socket first opens is held, not dropped. Measured: losing the
-// first 300ms of a meeting took the tracker from 15 speaker centres to 1 and put every segment
-// on the same id, because its internal chunking is aligned to the start of the stream.
-// 10 seconds is far more than a connect takes, and bounds the memory if the service is down.
+// Audio before the socket opens is held, not dropped. Measured: losing the first 300ms of a meeting took the tracker from 15 speaker centres to 1, putting every segment on the same id (its internal chunking aligns to stream start). 10 seconds is far more than a connect takes, and bounds memory if the service is down.
 const PRECONNECT_MAX_FRAMES = 100;
 
 function normalise(msg) {
-    // A dedicated detector's spans, when the service has one. Deriving overlap from intersecting
-    // speaker intervals scores 23.6% F1 against 69.2% for pyannote segmentation-3.0 on the same
-    // AMI meetings, because a clustering backend gives each segment exactly one speaker and so
-    // cannot represent two people at once — there is nothing to intersect.
+    // A dedicated detector's spans, when the service has one. Deriving overlap from intersecting speaker intervals scores 23.6% F1 against 69.2% for pyannote segmentation-3.0 on the same AMI meetings, because a clustering backend gives each segment exactly one speaker and so cannot represent two people at once, there is nothing to intersect.
     if (msg.event === 'overlap') {
         return {
             lane: 'overlap',
@@ -56,9 +42,7 @@ function normalise(msg) {
         kind: 'interval',
         t0Ms: msg.t0_ms,
         t1Ms: msg.t1_ms,
-        // The service returns bare integers. They get an S prefix here because a line reading
-        // "#t2 0:17 8: ..." in the chat context is unreadable, the model takes 8 for part of
-        // the timestamp and reports the transcript as unattributed.
+        // The service returns bare integers. They get an S prefix here because a line reading "#t2 0:17 8: ..." in the chat context is unreadable, the model takes 8 for part of the timestamp and reports the transcript as unattributed.
         speakerLabel: msg.speaker == null ? null : `S${msg.speaker}`,
         confidence: msg.confidence || 'unknown',
         raw: msg,
@@ -67,14 +51,8 @@ function normalise(msg) {
 
 /**
  * @param {object} opts
- * @param {string} opts.sessionId
- * @param {string} [opts.endpoint]      defaults to SPEAKER_SERVICE_URL or localhost
- * @param {number} [opts.sampleRate]
- * @param {function} opts.onEvent
- * @param {function} [opts.onError]
- * @param {function} [opts.onClose]
- * @param {boolean} [opts.reconnect]    disable in tests that assert a single connection
- * @param {function} [opts.wsFactory]
+ * @param {string} [opts.endpoint]   defaults to SPEAKER_SERVICE_URL or localhost
+ * @param {boolean} [opts.reconnect] disable in tests that assert a single connection
  */
 function createFunasrSpeakerLane(opts) {
     const {
@@ -161,9 +139,7 @@ function createFunasrSpeakerLane(opts) {
             if (state.closed) return onClose({ code, reason: reason?.toString() || '' });
             if (!reconnect) return onClose({ code, reason: reason?.toString() || '' });
 
-            // audio sent while disconnected gets dropped, not queued: buffering it would replay
-            // stale audio into a fresh session and corrupt the timeline fusion depends on.
-            // losing attribution for those seconds is the cheaper failure.
+            // audio sent while disconnected gets dropped, not queued: buffering it would replay stale audio into a fresh session and corrupt the timeline fusion depends on. losing attribution for those seconds is the cheaper failure.
             const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** state.attempts);
             state.attempts += 1;
             logger.warn('Speaker service dropped, reconnecting', { sessionId, delay, code });
@@ -177,8 +153,7 @@ function createFunasrSpeakerLane(opts) {
         sendAudio(pcmFrame) {
             if (state.closed) return false;
 
-            // Before the first connect, hold the audio. After it, drop: on a reconnect the
-            // service has a fresh session and replaying old audio would corrupt its timeline.
+            // Before the first connect, hold the audio. After it, drop: on a reconnect the service has a fresh session and replaying old audio would corrupt its timeline.
             if (!state.connectedOnce) {
                 if (preconnect.length >= PRECONNECT_MAX_FRAMES) {
                     state.framesDropped += 1;

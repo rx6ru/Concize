@@ -1,6 +1,5 @@
 // Live meeting session. Owns the clock, sends audio to each lane, collects their events.
-// Clock comes from frame sequence numbers rather than arrival time, so all lanes agree
-// on timestamps even with network jitter.
+// Clock comes from frame sequence numbers rather than arrival time, so all lanes agree on timestamps even with network jitter.
 
 'use strict';
 
@@ -15,9 +14,7 @@ function createSession({
     ownerId,
     sampleRate = 16000,
     frameMs = 100,
-    // Where this session's clock starts. Non-zero when resuming a meeting whose transcript
-    // already reaches this far: the client's sequence restarts at 0 on reconnect, so without
-    // the offset a resumed session rewrites the timeline instead of continuing it.
+    // Where this session's clock starts. Non-zero when resuming a meeting whose transcript already reaches this far: the client's sequence restarts at 0 on reconnect, so without the offset a resumed session rewrites the timeline instead of continuing it.
     startOffsetMs = 0,
     onEvent,
     onFrame = null,          // every audio frame, used to spool the recording
@@ -55,8 +52,7 @@ function createSession({
             return this;
         },
 
-        // lane events arrive already normalised; session just stamps provenance and
-        // advances the watermark, never reshapes the payload.
+        // lane events arrive already normalised; session just stamps provenance and advances the watermark, never reshapes the payload.
         handleLaneEvent(name, event) {
             if (state.closed) return;
             const entry = lanes.get(name);
@@ -73,11 +69,8 @@ function createSession({
         },
 
         /**
-         * Stamp a frame with session time and fan it to every lane.
-         * Returns the session-relative start time of this frame.
-         *
-         * A lane that throws gets marked degraded instead of stopping the others,
-         * since words outrank speakers outrank overlap.
+         * Stamp a frame with session time and fan it to every lane. Returns the session-relative start time of this frame.
+         * A lane that throws gets marked degraded instead of stopping the others, since words outrank speakers outrank overlap.
          */
         pushAudio(frame, seq) {
             if (state.closed) return null;

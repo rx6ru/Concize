@@ -1,8 +1,7 @@
 // Shared Qdrant client.
 //
-// Built once and lazily. The REST client holds a keep-alive agent, so building a new one per
-// query throws that away, and lazy construction means this module can be required by tests
-// that don't have a real vector database to connect to.
+// Built once and lazily: the REST client holds a keep-alive agent, so building a new one per query throws that away.
+// Lazy construction also means this module can be required by tests that don't have a real vector database to connect to.
 
 'use strict';
 

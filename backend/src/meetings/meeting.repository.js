@@ -1,4 +1,3 @@
-//
 // Meeting + transcript persistence on Supabase Postgres.
 
 const { query } = require('../infra/postgres');
@@ -143,7 +142,7 @@ async function listMeetings(ownerId, { limit = 50 } = {}) {
             meetingId: r.job_id,
             status: r.status,
             createdAt: r.created_at,
-            // '' is the column default, which is not a title — report it as absent.
+            // '' is the column default, which is not a title: report it as absent.
             title: r.title || null,
         }));
     } catch (err) {
@@ -156,7 +155,7 @@ async function listMeetings(ownerId, { limit = 50 } = {}) {
  * Deletes a meeting. Chunks, utterances, chats, summaries and transcript rows all reference it
  * with ON DELETE CASCADE, so this one statement removes everything derived from it.
  *
- * Vectors live outside Postgres and are NOT covered — the caller must purge those separately.
+ * Vectors live outside Postgres and are NOT covered, the caller must purge those separately.
  *
  * @returns {Promise<boolean>} false when there was no such meeting.
  */

@@ -1,6 +1,4 @@
-// Append-only transcript log.
-// A correction (diarizer relabel, or the post-meeting batch pass) writes a new revision
-// and supersedes the old one in one transaction, so readers always see one current row per turn.
+// Append-only transcript log. A correction (diarizer relabel, or the post-meeting batch pass) writes a new revision and supersedes the old one in one transaction, so readers always see one current row per turn.
 
 'use strict';
 
@@ -33,8 +31,7 @@ function toUtterance(row) {
 }
 
 /**
- * Appends a finalised utterance. `seq` is assigned server-side from the current max so
- * append order is monotonic per meeting even if callers race.
+ * Appends a finalised utterance. `seq` is assigned server-side from the current max so append order is monotonic per meeting even if callers race.
  */
 async function appendUtterance(meetingId, utterance) {
     const {
@@ -97,14 +94,9 @@ async function reviseUtterance(meetingId, turnId, changes) {
     });
 }
 
-/** The current transcript, in spoken order. Superseded revisions are excluded. */
 /**
- * The current transcript, in spoken order.
- *
- * Pages by `seq` rather than OFFSET: a revision landing between two page fetches would shift an
- * offset window and make a turn appear twice or disappear. `seq` is assigned once at append and
- * never moves, so a cursor stays correct whatever else changes.
- *
+ * The current transcript, in spoken order. Superseded revisions are excluded.
+ * Pages by `seq` rather than OFFSET: a revision landing between two page fetches would shift an offset window and make a turn appear twice or disappear. `seq` is assigned once at append and never moves, so a cursor stays correct whatever else changes.
  * @param {string} meetingId
  * @param {{limit?: number, afterSeq?: number}} [opts] afterSeq is exclusive.
  */
@@ -127,11 +119,8 @@ async function getTranscript(meetingId, { limit = null, afterSeq = null } = {}) 
 }
 
 /**
- * The tail of the transcript, measured back from the watermark rather than wall clock:
- * "what was just said" means recent in the meeting, and a paused meeting hasn't moved on.
- *
- * Watermark is read separately instead of as a subquery, pg-mem (used in the DB tests)
- * doesn't handle the correlated form.
+ * The tail of the transcript, measured back from the watermark rather than wall clock: "what was just said" means recent in the meeting, and a paused meeting hasn't moved on.
+ * Watermark is read separately instead of as a subquery: pg-mem (used in the DB tests) doesn't handle the correlated form.
  */
 async function getRecentTurns(meetingId, { windowMs = 60000 } = {}) {
     const watermarkMs = await getWatermarkMs(meetingId);

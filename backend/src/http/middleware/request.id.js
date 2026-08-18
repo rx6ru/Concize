@@ -1,7 +1,5 @@
-//
-// Assigns each request a correlation id (honoring an inbound x-request-id if present), echoes it on
-// the response, and runs the rest of the request inside an AsyncLocalStorage context so every log
-// line downstream carries it. Mount this FIRST, before request logging / auth / routes.
+// Assigns each request a correlation id (honoring an inbound x-request-id if present), echoes it on the response, and runs the rest of the request inside an AsyncLocalStorage context so every log line downstream carries it.
+// Mount this FIRST, before request logging / auth / routes.
 
 const { randomUUID } = require('node:crypto');
 const { als } = require('../../core/request.context');

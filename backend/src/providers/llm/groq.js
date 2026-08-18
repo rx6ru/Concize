@@ -24,5 +24,4 @@ class GroqService extends BaseKeyRotationService {
     }
 }
 
-// Singleton instance
 module.exports = new GroqService();

@@ -1,31 +1,17 @@
-//
-// Thin, injectable access-token verifier seam, built on `jose` — the library Supabase
-// officially recommends for backend JWT verification (it natively supports ES256, which is
-// Supabase's default asymmetric algorithm, plus RS256, and handles JWKS fetch/cache/rotation).
-//
-// The rest of the app depends only on the returned `verifyAccessToken(token) -> claims`
-// function, never on Supabase or jose directly. Identity stays swappable; the crypto path
-// is unit-testable by injecting a local JWKS (jose `createLocalJWKSet`) instead of a network call.
-//
-// Grounding (Supabase docs, 2026):
-//   JWKS:     https://<ref>.supabase.co/auth/v1/.well-known/jwks.json
-//   issuer:   https://<ref>.supabase.co/auth/v1
-//   audience: authenticated
-//   user id:  `sub` claim; email is a top-level claim
-//   NOTE: local JWKS verification checks signature + expiry only, NOT server-side session
-//         revocation. Acceptable for this tier; revisit if immediate logout enforcement is needed.
+// Injectable access-token verifier. The rest of the app depends only on the returned verifyAccessToken(token) -> claims, never on Supabase or jose directly, so identity stays swappable and the crypto path is unit-testable via an injected local JWKS.
+// Local JWKS verification checks signature + expiry only, not server-side session revocation.
 
 const jose = require('jose');
 
 /**
  * @param {Object} opts
- * @param {'jwks'|'hs256'} [opts.mode='jwks'] Verification strategy.
- * @param {string} [opts.jwksUri] JWKS endpoint (required for jwks mode unless `jwks` injected).
- * @param {string} [opts.jwtSecret] Shared secret (required for hs256 mode).
- * @param {string} [opts.issuer] Expected `iss` claim — enforced by jose.
- * @param {string|string[]} [opts.audience] Expected `aud` claim (Supabase: 'authenticated').
- * @param {Function} [opts.jwks] Test/override hook: a jose key-resolver (e.g. from createLocalJWKSet).
- * @returns {(token: string) => Promise<object>} verifyAccessToken — resolves claims or rejects.
+ * @param {'jwks'|'hs256'} [opts.mode='jwks']
+ * @param {string} [opts.jwksUri] required for jwks mode unless opts.jwks is injected
+ * @param {string} [opts.jwtSecret] required for hs256 mode
+ * @param {string} [opts.issuer]
+ * @param {string|string[]} [opts.audience]
+ * @param {Function} [opts.jwks] test override: a jose key-resolver, e.g. from createLocalJWKSet
+ * @returns {(token: string) => Promise<object>}
  */
 function createTokenVerifier(opts = {}) {
     const { mode = 'jwks', jwksUri, jwtSecret, issuer, audience } = opts;
@@ -52,8 +38,7 @@ function createTokenVerifier(opts = {}) {
             return payload;
         }
 
-        // Asymmetric / JWKS (default). jose resolves the right key by the token's `kid`
-        // and transparently handles multi-key rotation windows.
+        // jose resolves the key by the token's kid and handles multi-key rotation.
         let keySet = injectedJwks;
         if (!keySet) {
             if (!jwksUri) {

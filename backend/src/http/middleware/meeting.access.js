@@ -1,7 +1,5 @@
-//
-// Authorization gate for meeting-scoped resources. Loads the meeting's owner and
-// confirms the authenticated caller owns it. Cross-tenant and non-existent meetings
-// both return 404 — never 403 — so the API never reveals that someone else's meeting exists.
+// Authorization gate for meeting-scoped resources: loads the meeting's owner and confirms the authenticated caller owns it.
+// Cross-tenant and non-existent meetings both return 404, never 403, so the API never reveals that someone else's meeting exists.
 //
 // Must run AFTER `authenticate` (which sets req.user). Attaches req.meeting on success.
 

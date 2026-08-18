@@ -1,8 +1,6 @@
-// Constants
 const CHUNK_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 const OVERLAP_MS = 30 * 1000; // 30 seconds
 
-// State
 let recorderA, recorderB;
 let dataA = [], dataB = [];
 let activeStreams = [];
@@ -13,12 +11,11 @@ let audioContext = null;
 let lastChunkSent = false;
 let globalStartTimeMs = 0;
 
-// Entry point for messages from other parts of the extension
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "offscreen") {
     switch (message.type) {
       case "start-recording":
-        userStopped = false; // Reset flag on new recording
+        userStopped = false;
         currentMeetingId = message.data.meetingId;
         await startRecording(message.data.streamId);
         break;
@@ -32,7 +29,6 @@ chrome.runtime.onMessage.addListener(async (message) => {
   }
 });
 
-// Main function to start the recording process
 async function startRecording(streamId) {
   console.log("Starting recording process...");
   if (recorderA || recorderB) {
@@ -40,7 +36,6 @@ async function startRecording(streamId) {
     return;
   }
 
-  // Get the combined media stream
   const mediaStream = await getMediaStream(streamId);
   if (!mediaStream) {
     return; // Error already handled in getMediaStream
@@ -49,7 +44,6 @@ async function startRecording(streamId) {
   // Anchor the global meeting start time
   globalStartTimeMs = Date.now();
 
-  // Start the first recorder cycle
   runRecorderCycle('A', mediaStream);
 
   window.location.hash = "recording";
@@ -60,12 +54,10 @@ async function startRecording(streamId) {
   });
 }
 
-// Main function to stop the recording process
 async function stopRecording() {
   console.log("Stopping recording process...");
   userStopped = true;
 
-  // Stop all running recorders
   if (recorderA?.state === 'recording') {
     recorderA.stop();
   }
@@ -77,7 +69,6 @@ async function stopRecording() {
   stopTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
   stopTimeouts = [];
 
-  // Stop all underlying media stream tracks
   await stopAllStreams();
   window.location.hash = "";
 
@@ -93,7 +84,6 @@ async function stopRecording() {
   console.log("Recording process stopped.");
 }
 
-// Manages the lifecycle of a single recorder
 function runRecorderCycle(recorderName, stream) {
   console.log(`Starting cycle for recorder ${recorderName}`);
   const isRecorderA = recorderName === 'A';
@@ -144,7 +134,6 @@ function runRecorderCycle(recorderName, stream) {
   stopTimeouts.push(stopThisTimeout);
 }
 
-// Handles sending the audio blob to the backend
 async function sendAudioChunk(audioBlob, isLastChunk = false, chunkStartTimeMs = 0) {
   if (audioBlob.size === 0) {
     console.log("Skipping empty audio chunk.");
@@ -186,7 +175,6 @@ async function sendAudioChunk(audioBlob, isLastChunk = false, chunkStartTimeMs =
   }
 }
 
-// Helper to get the combined tab and mic stream
 async function getMediaStream(streamId) {
   await stopAllStreams();
   try {
@@ -230,7 +218,6 @@ async function getMediaStream(streamId) {
   }
 }
 
-// Helper to stop all active stream tracks
 async function stopAllStreams() {
   activeStreams.forEach((stream) => {
     stream.getTracks().forEach((track) => track.stop());

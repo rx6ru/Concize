@@ -38,7 +38,6 @@ function validate(llmResponse) {
         return { valid: false, filtered: true, response: SAFE_FALLBACK, reason: 'empty_response' };
     }
 
-    // Check for prompt leakage
     for (const pattern of LEAKAGE_PATTERNS) {
         if (pattern.test(llmResponse)) {
             console.warn(`SECURITY_WARN: Output contained potential prompt leakage.`);
@@ -51,7 +50,6 @@ function validate(llmResponse) {
         }
     }
 
-    // Check for safety bypass
     for (const pattern of BYPASS_PATTERNS) {
         if (pattern.test(llmResponse)) {
             console.warn(`SECURITY_WARN: Output indicated potential safety bypass.`);
@@ -67,20 +65,17 @@ function validate(llmResponse) {
     return { valid: true, filtered: false, response: llmResponse };
 }
 
-// Long enough to hold any pattern above (the longest is ~35 characters) so one cannot hide by
-// falling across a delta boundary, short enough that the per-delta scan stays cheap.
+// Long enough to hold any pattern above (the longest is ~35 characters) so one cannot hide by falling across a delta boundary, short enough that the per-delta scan stays cheap.
 const SCAN_WINDOW = 256;
 
 /**
  * A guard for a streamed answer.
  *
- * `validateChunk` below tests a delta on its own, which cannot work: deltas are a few characters
- * each, so "CRITICAL SECURITY RULES" is never present in any single one. This carries a bounded
- * tail of what came before, so a pattern spanning several deltas is still seen.
+ * `validateChunk` below tests a delta on its own, which cannot work: deltas are a few characters each, so "CRITICAL SECURITY RULES" is never present in any single one.
+ * This carries a bounded tail of what came before, so a pattern spanning several deltas is still seen.
  *
- * Streaming means some of a leak has already reached the client before it can be recognised;
- * stopping at the match is damage limitation, not prevention. The caller should also tell the
- * client to discard what it rendered.
+ * Streaming means some of a leak has already reached the client before it can be recognised; stopping at the match is damage limitation, not prevention.
+ * The caller should also tell the client to discard what it rendered.
  *
  * @returns {{push: function(string): {blocked: boolean, reason?: string}, scanned: function(): number}}
  */

@@ -1,6 +1,5 @@
 // Streaming ASR lane over Sarvam's realtime WebSocket.
-// Only saaras:v3-realtime is accepted and it never returns a speaker field, so speaker labels
-// come from a separate lane (confirmed against the live API on 2026-08-06).
+// Only saaras:v3-realtime is accepted and it never returns a speaker field, so speaker labels come from a separate lane (confirmed against the live API on 2026-08-06).
 // Server echoes the config it actually applied in session.begin, since bad query params just get dropped, no error thrown.
 
 'use strict';
@@ -35,17 +34,12 @@ function normalise(msg, offsetMs) {
 
 /**
  * Opens a Sarvam realtime session.
- *
- * @param {object} opts
- * @param {string} opts.sessionId
  * @param {number} [opts.sampleRate]        8000 or 16000
  * @param {string} [opts.languageCode]      'auto' or e.g. 'hi-IN'
  * @param {string} [opts.streamType]        fast | balanced | simulated
- * @param {number} [opts.silenceDurationMs] dominates time-to-final; see REALTIME-SYSTEM-DESIGN §5.1
+ * @param {number} [opts.silenceDurationMs] dominates time-to-final
  * @param {number} [opts.offsetMs]          added to provider timestamps to reach session time
  * @param {function} opts.onEvent           normalised lane events
- * @param {function} [opts.onError]
- * @param {function} [opts.onClose]
  * @param {function} [opts.wsFactory]       injectable for tests
  */
 function createSarvamRealtimeLane(opts) {

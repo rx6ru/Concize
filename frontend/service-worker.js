@@ -1,4 +1,3 @@
-//service-worker.js
 importScripts('config.js', 'auth.js');
 
 // Background Supabase token refresh via alarms
@@ -26,7 +25,6 @@ chrome.runtime.onMessage.addListener(async (message) => {
             currentWindow: true,
           });
 
-          // Check if we can record this tab
           if (
             !tab ||
             tab.url.startsWith("chrome://") ||
@@ -44,12 +42,10 @@ chrome.runtime.onMessage.addListener(async (message) => {
           // Ensure we have access to the tab
           await chrome.tabs.update(tab.id, {});
 
-          // Get a MediaStream for the active tab
           const streamId = await chrome.tabCapture.getMediaStreamId({
             targetTabId: tab.id,
           });
 
-          // Send the stream ID to the offscreen document to start recording
           chrome.runtime.sendMessage({
             type: "start-recording",
             target: "offscreen",
@@ -69,7 +65,6 @@ chrome.runtime.onMessage.addListener(async (message) => {
       case "recording-stopped":
         chrome.action.setIcon({ path: "icons/not-recording.png" });
         {
-          // Check if an offscreen document exists before trying to close it.
           const existingContexts = await chrome.runtime.getContexts({});
           const offscreenDocument = existingContexts.find(
               (c) => c.contextType === 'OFFSCREEN_DOCUMENT'

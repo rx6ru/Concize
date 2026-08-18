@@ -1,5 +1,4 @@
-// Configurable parameters for pre-chunking transcription segments.
-// All values tunable via environment variables with sensible defaults.
+// Parameters for pre-chunking transcription segments.
 
 module.exports = {
     // Timestamp gap (seconds) that triggers a new chunk boundary
@@ -12,6 +11,6 @@ module.exports = {
     // Maximum tokens per chunk before forcing a split at the next sentence boundary
     MAX_CHUNK_TOKENS: parseInt(process.env.MAX_CHUNK_TOKENS || '500', 10),
 
-    // Minimum tokens per chunk — chunks smaller than this are merged with a neighbor
+    // Minimum tokens per chunk: chunks smaller than this are merged with a neighbor
     MIN_CHUNK_TOKENS: parseInt(process.env.MIN_CHUNK_TOKENS || '50', 10),
 };

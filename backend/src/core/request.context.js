@@ -1,7 +1,4 @@
-//
-// Per-request context propagated implicitly through the async call chain via AsyncLocalStorage —
-// no need to thread a requestId argument through every function. The logger reads from here to tag
-// every log line, so one id traces a request across all modules. (Node 18+ built-in; no deps.)
+// Per-request context propagated implicitly through the async call chain via AsyncLocalStorage, no need to thread a requestId argument through every function. The logger reads from here to tag every log line, so one id traces a request across all modules. (Node 18+ built-in, no deps.)
 
 const { AsyncLocalStorage } = require('node:async_hooks');
 

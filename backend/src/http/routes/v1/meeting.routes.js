@@ -1,4 +1,3 @@
-//
 // Canonical RESTful, ownership-rooted resource tree:
 //   GET    /api/v1/meetings                       the caller's meetings
 //   POST   /api/v1/meetings                       create a meeting (owner = caller)
@@ -27,8 +26,7 @@ const logger = createLogger('meetingsRoutes');
 // Create a new meeting owned by the authenticated caller.
 router.post('/', startMeeting);
 
-// The caller's own meetings. A collection route, so there is no :meetingId to gate — the owner
-// filter lives in the query itself rather than in a post-hoc filter.
+// The caller's own meetings. A collection route, so there is no :meetingId to gate, the owner filter lives in the query itself.
 router.get('/', async (req, res) => {
     if (!req.user?.id) {
         return res.status(401).json({ success: false, error: 'Authentication required.' });
@@ -70,10 +68,7 @@ router.get('/:meetingId/transcript', requireMeetingAccess, async (req, res) => {
     }
 });
 
-// The speaker-attributed transcript, paged.
-//
-// /transcript below returns the flat text the old batch pipeline wrote, with no speakers and no
-// timings. This serves the utterance log instead, which is what a post-meeting view needs.
+// The speaker-attributed transcript, paged. /transcript above is the flat legacy text with no speakers or timings; this serves the utterance log instead, which is what a post-meeting view needs.
 router.get('/:meetingId/utterances', requireMeetingAccess, async (req, res) => {
     const { meetingId } = req.meeting;
     try {

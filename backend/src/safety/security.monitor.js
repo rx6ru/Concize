@@ -25,7 +25,6 @@ function recordViolation(identifier, type, details = {}) {
 
     const violations = violationStore.get(key);
 
-    // Add new violation
     violations.push({
         type,
         timestamp: now,
@@ -37,7 +36,6 @@ function recordViolation(identifier, type, details = {}) {
     const recentViolations = violations.filter(v => v.timestamp > dayAgo);
     violationStore.set(key, recentViolations);
 
-    // Log structured violation
     console.warn(`SECURITY_VIOLATION: [${identifier}] Type: ${type}`, {
         count: recentViolations.length,
         ...details
@@ -55,7 +53,6 @@ function checkBlocked(identifier) {
     const key = `violations:${identifier}`;
     const violations = violationStore.get(key) || [];
 
-    // Filter to recent violations only
     const now = Date.now();
     const dayAgo = now - 24 * 60 * 60 * 1000;
     const recentViolations = violations.filter(v => v.timestamp > dayAgo);
@@ -74,9 +71,6 @@ function clearViolations(identifier) {
     violationStore.delete(key);
 }
 
-/**
- * Gets violation summary for monitoring
- */
 function getViolationSummary() {
     const summary = {};
     for (const [key, violations] of violationStore.entries()) {

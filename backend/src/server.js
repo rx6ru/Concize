@@ -1,5 +1,3 @@
-// index.js
-
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -28,8 +26,7 @@ const { register: metricsRegister, httpMetricsMiddleware } = require("./core/met
 
 const logger = createLogger('server');
 
-// Initialize Cloudinary before starting the server.
-// This is a crucial step for our audio storage and retrieval functions.
+// Cloudinary backs audio storage/retrieval; must succeed before the server starts.
 try {
   initialiseCloudinary();
   logger.info('Cloudinary SDK and services initialized successfully');
@@ -40,10 +37,6 @@ try {
 
 const app = express();
 
-// --- START OF CORS FIX ---
-// Define a whitelist of allowed origins.
-// This is now configured using an environment variable for better security and flexibility.
-// It falls back to a default list for local development.
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : [
@@ -68,7 +61,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// --- END OF CORS FIX ---
 
 app.use(express.json());
 app.use(cookieParser());
@@ -76,7 +68,7 @@ app.use(requestId); // correlation id first, so all downstream logs carry it
 app.use(httpMetricsMiddleware);
 app.use(requestLogger);
 
-// Metrics scrape endpoint — mounted BEFORE auth so monitoring needs no token.
+// Metrics scrape endpoint: mounted BEFORE auth so monitoring needs no token.
 // Restrict at the network layer in production (internal-only).
 app.get('/metrics', async (req, res) => {
   try {
@@ -87,9 +79,8 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
-// Apply authentication globally: every request must carry a valid Supabase JWT
-// or (transitionally) a legacy x-auth-code. Sets req.user. Authorization (ownership)
-// is enforced per-resource by requireMeetingAccess on the meeting routes.
+// Applies globally: every request must carry a valid Supabase JWT or (transitionally) a legacy x-auth-code, and sets req.user.
+// Authorization (ownership) is enforced per-resource by requireMeetingAccess on the meeting routes.
 app.use(authenticate);
 
 // Verify Postgres connectivity at startup.
@@ -98,7 +89,6 @@ connectPg().catch(err => {
   process.exit(1);
 });
 
-// --- Versioned API ---
 app.use("/api/v1", v1Routes);
 
 // Backward compatibility: redirect unversioned /api/* → /api/v1/*
@@ -126,12 +116,8 @@ const startServer = async () => {
     // 3. Make sure the chunk collection exists before any meeting can write to it.
     await transcriptPipeline.ensureReady();
 
-    // 4. Attach the live meeting gateway to the same server. Auth runs on the HTTP upgrade,
-    //    reusing the REST verifier and ownership lookup. Persistence, chunking and indexing
-    //    are assembled in the transcript pipeline.
-    // Speaker attribution is opt in. Without SPEAKER_SERVICE_URL the lane is not built at all
-    // and meetings transcribe unattributed, which is the intended behaviour when the Python
-    // service is not deployed.
+    // 4. Attach the live meeting gateway. Auth runs on the HTTP upgrade, reusing the REST verifier and ownership lookup.
+    // Speaker attribution is opt in: without SPEAKER_SERVICE_URL the lane is not built and meetings transcribe unattributed.
     const speakerLane = process.env.SPEAKER_SERVICE_URL ? createFunasrSpeakerLane : null;
     if (!speakerLane) {
       logger.warn('SPEAKER_SERVICE_URL not set, meetings will run without speaker attribution');
@@ -183,8 +169,7 @@ const gracefulShutdown = async () => {
     process.exit(1);
   }, 10000);
 
-  // 1. Flush and close live meeting sessions first, so in-flight audio is finalised
-  //    rather than dropped when the socket goes away.
+  // 1. Flush and close live meeting sessions first, so in-flight audio is finalised rather than dropped.
   if (global.gateway) {
     try {
       await global.gateway.closeAll();

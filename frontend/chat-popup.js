@@ -53,14 +53,12 @@ class ChatInterface {
         }, 5000);
     }
 
-    // --- SECURITY: HTML ESCAPE HELPER ---
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    // --- MAIN SEND LOGIC ---
     async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message || this.isStreaming) return;
@@ -149,7 +147,6 @@ class ChatInterface {
         return copyBtn;
     }
 
-    // --- ROBUST ERROR HANDLING STREAM LOGIC ---
     async streamBotResponse(userMessage) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message bot';
@@ -158,7 +155,6 @@ class ChatInterface {
 
         const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
 
-        // 1. Setup Loading Indicator
         const indicator = document.createElement('div');
         indicator.className = 'streaming-indicator';
         indicator.innerHTML = 'Processing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
@@ -198,7 +194,7 @@ class ChatInterface {
                 return;
             }
 
-            // --- ERROR CHECK 1: PRE-STREAM HTTP ERRORS (429, 503, 500) ---
+            // Pre-stream HTTP errors (429, 503, 500).
             if (!response.ok) {
                 let errorMessage = `Server Error (${response.status})`;
                 try {
@@ -210,10 +206,8 @@ class ChatInterface {
                     console.warn("Failed to parse error JSON:", parseErr);
                 }
 
-                // Remove loading indicator immediately
                 indicator.remove();
 
-                // Display Error IN BUBBLE using CSS class
                 bubbleDiv.classList.add('error-bubble');
                 bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(errorMessage)}</p></div>`;
 
@@ -221,7 +215,7 @@ class ChatInterface {
                 throw new Error(errorMessage);
             }
 
-            // --- STREAMING PHASE ---
+            // Streaming phase.
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             
@@ -242,7 +236,7 @@ class ChatInterface {
                         const trimmedLine = line.trim();
                         if (!trimmedLine) continue;
 
-                        // --- ERROR CHECK 2: MID-STREAM SSE ERRORS ---
+                        // Mid-stream SSE errors.
                         if (trimmedLine.startsWith('event: error')) {
                             isErrorEvent = true;
                             continue;
@@ -265,8 +259,8 @@ class ChatInterface {
                                     </div>`;
 
                                     bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
-                                    isErrorEvent = false; // Reset flag
-                                    return; // Stop processing
+                                    isErrorEvent = false;
+                                    return;
                                 }
 
                                 // Handle Standard Text

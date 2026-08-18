@@ -1,6 +1,5 @@
-// Builds the situating context prepended to a chunk before it is embedded and indexed.
-// A bare chunk retrieves badly with no idea where it sits, so meeting/time/speaker context
-// goes into both the dense embedding and BM25 index. Layer 1 uses a free template; layer 2 reuses its LLM rewrite.
+// Builds the situating context prepended to a chunk before it is embedded and indexed. A bare chunk retrieves badly with no idea where it sits, so meeting/time/speaker context goes into both the dense embedding and BM25 index.
+// Layer 1 uses a free template; layer 2 reuses its LLM rewrite.
 
 'use strict';
 

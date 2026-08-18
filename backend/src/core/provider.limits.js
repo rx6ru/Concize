@@ -1,10 +1,5 @@
 // Reads provider.limits.json, the one place provider and model ceilings are recorded.
-//
-// Call this rather than writing a number into a call site. Every limit in here was either read
-// off a response header or a quota violation; see _howToVerify in the JSON for how to recheck one.
-//
-//   const { fitsInOneRequest } = require('../core/provider.limits');
-//   if (!fitsInOneRequest('groq', model, estimatedTokens)) { ...retrieve instead of stuffing... }
+// Call this rather than hardcoding a number at a call site, every limit here was read off a response header or a quota violation (see _howToVerify in the JSON).
 
 'use strict';
 
@@ -18,16 +13,9 @@ const strip = (obj = {}) => Object.fromEntries(
 );
 
 /**
- * Every limit that applies to one model, most specific winning.
- * global defaults <- provider defaults <- model.
- *
- * A limit that has not been established is null, never absent and never a guess, so a caller can
- * tell "no ceiling recorded" apart from "no ceiling".
- *
- * @param {string} provider e.g. 'groq'
- * @param {string} [model]
- * @returns {{requestsPerMinute: ?number, requestsPerDay: ?number, tokensPerMinute: ?number,
- *            maxRequestTokens: ?number, maxConcurrent: ?number}}
+ * Every limit for one model: global defaults <- provider defaults <- model, most specific wins.
+ * A limit that has not been established is null, never absent, so a caller can tell "no ceiling recorded" apart from "no ceiling".
+ * @returns {{requestsPerMinute: ?number, requestsPerDay: ?number, tokensPerMinute: ?number, maxRequestTokens: ?number, maxConcurrent: ?number}}
  */
 function limitsFor(provider, model) {
     const entry = table.providers[String(provider || '').toLowerCase()] || {};
@@ -43,25 +31,16 @@ function maxRequestTokens(provider, model) {
     return limitsFor(provider, model).maxRequestTokens ?? null;
 }
 
-/**
- * Whether a prompt of this size can be sent at all.
- * Unknown limit means yes: refusing to try teaches nothing, whereas a 413 records a real number.
- */
+/** Whether a prompt of this size can be sent at all. Unknown limit means yes: refusing to try teaches nothing, whereas a 413 records a real number. */
 function fitsInOneRequest(provider, model, estimatedTokens) {
     const cap = maxRequestTokens(provider, model);
     return cap === null || estimatedTokens <= cap;
 }
 
 /**
- * How many tokens the prompt may actually use.
- *
- * The reserved completion budget is part of the request as far as the provider is concerned: a
- * 13-token prompt asking for 9000 completion tokens is billed as "Requested 9013" and rejected.
- * So the prompt gets the ceiling minus the answer allowance, minus anything the caller knows it
- * still has to add.
- *
- * @returns {?number} null when the model has no recorded ceiling; 0 when the allowance alone
- *                    already exceeds it, which is a misconfiguration rather than a tight fit.
+ * How many tokens the prompt may actually use: the ceiling minus the answer allowance minus anything the caller still has to add.
+ * The completion budget counts as part of the request, a 13-token prompt asking for 9000 completion tokens is billed as "Requested 9013" and rejected.
+ * @returns {?number} null when no ceiling is recorded; 0 when the allowance alone already exceeds it (a misconfiguration, not a tight fit).
  */
 function promptBudget(provider, model, { completionTokens = 0, reserve = 0 } = {}) {
     const cap = maxRequestTokens(provider, model);
@@ -69,12 +48,7 @@ function promptBudget(provider, model, { completionTokens = 0, reserve = 0 } = {
     return Math.max(0, cap - completionTokens - reserve);
 }
 
-/**
- * Minimum gap between requests, for a rate limiter.
- *
- * Derived only from a per-minute cap. A daily cap is a volume ceiling and spreading it evenly
- * would put 86 seconds between calls on a 1000/day model, which is not what it means.
- */
+/** Minimum gap between requests, for a rate limiter. Derived only from a per-minute cap, a daily cap is a volume ceiling, not a pacing signal (spreading it evenly would put 86 seconds between calls on a 1000/day model, which isn't what it means). */
 function minSpacingMs(provider, model) {
     const rpm = limitsFor(provider, model).requestsPerMinute;
     return rpm ? Math.ceil(60000 / rpm) : 0;

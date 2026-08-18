@@ -17,16 +17,10 @@ const logger = createLogger('groqNormalizer');
  */
 function logprobToConfidence(avgLogprob) {
     if (avgLogprob == null || typeof avgLogprob !== 'number') return null;
-    return Math.exp(avgLogprob); // e^logprob gives 0-1 range
+    return Math.exp(avgLogprob);
 }
 
-/**
- * Filters and normalizes Groq verbose_json segments into TranscriptionResult segments.
- * Applies silence and confidence filtering using configurable thresholds.
- *
- * @param {Object} groqResponse - Raw Groq verbose_json response
- * @returns {import('./transcriptionResult').TranscriptionResult}
- */
+/** Filters and normalizes Groq verbose_json segments into TranscriptionResult segments. @returns {import('./transcriptionResult').TranscriptionResult} */
 function normalizeGroqResult(groqResponse) {
     const { silenceThreshold, confidenceFloor } = config.inference.transcriptionFilters;
 
@@ -35,19 +29,17 @@ function normalizeGroqResult(groqResponse) {
 
     const segments = [];
     for (const seg of rawSegments) {
-        // Filter silence
         if (seg.no_speech_prob != null && seg.no_speech_prob > silenceThreshold) {
             filteredCount++;
             continue;
         }
 
-        // Filter garbled audio (low confidence)
+        // Filter garbled audio
         if (seg.avg_logprob != null && seg.avg_logprob < confidenceFloor) {
             filteredCount++;
             continue;
         }
 
-        // Skip empty text segments
         const text = (seg.text || '').trim();
         if (!text) {
             filteredCount++;

@@ -7,14 +7,6 @@ const { getMeetingSummary } = require('../summary/summary.repository');
 
 const logger = createLogger('meetingController');
 
-/**
- * Initiates a new meeting session.
- * Generates a unique jobId, creates a transcription document in MongoDB,
- * and sets the jobId as an HTTP-only cookie.
- *
- * @param {Object} req - Express request.
- * @param {Object} res - Express response.
- */
 const startMeeting = async (req, res) => {
     logger.info('Meeting start requested');
     try {
@@ -36,8 +28,7 @@ const startMeeting = async (req, res) => {
             });
         }
 
-        // Cookie retained for backward-compat with the legacy extension; the canonical
-        // transport going forward is the meetingId returned in the body + path params.
+        // Cookie retained for backward-compat with the legacy extension; the canonical transport going forward is the meetingId returned in the body + path params.
         res.cookie('jobId', jobId, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production'
@@ -60,12 +51,6 @@ const startMeeting = async (req, res) => {
     }
 };
 
-/**
- * Retrieves the current summary state for a specific meeting.
- *
- * @param {Object} req - Express request (expects req.params.jobId).
- * @param {Object} res - Express response.
- */
 const fetchMeetingSummary = async (req, res) => {
     try {
         // New RESTful routes use :meetingId; the legacy route uses :jobId.

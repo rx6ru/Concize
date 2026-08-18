@@ -7,17 +7,12 @@ const { createLogger } = require('../../core/logger');
 const logger = createLogger('sarvamNormalizer');
 
 /**
- * Converts Sarvam's batch transcription output into the unified TranscriptionResult.
- * Prefers the diarized_transcript (has speaker IDs + timestamps) when available.
- * Falls back to the timestamps-only format, then to flat transcript.
- *
- * @param {Object} sarvamResponse - Raw Sarvam batch output
+ * Converts Sarvam's batch output into TranscriptionResult. Prefers diarized_transcript (speaker IDs + timestamps), falls back to timestamps-only, then flat transcript.
  * @returns {import('./transcriptionResult').TranscriptionResult}
  */
 function normalizeSarvamResult(sarvamResponse) {
     const segments = [];
 
-    // Prefer diarized transcript (has speaker_id + timestamps)
     if (sarvamResponse.diarized_transcript?.entries?.length > 0) {
         const entries = sarvamResponse.diarized_transcript.entries;
 
@@ -41,7 +36,6 @@ function normalizeSarvamResult(sarvamResponse) {
         });
 
     } else if (sarvamResponse.timestamps?.words?.length > 0) {
-        // Fallback: use timestamps (no speaker info)
         const { words, start_time_seconds, end_time_seconds } = sarvamResponse.timestamps;
 
         for (let i = 0; i < words.length; i++) {
@@ -63,12 +57,10 @@ function normalizeSarvamResult(sarvamResponse) {
         });
     }
 
-    // Build flat transcript from segments, or fall back to Sarvam's flat transcript
     const transcription = segments.length > 0
         ? segments.map(s => s.text).join(' ')
         : (sarvamResponse.transcript || '').trim();
 
-    // If still no segments, create one from the flat transcript
     if (segments.length === 0 && transcription) {
         segments.push({
             text: transcription,

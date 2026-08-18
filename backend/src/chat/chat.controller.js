@@ -13,7 +13,6 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('chatLLM');
 
-// Security modules
 const {
     validateInput,
     isRelevantToMeeting,
@@ -24,9 +23,6 @@ const {
 } = require('../safety');
 const { SECURE_SYSTEM_PROMPT } = require('../../prompts/systemPrompt');
 
-
-
-// Use hardened system prompt
 const SYSTEM_PROMPT = SECURE_SYSTEM_PROMPT;
 
 
@@ -37,7 +33,6 @@ const SYSTEM_PROMPT = SECURE_SYSTEM_PROMPT;
  * @returns {Object} { status, message, code }
  */
 const mapErrorToResponse = (error) => {
-    // Null-safe access
     if (!error) {
         return {
             status: 500,
@@ -110,24 +105,16 @@ const mapErrorToResponse = (error) => {
 };
 
 /**
- * Orchestrates the full RAG process and streams the LLM response over SSE.
- * Implements "Category A" (Success Stream) vs "Category B" (JSON Error) logic.
- *
- * @param {Object} res - Express response object (SSE)
- * @param {string} userPrompt - The user's message/query
- * @param {string} jobId - Meeting/session id
- * @param {string} ownerId - Owning user id (tenant scoping for retrieval + embedding)
+ * Orchestrates the full RAG process and streams the LLM response over SSE. "Category A" (success) streams; "Category B" (failure before commit) returns JSON.
+ * @param {string} ownerId - tenant scoping for retrieval + embedding
  */
 const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
     let chatId = null;
     let fullResponseText = '';
     let heartbeatInterval = null;
 
-    // --- Phase 0: Security Validation (Category B Potential) ---
-    // If security checks fail, return JSON error immediately.
+    // --- Phase 0: Security Validation ---
 
-    // recordViolation has been counting toward VIOLATION_THRESHOLD all along with nothing
-    // reading the count, so the threshold never actually stopped anyone.
     const standing = checkBlocked(jobId);
     if (standing.blocked) {
         logger.warn('Blocked after repeated violations', { jobId, violations: standing.violationCount });
@@ -140,7 +127,6 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
         });
     }
 
-    // Input Guardrails
     const inputCheck = validateInput(userPrompt);
     if (inputCheck.blocked) {
         recordViolation(jobId, inputCheck.reason, { query: userPrompt.substring(0, 100) });
@@ -163,7 +149,6 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
         });
     }
 
-    // Relevance Filter (uses meeting summary)
     const relevanceCheck = await isRelevantToMeeting(userPrompt, jobId);
     if (!relevanceCheck.relevant) {
         recordViolation(jobId, 'off_topic', { query: userPrompt.substring(0, 100) });
@@ -176,16 +161,13 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
         });
     }
 
-    // --- Phase 1: Context Retrieval & Validation (Category B Potential) ---
-    // If anything fails here, we send a JSON error response (4xx/5xx).
-    // do NOT set SSE headers yet.
+    // --- Phase 1: Context Retrieval & Validation ---
+    // Anything failing here sends a JSON error response; SSE headers are not set yet.
 
     let contentsPrompt = '';
 
     try {
-        // Step 1: Gather context (Parallel)
-        // Past chats and the summary are extra context. Without them the answer is thinner,
-        // not wrong, so they don't get to take the request down with them.
+        // Past chats and the summary are extra context: without them the answer is thinner, not wrong, so they don't get to take the request down with them.
         const [retrieved, chatHistory, meetingSummary] = await Promise.all([
             buildContext({ query: userPrompt, meetingId: jobId, ownerId }),
             queryChats(userPrompt, jobId, ownerId, 3).catch(err => {
@@ -198,9 +180,7 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
             })
         ]);
 
-        // Meetings recorded before the chunk pipeline have nothing in the chunk index, so they
-        // fall back to the original transcription collection instead of answering from an
-        // empty block. That fallback carries no provenance, so there are no instructions with it.
+        // Meetings recorded before the chunk pipeline have nothing in the chunk index, so they fall back to the original transcription collection instead of an empty block; that fallback carries no provenance, so there are no instructions with it.
         let transcriptionText;
         let contextInstructions = '';
 
@@ -219,7 +199,6 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
             ? chatHistory.map(chat => `User: ${JSON.stringify(chat.userChat)}\nAI: ${chat.aiChat}`).join('\n')
             : "No specific chat history was found for this query.";
 
-        // Prepare Summary Context
         const summaryContext = meetingSummary
             ? `Title: ${meetingSummary.title}\nSummary: ${meetingSummary.content}`
             : "No summary available yet.";
@@ -237,7 +216,6 @@ ${chatHistoryText}
 # User's Question:
 ${userPrompt}`;
 
-        // Step 2: Create chat entry in DB
         const newChat = await createChatEntry(jobId, userPrompt);
         chatId = newChat._id;
         logger.info('Chat entry created', { chatId, jobId });
@@ -256,9 +234,8 @@ ${userPrompt}`;
         });
     }
 
-    // --- Phase 2: Streaming (Category A) ---
-    // At this point, context is ready and DB entry exists.
-    // We commit to the 200 OK stream.
+    // --- Phase 2: Streaming ---
+    // Context is ready and the DB entry exists; committing to the 200 OK stream now.
 
     const startHeartbeat = () => {
         if (heartbeatInterval) return;
@@ -281,7 +258,6 @@ ${userPrompt}`;
     };
 
     try {
-        // SSE headers
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
@@ -290,7 +266,6 @@ ${userPrompt}`;
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         res.setHeader('X-Accel-Buffering', 'no');
 
-        // Commit response headers
         res.flushHeaders();
 
         let responseValid = false;
@@ -307,7 +282,6 @@ ${userPrompt}`;
             try {
 
 
-                // Get inference client routed by config
                 const { client, model, taskConfig } = getChatInference();
                 logger.info('Inference attempt started', {
                     attempt: attempt + 1,
@@ -316,8 +290,7 @@ ${userPrompt}`;
                     jobId
                 });
 
-                // Concurrency-limited via the per-provider Bottleneck limiter. maxRetries:0 — this is a
-                // user-facing stream, so we don't add jittered backoff here; the outer loop owns retries.
+                // Concurrency-limited via the per-provider Bottleneck limiter. maxRetries: 0 since this is a user-facing stream; the outer retry loop owns backoff, not this call.
                 const stream = await runResilient(taskConfig.provider, () =>
                     client.chat.completions.create({
                         messages: [
@@ -332,12 +305,9 @@ ${userPrompt}`;
                     { maxRetries: 0 }
                 );
 
-                // Start heartbeat while streaming
                 startHeartbeat();
 
-                // Screens the answer as it streams. Nothing checked the output on this path before:
-                // validateChunk tests a delta in isolation, and a delta is a few characters, so a
-                // pattern spanning several of them was never going to match.
+                // Screens the answer as it streams; nothing checked output on this path before, and validateChunk tests a delta in isolation, so a pattern spanning several deltas would never match.
                 const guard = createStreamGuard();
 
                 for await (const chunk of stream) {
@@ -362,10 +332,8 @@ ${userPrompt}`;
 
                 if (outputBlocked) { clearHeartbeat(); fullResponseText = currentResponseChunk; responseValid = true; break; }
 
-                // Clear heartbeat after this attempt's streaming finished
                 clearHeartbeat();
 
-                // If we gathered anything, accept and break retry loop
                 if (currentResponseChunk.trim()) {
                     fullResponseText = currentResponseChunk;
                     responseValid = true;
@@ -378,18 +346,15 @@ ${userPrompt}`;
             } catch (llmError) {
                 logger.error('LLM_STREAM_ERROR', { attempt: attempt + 1, jobId, error: llmError.message });
 
-                // Ensure heartbeat cleared
                 clearHeartbeat();
 
-                // If client disconnected, stop trying
                 if (!res.writable || res.writableEnded) break;
 
-                // Final attempt failed — rethrow to outer catch
+                // Final attempt failed, rethrow to outer catch
                 if (attempt === 2) {
                     throw llmError;
                 }
 
-                // Delay before retry
                 if (attempt === 1) {
                     logger.info('LLM: Waiting 5 seconds before final retry...', { jobId });
                     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -397,7 +362,6 @@ ${userPrompt}`;
             }
         } // end retry loop
 
-        // Update DB entries and embeddings if response is valid
         if (responseValid) {
             try {
                 if (chatId) {
@@ -411,7 +375,6 @@ ${userPrompt}`;
                 logger.error("MONGODB_UPDATE_ERROR", { jobId, chatId, error: dbError.message });
             }
 
-            // End the stream
             if (res.writable && !res.writableEnded) {
                 res.write('data: {"event": "stream_end"}\n\n');
                 res.end();
@@ -419,7 +382,6 @@ ${userPrompt}`;
             logger.info("LLM: Streaming complete", { jobId, chatId });
 
         } else {
-            // No valid response after retries (Mid-stream failure)
             clearHeartbeat();
             logger.error("LLM failed to generate a response after all attempts", { jobId });
             if (res.writable && !res.writableEnded) {
@@ -432,7 +394,6 @@ ${userPrompt}`;
     } catch (error) {
         logger.error("LLM_STREAM_ERROR (Phase 2)", { jobId, error: error.message });
 
-        // Ensure heartbeat cleared
         clearHeartbeat();
 
         const { status, message, code } = mapErrorToResponse(error);
@@ -449,7 +410,6 @@ ${userPrompt}`;
         }
 
         // CASE 2: Headers ALREADY sent -> Send SSE error chunk
-        // Can only do this if stream is still writable
         if (res.writable && !res.writableEnded) {
             try {
                 // Send a special error event that the frontend can listen for

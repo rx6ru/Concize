@@ -1,6 +1,5 @@
-// Turns finalised utterances into stored, retrievable chunks.
-// The gateway persists an utterance and returns; deriving chunks, embedding them, and
-// maintaining higher layers happens after that. A failure here costs freshness, not transcription.
+// Turns finalised utterances into stored, retrievable chunks. The gateway persists an utterance and returns; deriving chunks, embedding them, and maintaining higher layers happens after that.
+// A failure here costs freshness, not transcription.
 
 'use strict';
 
@@ -17,8 +16,7 @@ const logger = createLogger('deriveService');
  * @param {function} [deps.onChunk]   called after a chunk is stored, e.g. to enqueue embedding
  */
 function createDeriveService({ insertChunk, markDirtyForRange = null, nextOrdinal = null, chunkerOptions = {}, onChunk = () => {} }) {
-    // One chunker per live meeting. Boundaries depend on the running buffer, so state
-    // cannot be shared and cannot be rebuilt per-utterance without losing the buffer.
+    // One chunker per live meeting: boundaries depend on the running buffer, so state can't be shared or rebuilt per-utterance without losing the buffer.
     const chunkers = new Map();
 
     async function chunkerFor(meetingId) {
@@ -55,17 +53,14 @@ function createDeriveService({ insertChunk, markDirtyForRange = null, nextOrdina
         },
 
         /**
-         * A corrected utterance invalidates any chunk overlapping its span, and the open
-         * buffer may already contain the stale text, so the buffer is dropped too.
+         * A corrected utterance invalidates any chunk overlapping its span, and the open buffer may already contain the stale text, so the buffer is dropped too.
          */
         async onUtteranceRevised(meetingId, utterance) {
             try {
                 if (markDirtyForRange) {
                     await markDirtyForRange(meetingId, utterance.t0Ms, utterance.t1Ms);
                 }
-                // If the corrected turn is still in the open buffer, patch it there. Flushing
-                // instead would throw the buffer away, and every speaker revision would take
-                // the pending transcript with it.
+                // If the corrected turn is still in the open buffer, patch it there; flushing instead would throw the buffer away, and every speaker revision would take the pending transcript with it.
                 const chunker = chunkers.get(meetingId);
                 if (chunker) {
                     const { turnId, ...changes } = utterance;

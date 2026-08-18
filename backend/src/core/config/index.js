@@ -1,10 +1,4 @@
-// Convergence point — all config modules merged into a single export
-//
-// Usage:
-//   const config = require('../configs');
-//   config.server.PORT
-//   config.inference.chat.model
-//   config.database.MONGODB_URL
+// Merges all config modules into a single export (config.server.PORT, config.inference.chat.model, ...).
 
 require('dotenv').config();
 
@@ -25,7 +19,6 @@ const chunking = require('./chunking');
 const warnings = [];
 const errors = [];
 
-// Critical: Must have at least one set of LLM keys
 if (inference.groqKeys.length === 0 && inference.cerebrasKeys.length === 0) {
     warnings.push('No Groq or Cerebras API keys configured. LLM features will fail at runtime.');
 }
@@ -54,7 +47,6 @@ if (inference.groqKeys.length === 0) {
     }
 }
 
-// Sarvam keys needed if transcription provider is sarvam
 if (inference.transcription.provider === 'sarvam' && inference.sarvamKeys.length === 0) {
     warnings.push('TRANSCRIPTION_PROVIDER is set to sarvam, but no SARVAM_API_KEYS are set. Transcriptions will fail.');
 }
@@ -71,9 +63,7 @@ if (!queues.CLOUDAMQP_URL) {
     warnings.push('CLOUDAMQP_URL is not set in queues config.');
 }
 
-// A task whose answer allowance alone exceeds what its model accepts in one request can never
-// succeed, whatever the prompt is — the provider counts the reserved completion budget as part of
-// the request. Caught at boot because in production it presents as an unexplained 413 per call.
+// The answer allowance counts against the same request limit as the prompt, so a task whose maxTokens alone exceeds that limit always fails. Caught at boot; otherwise it shows up as an unexplained 413 in production.
 for (const task of ['chat', 'clean']) {
     const { provider, model, maxTokens } = inference[task];
     const budget = promptBudget(provider, model, { completionTokens: maxTokens });
@@ -87,7 +77,6 @@ for (const task of ['chat', 'clean']) {
     }
 }
 
-// Auth validation
 if (auth.supabase.mode === 'jwks' && !auth.supabase.jwksUri) {
     warnings.push('AUTH_MODE is jwks but SUPABASE_JWKS_URI is not set. JWT auth will be misconfigured.');
 }
@@ -98,7 +87,6 @@ if (auth.legacy.enabled) {
     logger.info('Legacy x-auth-code auth is ENABLED. This is a security caveat — disable in production via LEGACY_AUTH_ENABLED=false.');
 }
 
-// Print validation results
 if (errors.length > 0) {
     errors.forEach(e => logger.error(e));
     throw new Error(`Config validation failed:\n  - ${errors.join('\n  - ')}`);
@@ -108,7 +96,6 @@ if (warnings.length > 0) {
     warnings.forEach(w => logger.warn(w));
 }
 
-// Log active inference routing
 logger.info('Inference routing configuration', {
     chat: `${inference.chat.provider} -> ${inference.chat.model}`,
     clean: `${inference.clean.provider} -> ${inference.clean.model}`,

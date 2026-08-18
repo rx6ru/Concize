@@ -8,27 +8,20 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('systemCheck');
 
-/**
- * Verifies system dependencies before server startup.
- * Logs status for each component.
- * @returns {Promise<void>} Resolves if all checks pass, rejects if any fail.
- */
+/** Verifies system dependencies before server startup; rejects if any check fails. */
 const performSystemCheck = async () => {
     logger.info('🚀 Starting System Health Checks...');
 
-    // 1. Binaries Check
     try {
         if (!ffmpegPath || !ffprobePath) {
             throw new Error('FFmpeg or FFprobe binaries not found');
         }
-        // Simple check to ensure paths are strings and look valid
         logger.info(`✅ Binaries verified (ffmpeg: ${ffmpegPath})`);
     } catch (error) {
         logger.error('❌ Binary check failed', { error: error.message });
         throw error;
     }
 
-    // 2. Postgres Check
     try {
         const { query } = require('./postgres');
         const timeoutPromise = new Promise((_, reject) =>
@@ -41,7 +34,6 @@ const performSystemCheck = async () => {
         throw error;
     }
 
-    // 3. RabbitMQ Check
     try {
         const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('RabbitMQ connection timed out')), 5000)
@@ -57,15 +49,14 @@ const performSystemCheck = async () => {
         throw error;
     }
 
-    // 4. Qdrant Check
     try {
         const client = new QdrantClient({
             url: config.database.QDRANT_URL,
             apiKey: config.database.QDRANT_API_KEY,
-            timeout: 5000 // Client-side timeout
+            timeout: 5000
         });
 
-        // Use verify/health check if available, or lightweight getCollections
+        // getCollections stands in for a health check.
         await client.getCollections();
         logger.info('✅ Qdrant connection verified');
     } catch (error) {

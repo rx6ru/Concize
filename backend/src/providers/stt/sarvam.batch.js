@@ -1,5 +1,4 @@
-// Sarvam Batch API transcription provider — orchestrates the 7-step async workflow.
-// Uses the sarvamService client from utils/llm/ for auth + key rotation.
+// Sarvam Batch API transcription provider: orchestrates the 7-step async workflow.
 
 'use strict';
 
@@ -12,7 +11,6 @@ const logger = createLogger('sarvamBatchProvider');
 
 const SARVAM_BASE = 'https://api.sarvam.ai';
 
-// Polling configuration
 const POLL_INTERVAL_MS = parseInt(process.env.SARVAM_POLL_INTERVAL_MS || '5000', 10);
 const MAX_WAIT_MS = parseInt(process.env.SARVAM_MAX_WAIT_MS || '300000', 10); // 5 min default
 
@@ -20,11 +18,8 @@ const MAX_WAIT_MS = parseInt(process.env.SARVAM_MAX_WAIT_MS || '300000', 10); //
  * Step 1: Initiate a new batch transcription job.
  */
 async function initiateJob(options = {}) {
-    // num_speakers is optional and the provider detects the count when it is absent. Defaulting
-    // it to 2 forced every meeting into two clusters, however many people were actually talking.
-    // v4 is available and accepts language_code 'unknown' exactly as v3 does, so auto-detection
-    // still works. Configurable rather than hardcoded so the two can be compared on real audio.
-    // (v4-multispk is a different model: it is beta-gated AND does require an explicit language.)
+    // num_speakers is optional; the provider detects the count when absent. Defaulting it to 2 previously forced every meeting into two clusters, however many people were actually talking.
+    // Model is configurable (v3/v4) rather than hardcoded so the two can be compared on real audio, v4 accepts language_code 'unknown' just like v3, so auto-detection still works. (v4-multispk is a different, beta-gated model that requires an explicit language.)
     const model = options.model || process.env.SARVAM_BATCH_MODEL || 'saaras:v3';
     const jobParameters = {
         model,
@@ -35,8 +30,7 @@ async function initiateJob(options = {}) {
     };
 
     if (options.numSpeakers) {
-        // Asking for more than the provider supports is rejected outright, which would cost the
-        // whole job rather than the speakers past the ceiling.
+        // Asking for more than the provider supports is rejected outright, which would cost the whole job rather than just the speakers past the ceiling.
         const ceiling = limitsFor('sarvam', model).maxSpeakers;
         const asked = ceiling ? Math.min(options.numSpeakers, ceiling) : options.numSpeakers;
         if (asked < options.numSpeakers) {
@@ -72,8 +66,7 @@ async function getUploadUrl(sarvamJobId, filename) {
  * Step 3: Upload audio buffer to the presigned URL.
  */
 async function uploadFile(uploadInfo, audioBuffer, contentType = 'audio/webm') {
-    // Presigned Azure blob PUT: the field is `file_url` (was `url`), and the blob type
-    // header is mandatory — without it Azure rejects the upload.
+    // Presigned Azure blob PUT: the field is `file_url` (was `url`), and the blob type header is mandatory, without it Azure rejects the upload.
     await axios.put(uploadInfo.file_url || uploadInfo.url, audioBuffer, {
         headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': contentType },
         maxBodyLength: Infinity,

@@ -1,22 +1,12 @@
 
 
 /**
- * Summary-based Relevance Filter
- * 
- * DESIGN PHILOSOPHY:
- * The meeting summary is the GROUND TRUTH for what's relevant.
- * We use it to guide the LLM, not to rigidly block queries.
- * 
- * This filter is LENIENT by design:
- * - Short queries always pass (give user benefit of doubt)
- * - Meta-questions about the meeting always pass
- * - We only block clearly off-topic queries
- * - When in doubt, let the LLM + hardened prompt handle it
+ * Summary-based relevance filter. The meeting summary guides the LLM; it is not used to rigidly block queries.
+ * Lenient by design: short queries and meta-questions about the meeting always pass, and only clearly off-topic queries are blocked.
  */
 
 const { getMeetingSummary } = require('../summary/summary.repository');
 
-// Common stop words to ignore in keyword extraction
 const STOP_WORDS = new Set([
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -48,9 +38,6 @@ const ALWAYS_ALLOWED_PATTERNS = [
     /^next steps/i,
 ];
 
-/**
- * Extracts meaningful keywords from text
- */
 function extractKeywords(text) {
     if (!text) return [];
 
@@ -61,25 +48,17 @@ function extractKeywords(text) {
         .filter(word => word.length > 2 && !STOP_WORDS.has(word));
 }
 
-/**
- * Checks if query matches always-allowed patterns
- */
 function isMetaQuery(query) {
     return ALWAYS_ALLOWED_PATTERNS.some(pattern => pattern.test(query.trim()));
 }
 
 /**
- * Determines if a user query is relevant to the meeting content
- * 
- * LENIENT BY DESIGN - when in doubt, we let the query through
- * and rely on the hardened system prompt to keep the LLM on topic.
- * 
- * @param {string} userQuery - The user's question
- * @param {string} jobId - The meeting job ID
+ * Determines if a user query is relevant to the meeting content. Lenient by design: when in doubt, the query passes through and the hardened system prompt keeps the LLM on topic.
+ * @param {string} userQuery
+ * @param {string} jobId
  * @returns {Promise<Object>} { relevant: boolean, reason: string, message?: string }
  */
 async function isRelevantToMeeting(userQuery, jobId) {
-    // Always allow meta-questions about the meeting
     if (isMetaQuery(userQuery)) {
         return { relevant: true, reason: 'meta_query' };
     }
@@ -87,25 +66,19 @@ async function isRelevantToMeeting(userQuery, jobId) {
     try {
         const summary = await getMeetingSummary(jobId);
 
-        // No summary yet - meeting just started, allow everything
         if (!summary || !summary.content) {
             return { relevant: true, reason: 'no_summary_yet' };
         }
 
-        // Extract keywords from query and summary
         const queryKeywords = extractKeywords(userQuery);
         const summaryKeywords = extractKeywords(summary.content + ' ' + (summary.title || ''));
 
-        // Very short queries (1-3 keywords) - be lenient, let through
         if (queryKeywords.length <= 3) {
             return { relevant: true, reason: 'short_query' };
         }
 
-        // Find overlapping keywords
         const overlap = queryKeywords.filter(word => summaryKeywords.includes(word));
 
-        // Require at least 1 matching keyword OR 10% overlap
-        // This is VERY lenient - only blocks clearly unrelated queries
         if (overlap.length >= 1 || queryKeywords.length === 0) {
             return {
                 relevant: true,
@@ -114,8 +87,7 @@ async function isRelevantToMeeting(userQuery, jobId) {
             };
         }
 
-        // No match at all - likely completely off-topic
-        // But even here, we use a soft rejection that guides the user
+        // Soft rejection: guides the user rather than a hard block.
         console.log(`RELEVANCE_FILTER: Low relevance for job ${jobId}. Query: "${userQuery.substring(0, 50)}..."`);
         return {
             relevant: false,

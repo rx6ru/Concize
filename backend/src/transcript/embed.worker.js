@@ -1,6 +1,5 @@
-// Embeds stored chunks and pushes them to the vector store.
-// Only records vector_id after the upsert succeeds, otherwise a chunk points at
-// nothing and drops out of search. One bad chunk must not stop the rest.
+// Embeds stored chunks and pushes them to the vector store. Only records vector_id after the upsert succeeds, otherwise a chunk points at nothing and drops out of search.
+// One bad chunk must not stop the rest.
 
 'use strict';
 
@@ -10,9 +9,7 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('embedWorker');
 
-// Qdrant only takes an unsigned int or a UUID as a point id, so the readable key is hashed
-// into a v5-shaped uuid. Same key always gives the same uuid, which is what makes a re-embed
-// overwrite instead of duplicating.
+// Qdrant only takes an unsigned int or a UUID as a point id, so the readable key is hashed into a v5-shaped uuid; same key always gives the same uuid, which makes a re-embed overwrite instead of duplicate.
 function uuidFromKey(key) {
     const h = createHash('sha1').update(key).digest('hex');
     const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16);
@@ -31,12 +28,9 @@ function uuidFromKey(key) {
  * @param {function} deps.getDirtyChunks  (meetingId, opts) => chunk[]
  * @param {function} deps.attachVector    (meetingId, {layer,ordinal,rev}, vectorId) => chunk
  * @param {function} deps.embed           (text) => number[]
+ * @param {function} [deps.embedMany]     (texts) => vectors; embeds a whole pass in one call, falling back to one `embed` call per chunk when absent
  * @param {function} deps.upsert          (vectorId, vector, payload) => void
  * @param {number}   [deps.batchSize]
- */
-/**
- * @param {function} [deps.embedMany]  (texts) => vectors; embeds a whole pass in one call.
- *                                     Falls back to one `embed` call per chunk when absent.
  */
 function createEmbedWorker({
     getUnembedded, getDirtyChunks, attachVector, embed, embedMany = null, upsert, batchSize = 32,
@@ -73,9 +67,7 @@ function createEmbedWorker({
 
     return {
         /**
-         * Embed everything outstanding for a meeting: never-embedded chunks first, then
-         * chunks invalidated by a correction.
-         *
+         * Embed everything outstanding for a meeting: never-embedded chunks first, then chunks invalidated by a correction.
          * @returns {{embedded: number, failed: number, failures: object[]}}
          */
         async run(meetingId, meeting = {}) {
@@ -96,9 +88,7 @@ function createEmbedWorker({
             let embedded = 0;
             const failures = [];
 
-            // One call for the whole pass. A 116-chunk meeting was 116 requests against a
-            // 100-per-minute ceiling; batched it is two. A failure here leaves every chunk in the
-            // pass unembedded, which the next pass picks up — the same outcome as before, in bulk.
+            // One call for the whole pass: a 116-chunk meeting was 116 requests against a 100-per-minute ceiling, batched it's two. A failure here leaves the whole pass unembedded, picked up next run, same outcome as before but in bulk.
             let vectors = null;
             if (embedMany && queue.length) {
                 try {

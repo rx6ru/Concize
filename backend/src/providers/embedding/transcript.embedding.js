@@ -19,10 +19,6 @@ const client = new QdrantClient({
 
 const COLLECTION_NAME = config.database.TRANSCRIPTION_COLLECTION;
 
-/**
- * Creates the Qdrant collection for transcriptions if it doesn't already exist.
- * Also creates payload indexes for efficient filtered search.
- */
 const createTranCollection = async () => {
     try {
         const collections = await client.getCollections();
@@ -40,8 +36,7 @@ const createTranCollection = async () => {
             logger.info('Collection already exists', { collection: COLLECTION_NAME });
         }
 
-        // Create payload indexes for filtered vector search.
-        // These are idempotent — safe to call even if index already exists.
+        // Idempotent: safe to call even if the index already exists.
         const indexes = [
             { field_name: 'jobId', field_schema: 'keyword' },
             { field_name: 'ownerId', field_schema: 'keyword' },
@@ -56,7 +51,6 @@ const createTranCollection = async () => {
             try {
                 await client.createPayloadIndex(COLLECTION_NAME, idx);
             } catch (idxErr) {
-                // Index may already exist — that's fine
                 if (!idxErr.message?.includes('already exists')) {
                     logger.warn('Failed to create payload index', {
                         field: idx.field_name,
@@ -78,21 +72,9 @@ const createTranCollection = async () => {
 };
 
 /**
- * Generates embeddings for narrative chunks and upserts them into Qdrant
- * with enriched metadata payloads.
- *
- * @param {string} jobId - The meeting session ID.
- * @param {Array<{ summary: string, narrative: string, mentionedNames: string[] }>} chunks
- *   Cleaned chunks from cleanService.
- * @param {Object} metadata - Enriched metadata from the orchestrator:
- *   @param {string}   metadata.originalname
- *   @param {string}   metadata.uploadTimestamp
- *   @param {number}   [metadata.startTime]
- *   @param {number}   [metadata.endTime]
- *   @param {string[]} [metadata.speakers]
- *   @param {string}   [metadata.provider]
- *   @param {string}   [metadata.language]
- *   @param {number}   [metadata.chunkIndex]
+ * Generates embeddings for narrative chunks and upserts them into Qdrant with enriched metadata payloads.
+ * @param {Array<{ summary: string, narrative: string, mentionedNames: string[] }>} chunks - cleaned chunks from cleanService
+ * @param {{ originalname: string, uploadTimestamp: string, startTime?: number, endTime?: number, speakers?: string[], provider?: string, language?: string, chunkIndex?: number }} metadata
  * @returns {Promise<{ success: boolean, result?: any, error?: string }>}
  */
 const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
@@ -125,30 +107,17 @@ const upsertTranscriptionChunks = async (jobId, chunks, metadata) => {
                 id: uuidv4(),
                 vector,
                 payload: {
-                    // Core content
                     jobId,
                     ownerId: metadata.ownerId ?? null, // tenant isolation
                     narrative: textToEmbed,
                     summary: chunk.summary || '',
-
-                    // Names extracted from dialogue
                     mentionedNames: chunk.mentionedNames || [],
-
-                    // File metadata
                     filename: metadata.originalname,
                     uploadTimestamp: metadata.uploadTimestamp,
-
-                    // Temporal metadata (for time-range filtering)
                     startTime: metadata.startTime ?? null,
                     endTime: metadata.endTime ?? null,
-
-                    // Speaker metadata (for multi-party filtering)
                     speakers: metadata.speakers || [],
-
-                    // Chunk position
                     chunkIndex: metadata.chunkIndex ?? i,
-
-                    // Provider tracking
                     provider: metadata.provider || 'unknown',
                     language: metadata.language || null,
                 },

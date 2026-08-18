@@ -1,4 +1,3 @@
-//
 // Bootstraps the auth middlewares from config + DB and exports ready-to-use instances.
 // This is the single composition point that wires the injectable seams to real dependencies,
 // keeping the middleware modules themselves pure and unit-testable.

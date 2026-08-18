@@ -1,7 +1,5 @@
-//
 // Meeting-summary persistence on Supabase Postgres.
-// The incremental update uses a real transaction with row locking (SELECT ... FOR UPDATE),
-// replacing the previous Mongo "atomic findOneAndUpdate + 2s delay" race workaround.
+// The incremental update uses a real transaction with row locking (SELECT ... FOR UPDATE), replacing the previous Mongo "atomic findOneAndUpdate + 2s delay" race workaround.
 
 const { query, withTransaction } = require('../infra/postgres');
 const { createLogger } = require('../core/logger');
@@ -70,8 +68,7 @@ const startSummaryUpdate = async (jobId, chunkIndex) => {
                 return mapSummary(ins.rows[0]);
             }
 
-            // Already applied. The broker redelivers when an ack is lost, and treating that as
-            // out-of-order requeues the same message forever at one message per two seconds.
+            // Already applied. The broker redelivers when an ack is lost, and treating that as out-of-order requeues the same message forever at one message per two seconds.
             if (row.last_processed_chunk_index >= chunkIndex) {
                 logger.info('Chunk already summarised, skipping', { jobId, chunkIndex });
                 return null;

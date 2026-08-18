@@ -1,15 +1,10 @@
 # Overlapped speech detection, the parallel lane to speaker attribution.
 #
-# Why a model rather than the free signal: a clustering backend like CAM++ assigns exactly one
-# speaker per segment by construction, so two people talking at once inside a segment is invisible
-# to it and there is nothing to intersect. Measured frame-wise at 10ms against AMI word-level
-# ground truth, deriving overlap from intersecting speaker intervals scores F1 23.6% against 69.2%
-# for pyannote segmentation-3.0 on the same three meetings.
+# Why a model rather than the free signal: a clustering backend like CAM++ assigns exactly one speaker per segment by construction, so two people talking at once inside a segment is invisible to it and there is nothing to intersect.
+# Measured frame-wise at 10ms against AMI word-level ground truth, deriving overlap from intersecting speaker intervals scores F1 23.6% against 69.2% for pyannote segmentation-3.0 on the same three meetings.
 #
-# segmentation-3.0 emits a powerset over which speakers are active in a window — the classes are
-# (none), (spk1), (spk2), (spk3), (spk1+spk2), (spk1+spk3), (spk2+spk3) — so overlap is a first
-# class output. It is 1.5M parameters and runs comfortably on CPU, which matters when the box has
-# 4GB of VRAM and the diarizer is already resident.
+# segmentation-3.0 emits a powerset over which speakers are active in a window, the classes are (none), (spk1), (spk2), (spk3), (spk1+spk2), (spk1+spk3), (spk2+spk3), so overlap is a first class output.
+# It is 1.5M parameters and runs comfortably on CPU, which matters when the box has 4GB of VRAM and the diarizer is already resident.
 
 import logging
 import os
@@ -20,32 +15,28 @@ log = logging.getLogger("speaker-service.overlap")
 
 FRAME_MS = 10
 
-# Below this an "overlap" is two boundaries disagreeing by a few frames rather than two people
-# speaking. Flagging those would mark most of a meeting and make the signal worthless.
+# Below this an "overlap" is two boundaries disagreeing by a few frames rather than two people speaking; flagging those would mark most of a meeting and make the signal worthless.
 MIN_OVERLAP_MS = 120
 
-# A speaker counts as active above this. Measured on AMI, 0.5 and 0.3 produce byte-identical
-# spans: a powerset softmax read as multilabel leaves almost nothing in between.
+# A speaker counts as active above this.
+# Measured on AMI, 0.5 and 0.3 produce byte-identical spans: a powerset softmax read as multilabel leaves almost nothing in between.
 ACTIVATION = 0.5
 
-# Share of the covering windows that must agree before an instant is called contested. Swept on
-# ES2004a and checked on two held-out meetings: F1 rises to roughly 69% as this falls, and 0.2
-# is taken over 0.1 because F1 is level there while precision is four points better. A false
-# flag makes us hedge clean speech, which is the more expensive mistake for us.
+# Share of the covering windows that must agree before an instant is called contested.
+# Swept on ES2004a and checked on two held-out meetings: F1 rises to roughly 69% as this falls, and 0.2 is taken over 0.1 because F1 is level there while precision is four points better.
+# A false flag makes us hedge clean speech, which is the more expensive mistake for us.
 VOTE = 0.2
 
-# The model's own window. An instant is voted on by every window covering it, so an instant needs
-# this much audio on BOTH sides to collect the full set of votes.
+# The model's own window.
+# An instant is voted on by every window covering it, so an instant needs this much audio on BOTH sides to collect the full set of votes.
 WINDOW_S = 10.0
 
-# Run inference once this much has accumulated. Nothing within one model-window of the buffer's
-# right edge is emitted; it waits for the audio that follows it. Emitting to the edge instead
-# cost 12 points of recall measured on ES2004a — those frames were voted on by a handful of
-# windows rather than ten, so they faced a far higher bar than the threshold intends.
+# Run inference once this much has accumulated.
+# Nothing within one model-window of the buffer's right edge is emitted; it waits for the audio that follows it.
+# Emitting to the edge instead cost 12 points of recall measured on ES2004a, those frames were voted on by a handful of windows rather than ten, so they faced a far higher bar than the threshold intends.
 #
-# The cost is that overlap lags the transcript by ten to twenty seconds. That is acceptable here
-# and nowhere else in the pipeline: fusion applies late overlap data as a revision rather than
-# holding text back for it, and chunks stay open far longer than this.
+# The cost is that overlap lags the transcript by ten to twenty seconds.
+# That is acceptable here and nowhere else in the pipeline: fusion applies late overlap data as a revision rather than holding text back for it, and chunks stay open far longer than this.
 BUFFER_S = 30.0
 
 
@@ -70,10 +61,7 @@ def load_model(token=None):
 def vote_fractions(model, waveform, sample_rate):
     """Per 10ms fraction of covering windows that saw two or more speakers at once.
 
-    The powerset output cannot be averaged across windows — "speaker#1" in one window is not the
-    same person as "speaker#1" in the next, which is why pyannote refuses to aggregate it and
-    hands back one matrix per window. How *many* people are talking does not depend on what they
-    are called, so that is what gets aggregated.
+    The powerset output cannot be averaged across windows, "speaker#1" in one window is not the same person as "speaker#1" in the next, which is why pyannote refuses to aggregate it and hands back one matrix per window. How *many* people are talking does not depend on what they are called, so that is what gets aggregated.
     """
     import torch
     from pyannote.audio.core.inference import Inference
@@ -152,7 +140,7 @@ class OverlapSession:
         return self._drain(final=False)
 
     def flush(self):
-        """Whatever is left, on the way out — including the tail that was waiting for context."""
+        """Whatever is left, on the way out, including the tail that was waiting for context."""
         if not self.enabled or len(self.buffer) < self.sample_rate:
             return []
         return self._drain(final=True)
@@ -172,9 +160,8 @@ class OverlapSession:
         try:
             fractions = vote_fractions(self.model, self.buffer, self.sample_rate)
         except Exception as err:                                  # noqa: BLE001
-            # A failed window costs this stretch's overlap flags, not the session. The timeline
-            # still has to move: leaving emitted_ms behind while the buffer advances would make
-            # the next drain slice from a negative offset and mis-time every span after it.
+            # A failed window costs this stretch's overlap flags, not the session.
+            # The timeline still has to move: leaving emitted_ms behind while the buffer advances would make the next drain slice from a negative offset and mis-time every span after it.
             log.warning("overlap inference failed: %s", err)
             self.emitted_ms = self.buffer_start_ms + end_rel
             self._trim(end_rel)

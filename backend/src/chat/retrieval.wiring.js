@@ -1,14 +1,10 @@
-// Composition root for the chat read path: retrieve, screen, render.
-//
-// Wires together the vector index, the injection screen, and context assembly so the
-// controller doesn't have to know about any of them. Dense and sparse both run; reranking is
-// the one slot still empty, so the pipeline falls back to fusion order.
+// Composition root for the chat read path: retrieve, screen, render. Wires together the vector index, the injection screen, and context assembly so the controller doesn't have to know about any of them.
+// Dense and sparse both run; reranking is the one slot still empty, so the pipeline falls back to fusion order.
 
 'use strict';
 
 const { getQdrant } = require('../infra/qdrant');
-// Retrying, like the write path: the question has to be embedded before anything can be
-// retrieved, so a bare 429 here costs the whole answer rather than one chunk's freshness.
+// Retrying, like the write path: the question has to be embedded before anything can be retrieved, so a bare 429 here costs the whole answer rather than one chunk's freshness.
 const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
 const { createChunkSearch } = require('./chunk.search');
 const { createRetrieval } = require('./retrieval.pipeline');
@@ -24,8 +20,7 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('retrievalWiring');
 
-// The guard is a classifier, not a chat model, so no sampling params and no retry. It has its
-// own timeout and fails open; retrying would just eat into the time budget it's meant to bound.
+// The guard is a classifier, not a chat model, so no sampling params and no retry: it has its own timeout and fails open, and retrying would eat into the time budget it's meant to bound.
 const complete = ({ model, messages }) =>
     runResilient(
         'groq',
@@ -33,16 +28,12 @@ const complete = ({ model, messages }) =>
         { maxRetries: 0 }
     );
 
-// Everything in the prompt that is not retrieved context: system prompt, usage instructions,
-// the running summary, recent chat history and the question itself. Retrieval gets what is left.
+// Everything in the prompt that is not retrieved context: system prompt, usage instructions, the running summary, recent chat history and the question itself. Retrieval gets what is left.
 const NON_CONTEXT_PROMPT_TOKENS = 1600;
 
 /**
  * How many tokens of retrieved context the answering model can actually take.
- *
- * Derived rather than tuned: the ceiling and the answer allowance both come from config and
- * core/provider.limits.json, so changing the model or the answer length moves this by itself.
- * Null when the model has no recorded ceiling, which leaves retrieval on its fixed-count default.
+ * Derived rather than tuned: the ceiling and answer allowance come from config and core/provider.limits.json, so changing the model or answer length moves this automatically. Null when the model has no recorded ceiling, which leaves retrieval on its fixed-count default.
  */
 function contextBudget() {
     const { model, taskConfig } = getChatInference();
@@ -78,19 +69,10 @@ async function checkQuery(text) {
 }
 
 /**
- * Builds the context block for one question.
- *
- * Returns null when the meeting has nothing indexed, so the caller can fall back rather than
- * ask the model to answer from an empty block.
- *
+ * Builds the context block for one question. Returns null when the meeting has nothing indexed, so the caller can fall back rather than ask the model to answer from an empty block.
  * @param {object} opts
- * @param {number} [opts.nowMs] current session time, for the staleness line. The chat request
- *   does not carry a session clock yet, so staleness is normally omitted rather than faked.
- * @param {number} [opts.maxContextTokens] override the derived budget. Production leaves this
- *   alone; it exists because an evaluation that swaps the answering model would otherwise still
- *   size retrieval against the *configured* model. That mismatch silently handed the
- *   whole-transcript arm 12.8k tokens while retrieval got 4.8k, and the resulting gap looked
- *   like a retrieval failure rather than the budget difference it partly was.
+ * @param {number} [opts.nowMs] current session time, for the staleness line; omitted when the chat request has no session clock rather than faked.
+ * @param {number} [opts.maxContextTokens] override the derived budget, for evaluation runs that swap the answering model. Without it retrieval sized against the *configured* model regardless: one run silently got 12.8k tokens for the whole-transcript arm vs 4.8k for retrieval, and the gap looked like a retrieval failure rather than a budget mismatch.
  */
 async function buildContext({ query, meetingId, ownerId, nowMs = null, maxContextTokens }) {
     const { retrieval, guard } = get();
@@ -105,9 +87,7 @@ async function buildContext({ query, meetingId, ownerId, nowMs = null, maxContex
         maxContextTokens: maxContextTokens ?? contextBudget(),
     });
 
-    // Answering from an empty context because the search backends are down produces "the
-    // transcript does not mention that", which is indistinguishable from a real answer and is a
-    // lie. Fail loudly instead; the caller can tell the user to try again.
+    // Answering from an empty context because the search backends are down produces "the transcript does not mention that", indistinguishable from a real answer and a lie. Fail loudly instead; the caller can tell the user to try again.
     if (result.stats.unavailable) {
         logger.error('Every retrieval lane failed', {
             meetingId, laneFailures: result.stats.laneFailures,

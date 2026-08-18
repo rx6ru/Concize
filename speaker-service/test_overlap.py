@@ -1,6 +1,4 @@
-# Buffering and timeline arithmetic without the model. A stub stands in for inference so the
-# thing that actually went wrong once — which stretch of audio a span's timestamps refer to —
-# can be checked in milliseconds.
+# Buffering and timeline arithmetic without the model. A stub stands in for inference so the thing that actually went wrong once, which stretch of audio a span's timestamps refer to, can be checked in milliseconds.
 #
 # Run with pytest, or directly: python test_overlap.py
 
@@ -70,7 +68,7 @@ def test_successive_drains_are_contiguous_and_do_not_repeat():
     assert second["t1_ms"] > second["t0_ms"]
 
 
-def test_flush_releases_the_tail_that_was_waiting()  :
+def test_flush_releases_the_tail_that_was_waiting():
     session = session_with(lambda secs: np.ones(int(secs * 1000 / FRAME_MS), dtype=np.float32))
     session.add_audio(pcm(20))
     [first] = session.add_audio(pcm(10))

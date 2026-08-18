@@ -12,14 +12,13 @@ const logger = createLogger('summaryService');
 
 /**
  * Generates an incremental update to the meeting summary.
- * @param {string} currentSummary - The existing summary text (or empty string).
- * @param {string} newTranscript - The new chunk of transcription.
- * @param {number} wordLimit - The target word count.
- * @param {{ hasSpeakers?: boolean }} [context] - Context for prompt selection.
- * @returns {Promise<Object>} The updated title and summary text.
+ * @param {string} currentSummary existing summary text, or empty string
+ * @param {string} newTranscript
+ * @param {number} wordLimit
+ * @param {{ hasSpeakers?: boolean }} [context] for prompt selection
+ * @returns {Promise<Object>} updated title and summary text
  */
 const generateIncrementalSummary = async (currentSummary, newTranscript, wordLimit, context = {}) => {
-    // Resolve the correct prompt template via the registry
     const getSummaryPrompt = getPrompt('summary', context);
 
     if (typeof getSummaryPrompt !== 'function') {

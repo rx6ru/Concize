@@ -1,21 +1,9 @@
-# Voice activity detection for the speaker lane.
+# Voice activity detection for the speaker lane. NOT ENABLED: measured and deliberately off, see below.
 #
-# The service shipped with FunASR's fsmn-vad, which is speech_fsmn_vad_zh-cn-16k-common: a
-# Chinese model. On English meetings that was merely unremarkable. On Hindi it under-segments by
-# five to ten times — measured on five Indic DiarBench clips it returned 5 to 11 speech regions
-# where the reference has 18 to 66 turns, so almost every segment it produced spanned several
-# speakers. Since attribution assigns one speaker per segment, that alone put a 53.8% floor under
-# speaker error on Hindi against 27.8% on English, and no amount of better clustering can reach
-# below a floor.
+# FunASR ships with fsmn-vad (Chinese), which badly under-segments Hindi: 5-11 regions found vs 18-66 reference turns on Indic DiarBench, putting a 53.8% speaker-error floor under Hindi vs 27.8% on English.
+# Silero finds 24-68 regions on the same clips, near the reference turn count, and is what every production streaming stack surveyed defaults to (Pipecat, LiveKit, whisper-streaming, WhisperLive), MIT, small, and causal, which SpeakerSession's trimming buffer requires.
 #
-# Silero finds 24 to 68 regions on the same five clips, which is the reference turn count give or
-# take. It is also what every production streaming stack surveyed defaults to (Pipecat, LiveKit,
-# whisper-streaming, WhisperLive), it is MIT, a couple of megabytes, and genuinely causal — which
-# matters, because SpeakerSession trims its audio buffer as segments close and cannot wait on a
-# detector that needs to see the future.
-#
-# NOT ENABLED YET, AND THE MEASUREMENTS SAY WHY. Swapping the VAD does exactly what it should to
-# segmentation and still does not improve the number that matters:
+# Swapping the VAD alone does not fix speaker error, because the embedding model (CAM++) is also Chinese and shorter segments starve it:
 #
 #                       speaker error        segmentation floor
 #     Hindi   fsmn      61.0%                53.8%
@@ -25,19 +13,9 @@
 #     IS1003b fsmn      28.7%                25.0%
 #     IS1003b silero    42.1%                16.9%
 #
-# The floor falls every time, by 8 to 16 points. Actual error moves either way. The reason is
-# visible in the speaker counts: ES2004a goes from 10 hypothesis speakers to 18, IS1003b from 5
-# to 15. Shorter segments mean shorter embeddings, and the embedding model is CAM++, which is
-# speech_campplus_sv_zh-cn_16k-common — Chinese, like the VAD it replaces. Give it less audio per
-# segment and it invents speakers.
+# The floor falls every time but actual error moves either way: ship this together with a multilingual embedding model (pyannote's wespeaker-voxceleb-resnet34-LM is the candidate), swap both, or neither.
 #
-# So the binding constraint was never the VAD alone. Fixing segmentation only exposes the next
-# one, and shipping this by itself would regress two of the three sets. It pairs with a
-# multilingual embedding model — pyannote's wespeaker-voxceleb-resnet34-LM is the obvious
-# candidate and is reachable with the token already configured. Measure that together, then
-# switch both, or neither.
-#
-# The interface is FunASR's, so SpeakerSession does not know or care which one it got.
+# The interface is FunASR's; SpeakerSession does not know or care which VAD it got.
 
 import logging
 
@@ -47,8 +25,7 @@ log = logging.getLogger("speaker-service.vad")
 
 SAMPLE_RATE = 16000
 
-# Silero's window is fixed at 512 samples at 16kHz; the constructor argument that looks like it
-# changes this is marked deprecated upstream and ignored.
+# Silero's window is fixed at 512 samples at 16kHz; the constructor argument that looks like it changes this is marked deprecated upstream and ignored.
 WINDOW = 512
 
 

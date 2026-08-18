@@ -1,12 +1,10 @@
-// Composition root for the transcript write path.
-// Wires up chunk boundaries, storage, embedding, and vector upsert. Embedding is coalesced
-// per meeting: a running pass absorbs new chunks; a failed pass just costs freshness and retries next chunk.
+// Composition root for the transcript write path. Wires up chunk boundaries, storage, embedding, and vector upsert.
+// Embedding is coalesced per meeting: a running pass absorbs new chunks; a failed pass just costs freshness and retries next chunk.
 
 'use strict';
 
 const { getQdrant } = require('../infra/qdrant');
-// The retrying variant: the provider caps embeds per minute, which a long meeting goes through
-// in one pass, and a bare 429 leaves the chunk out of the index.
+// The retrying variant: the provider caps embeds per minute, which a long meeting goes through in one pass, and a bare 429 leaves the chunk out of the index.
 const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
 const { getEmbeddings } = require('../providers/embedding/embedding.batch');
 const { createChunkSearch } = require('../chat/chunk.search');
@@ -56,20 +54,17 @@ function build() {
         getDirtyChunks,
         attachVector,
         embed: getEmbeddingWithRetry,
-        // Batched: a pass is one request instead of one per chunk, which is what put long
-        // meetings past the provider's per-minute request ceiling mid-pass.
+        // Batched: a pass is one request instead of one per chunk, which is what put long meetings past the provider's per-minute request ceiling mid-pass.
         embedMany: getEmbeddings,
         upsert: index.upsert,
     });
 
-    // Layer 2 is prose covering a run of layer-1 chunks, so an abstract question matches
-    // narrative rather than raw disfluent speech. Same provider the summary uses.
+    // Layer 2 is prose covering a run of layer-1 chunks, so an abstract question matches narrative rather than raw disfluent speech. Same provider the summary uses.
     const narrator = createNarrator({
         complete: async (args) => {
             const { client, model, taskConfig } = getSummaryInference();
             const res = await client.chat.completions.create({ ...args, model });
-            // Narration is the largest LLM consumer in the system — a full corpus ingest costs
-            // about a day's token budget on its own — so it is the one that most needs counting.
+            // Narration is the largest LLM consumer in the system (a full corpus ingest costs about a day's token budget on its own), so it's the one that most needs counting.
             ledger.record(taskConfig.provider, model, res?.usage?.total_tokens || 0);
             return res;
         },
@@ -96,8 +91,8 @@ function get() {
     return parts;
 }
 
-// The title comes from the summary and changes as the meeting progresses, so it is read per
-// pass rather than cached. The owner is what keeps a vector out of another tenant's search.
+// The title comes from the summary and changes as the meeting progresses, so it is read per pass rather than cached.
+// The owner is what keeps a vector out of another tenant's search.
 async function meetingMeta(meetingId) {
     const [ownerId, summary] = await Promise.all([
         getMeetingOwner(meetingId).catch(() => null),
@@ -109,8 +104,7 @@ async function meetingMeta(meetingId) {
 const inFlight = new Map();
 
 /**
- * Embeds everything outstanding for a meeting. Concurrent calls collapse into the running
- * pass, which then repeats once if more work arrived while it ran.
+ * Embeds everything outstanding for a meeting. Concurrent calls collapse into the running pass, which then repeats once if more work arrived while it ran.
  */
 function scheduleEmbed(meetingId) {
     const current = inFlight.get(meetingId);
@@ -144,10 +138,7 @@ function scheduleEmbed(meetingId) {
 
 /**
  * Hands a finished chunk to the summary worker.
- *
- * The worker reads transcription_chunks by index, which is how the old batch path fed it, so the
- * live path appends there too rather than the worker growing a second input. Failing here costs
- * a stale summary, not the meeting.
+ * The worker reads transcription_chunks by index, how the old batch path fed it, so the live path appends there too rather than the worker growing a second input. Failing here costs a stale summary, not the meeting.
  */
 async function queueForSummary(meetingId, chunk) {
     try {
@@ -234,16 +225,14 @@ async function onSessionEnd(meetingId) {
         logger.warn('Could not mark the meeting complete', { meetingId, error: err.message });
     }
 
-    // Through the queue, not a direct call: the last chunk may still be summarising, and its
-    // save would flip the status back to updating.
+    // Through the queue, not a direct call: the last chunk may still be summarising, and its save would flip the status back to updating.
     try {
         await publishToQueue(config.queues.SUMMARY_QUEUE, { jobId: meetingId, finalise: true });
     } catch (err) {
         logger.warn('Could not finalise summary', { meetingId, error: err.message });
     }
 
-    // Batch re-transcription takes minutes, so it runs behind the session teardown rather
-    // than holding the socket close open.
+    // Batch re-transcription takes minutes, so it runs behind the session teardown rather than holding the socket close open.
     if (reconciler) {
         reconciler.run(meetingId).catch((err) =>
             logger.error('Reconcile pass failed', { meetingId, error: err.message }));

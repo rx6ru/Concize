@@ -1,5 +1,4 @@
 // Cerebras inference client using Groq SDK with base URL override
-// https://inference-docs.cerebras.ai/resources/openai
 
 const Groq = require('groq-sdk');
 const config = require('../../core/config');
@@ -12,7 +11,6 @@ class CerebrasService extends BaseKeyRotationService {
 
     /**
      * Returns a Groq-compatible client instance pointed at the Cerebras API.
-     * Uses Groq SDK with baseURL override for OpenAI compatibility.
      * @throws {Error} If no valid key is available or client instantiation fails.
      */
     getClient() {
@@ -31,5 +29,4 @@ class CerebrasService extends BaseKeyRotationService {
     }
 }
 
-// Singleton instance
 module.exports = new CerebrasService();

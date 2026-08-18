@@ -1,4 +1,3 @@
-//
 // Chat persistence on Supabase Postgres.
 
 const crypto = require('crypto');

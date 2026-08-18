@@ -1,10 +1,10 @@
 // frontend/config.example.js
 //
-// TEMPLATE — copy this file to `config.js` and fill in your values:
+// TEMPLATE: copy this file to `config.js` and fill in your values:
 //   cp config.example.js config.js
 // `config.js` is gitignored so your project URL/keys are not committed.
 //
-// SUPABASE_PUBLISHABLE_KEY is the new-format public client key (sb_publishable_...) — safe to
+// SUPABASE_PUBLISHABLE_KEY is the new-format public client key (sb_publishable_...), safe to
 // ship in a client. It replaces the legacy anon key. NEVER put the secret key (sb_secret_...) here.
 
 const CONCIZE_CONFIG = {

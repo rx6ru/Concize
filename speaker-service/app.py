@@ -9,9 +9,8 @@
 #              {"event":"overlap","t0_ms":..,"t1_ms":..}
 #              {"event":"error","message":"..","fatal":true}
 #
-# Overlap rides this socket rather than a second one: the detector reads the audio the diarizer is
-# already being fed, so both signals share one clock. It is optional — without an HF_TOKEN the
-# model does not load and the session runs exactly as it did before.
+# Overlap rides this socket rather than a second one: the detector reads the audio the diarizer is already being fed, so both signals share one clock.
+# It is optional: without an HF_TOKEN the model does not load and the session runs exactly as it did before.
 
 import argparse
 import asyncio
@@ -29,8 +28,8 @@ from speaker import SpeakerSession, build_tracker, SAMPLE_RATE
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("speaker-service")
 
-# One GPU, one model. Inference runs in a worker thread so a slow segment does not block the
-# event loop, and the lock keeps concurrent sessions from interleaving on the same model.
+# One GPU, one model.
+# Inference runs in a worker thread so a slow segment does not block the event loop, and the lock keeps concurrent sessions from interleaving on the same model.
 _lock = asyncio.Lock()
 _models = {}
 
@@ -47,8 +46,7 @@ def load_models(device):
     _models["vad"] = _models["vad_factory"]()
     _models["tracker_cls"] = HybridSpeakerTracker
     _models["device"] = device
-    # Deliberately on CPU: it is 1.5M parameters against CAM++ already holding the GPU, and the
-    # box this runs on has 4GB of VRAM.
+    # Deliberately on CPU: it is 1.5M parameters against CAM++ already holding the GPU, and the box this runs on has 4GB of VRAM.
     _models["overlap"] = load_overlap_model()
     log.info("models ready")
 
@@ -78,8 +76,7 @@ async def handle(ws):
         async for message in ws:
             if isinstance(message, bytes):
                 intervals = await run(session.add_audio, message)
-                # Same audio, second opinion. Runs outside the model lock: it is a separate
-                # CPU model, so serialising it behind the GPU one would only add latency.
+                # Same audio, second opinion. Runs outside the model lock: it is a separate CPU model, so serialising it behind the GPU one would only add latency.
                 intervals += await asyncio.to_thread(overlap.add_audio, message)
             else:
                 try:

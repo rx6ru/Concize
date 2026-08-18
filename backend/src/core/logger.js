@@ -7,8 +7,7 @@ const { combine, timestamp, printf, colorize, errors, json } = winston.format;
 
 const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
-// Injects the ambient request correlation id (if any) into every log line, so one id traces a
-// request across all modules. No-op outside a request context.
+// Injects the ambient request correlation id (if any) into every log line, so one id traces a request across all modules. No-op outside a request context.
 const injectContext = winston.format((info) => {
     const ctx = getContext();
     if (ctx && ctx.requestId && info.requestId === undefined) {
@@ -17,7 +16,6 @@ const injectContext = winston.format((info) => {
     return info;
 });
 
-// Human-readable format for development
 const devFormat = combine(
     injectContext(),
     colorize({ all: true }),
@@ -45,20 +43,10 @@ const rootLogger = winston.createLogger({
     transports: [
         new winston.transports.Console(),
     ],
-    // Don't exit on uncaught exceptions — let the process manager decide
+    // Don't exit on uncaught exceptions: let the process manager decide
     exitOnError: false,
 });
 
-/**
- * Creates a child logger tagged with a module name.
- * Usage:
- *   const logger = require('./logger').createLogger('audioController');
- *   logger.info('File uploaded', { fileId, jobId });
- *   logger.error('Upload failed', { error: err.message });
- *
- * @param {string} moduleName - Name of the module (e.g. 'audioController', 'transcriptionWorker').
- * @returns {winston.Logger} A child logger with the module metadata attached.
- */
 function createLogger(moduleName) {
     return rootLogger.child({ module: moduleName });
 }

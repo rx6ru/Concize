@@ -13,17 +13,13 @@ const logger = createLogger('summaryWorker');
 
 let channel, connection;
 
-/**
- * Handles one queue message. Extracted from the consume callback so its branches can be
- * tested without standing up a broker.
- */
+/** Handles one queue message. Extracted from the consume callback so its branches can be tested without standing up a broker. */
 const handleMessage = async (channel, msg) => {
     if (!msg) return;
 
     const payload = JSON.parse(msg.content.toString());
 
-    // Sent when a meeting ends. It rides the queue rather than being called directly so
-    // it lands after the last chunk, otherwise the chunk's save flips status back.
+    // Sent when a meeting ends. It rides the queue rather than being called directly so it lands after the last chunk, otherwise the chunk's save flips status back.
     if (payload.finalise) {
         try {
             await completeSummary(payload.jobId);
@@ -38,17 +34,12 @@ const handleMessage = async (channel, msg) => {
     logger.info('Received summary chunk', { jobId, chunkIndex, isLastChunk });
 
     try {
-        // Step A: Validate Chunk Exists in MongoDB
-        // Since we publish ONLY after confirmed write, this should usually succeed.
-        // But replication lag or race conditions could technically happen.
+        // Published only after a confirmed write, so this should usually succeed; but replication lag or a race could still miss the chunk.
         const transcriptionDoc = await getTranscription(jobId);
 
         if (!transcriptionDoc || !transcriptionDoc.transcriptionChunks || transcriptionDoc.transcriptionChunks.length <= chunkIndex) {
             logger.warn('Chunk not found in DB, requeuing with delay', { jobId, chunkIndex });
-            // Nack with requeue=true, but effectively we might want a delay. 
-            // RabbitMQ doesn't have built-in delay without plugins. 
-            // Simple hack: wait locally then nack(true) or just publish to a delay exchange (too complex for now).
-            // We'll wait 2s blocking this consumer, then Requeue.
+            // Simple hack: RabbitMQ has no built-in delay without plugins, so we block this consumer 2s before requeuing.
             await new Promise(r => setTimeout(r, 2000));
             channel.nack(msg, false, true);
             return;
@@ -56,10 +47,8 @@ const handleMessage = async (channel, msg) => {
 
         const rawText = transcriptionDoc.transcriptionChunks[chunkIndex];
 
-        // Step B: Process Update
         await processSummaryUpdate(jobId, rawText, chunkIndex);
 
-        // Step C: Finalize if last chunk
         if (isLastChunk) {
             await completeSummary(jobId);
         }
@@ -70,30 +59,26 @@ const handleMessage = async (channel, msg) => {
     } catch (error) {
         logger.error('Failed processing chunk', { jobId, chunkIndex, error: error.message });
 
-        // If it's an "Out of order" error, we definitely want to retry (requeue).
+        // Out-of-order errors are retried (requeued).
         if (error.message.includes('Out of order')) {
             logger.info("Requeuing out-of-order chunk", { jobId, chunkIndex });
             await new Promise(r => setTimeout(r, 2000)); // Simple backoff
             channel.nack(msg, false, true);
         } else {
-            // For other errors (LLM failure, etc.), also retry for now.
-            // Ideally check retry count headers.
-            channel.nack(msg, false, false); // Dead letter (if configured) or just drop if no DLQ. 
-            // TODO: Configure DLQ argument in assertQueue for production safety.
+            // Also retried for now, with no retry-count check; relies on a DLQ if one is configured.
+            channel.nack(msg, false, false);
+            // TODO: configure a DLQ in assertQueue for production.
         }
     }
 };
 
 const startSummaryWorker = async () => {
     try {
-        // 1. Connect to DB
         await connectPg();
 
-        // 2. Connect to RabbitMQ
         connection = await amqp.connect(config.queues.CLOUDAMQP_URL);
         channel = await connection.createChannel();
 
-        // Assert queue
         await channel.assertQueue(config.queues.SUMMARY_QUEUE, {
             durable: true // Ensure queue survives restarts
         });
@@ -102,7 +87,6 @@ const startSummaryWorker = async () => {
 
         channel.prefetch(1); // Process one at a time per consumer to maintain order affinity if scaled (though strict order logic is in DB)
 
-        // 3. Consume
         channel.consume(config.queues.SUMMARY_QUEUE, (msg) => handleMessage(channel, msg));
 
     } catch (error) {
@@ -141,7 +125,7 @@ const gracefulShutdown = async () => {
     }
 };
 
-// Graceful Shutdown - Only attach if running directly (not imported)
+// Only attach when running directly (not imported)
 if (require.main === module) {
     process.on('SIGINT', gracefulShutdown);
     process.on('SIGTERM', gracefulShutdown);

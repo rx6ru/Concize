@@ -1,11 +1,5 @@
-// Retrieval for meeting chat.
-//
-// Runs dense and sparse search per layer and fuses results by rank (RRF) instead of raw
-// score, since cosine and BM25 scores aren't on comparable scales. Recent speech is pulled in
-// as its own lane after fusion, since "what did they just say" is the most common live
-// question and semantic search doesn't answer it well. A specific chunk wins over a summary
-// covering the same span, so the model isn't stuck paraphrasing when the real words are there.
-//
+// Retrieval for meeting chat: dense and sparse search per layer, fused by RRF (rank, not raw score) since cosine and BM25 aren't comparable.
+// Recent speech is pulled in as its own lane after fusion, since "what did they just say" is common and semantic search answers it poorly.
 // Everything external is injected, so this is testable without a vector database.
 
 'use strict';
@@ -48,9 +42,7 @@ const overlapsInTime = (a, b) => a.t0Ms < b.t1Ms && b.t0Ms < a.t1Ms;
  * Drops abstract candidates already covered by a more specific one.
  * Lower layer number = more specific (1 verbatim, 2 narrative, 3 topic).
  */
-// How much of an abstract chunk a specific one must cover before it replaces it. Any overlap at
-// all is too eager once layer 2 exists: a narrative spans several verbatim chunks, and one of
-// them matching should not throw away the synthesis of the other seven.
+// Coverage needed before a specific chunk replaces an abstract one. Any overlap is too eager: a narrative spans several verbatim chunks, and one matching shouldn't discard the synthesis of the rest.
 const SUBSUME_COVERAGE = 0.6;
 
 function coverageOf(inner, outer) {
@@ -60,32 +52,16 @@ function coverageOf(inner, outer) {
     return Math.max(0, shared) / span;
 }
 
-// Chunks written by the current pipeline carry a token count; anything older, or a recent turn,
-// does not. Four characters a token is close enough to size a context window against.
+// Chunks from the current pipeline carry a token count; older chunks and recent turns don't, so fall back to length/4 as a token estimate.
 const sizeOf = (c) => c.tokens || Math.ceil((c.text || '').length / 4);
 
-// Most of a layer's share of the context window, by layer.
-//
-// Narrative chunks were taking 68% of the budget on a 71-minute meeting, measured. They earn it
-// on rank — a summary is written in the same register as a question, so it scores well against
-// one — and then spend it on size, averaging 353 tokens against a verbatim chunk's 111. The
-// effect grows with the meeting: at 18 minutes there are eight narratives and they cannot crowd
-// anything out, at 71 minutes there are twenty-six and they alone are nearly twice the budget.
-//
-// That is the wrong way round. A summary is a paraphrase, and answering a specific question from
-// a paraphrase is how a system ends up confidently vague, which matches what the long-meeting
-// arm of the sweep actually looked like. Capping the abstract layers leaves room for the words
-// that were really said; anything unspent still goes to the best remaining candidate.
+// Cap on each layer's share of the context budget: narratives took 68% of it on a 71-minute meeting (measured), by ranking well but averaging 353 tokens against a verbatim chunk's 111.
+// Answering a specific question from a paraphrase reads as confidently vague; capping the abstract layers leaves room for the actual words, and unspent budget still goes to the best remaining candidate.
 const LAYER_CAPS = { 2: 0.35, 3: 0.25 };
 
 /**
- * Fills the context up to a token budget rather than a fixed number of chunks.
- *
- * A fixed count gives a short meeting a quarter of itself as context and a long one a fourteenth,
- * while leaving most of the model's budget unspent either way. Candidates arrive best-first, and a
- * chunk that does not fit is skipped rather than ending the loop, since a smaller later one still
- * adds coverage. The top candidate is always returned even when it alone busts the budget —
- * sending a too-large prompt fails loudly, whereas returning nothing fails silently.
+ * Fills the context up to a token budget rather than a fixed chunk count.
+ * A fixed count gives a short meeting a quarter of itself as context and a long one a fourteenth, leaving most of the budget unspent either way.
  */
 function takeWithinBudget(candidates, budget, { layerCaps = LAYER_CAPS } = {}) {
     const taken = new Set();
@@ -99,13 +75,10 @@ function takeWithinBudget(candidates, budget, { layerCaps = LAYER_CAPS } = {}) {
         spentByLayer.set(c.layer, (spentByLayer.get(c.layer) || 0) + size);
     };
 
-    // The top candidate always goes in, even when it alone busts the budget and whatever its
-    // layer: sending a too-large prompt fails loudly, returning nothing fails silently.
+    // Top candidate always goes in, even if it alone busts the budget: a too-large prompt fails loudly, an empty one fails silently.
     if (candidates.length) take(candidates[0]);
 
-    // Two passes in rank order. The first honours each layer's ceiling; the second spends
-    // whatever is left on the best remaining candidates regardless of layer, so a capped budget
-    // is never handed back underfilled.
+    // Two passes in rank order: first honors each layer's cap, second spends what's left regardless of layer so a capped budget isn't handed back underfilled.
     for (const useCaps of [true, false]) {
         for (const c of candidates) {
             if (taken.has(c)) continue;
@@ -138,8 +111,7 @@ function dropSubsumed(candidates) {
  * @param {function} [deps.sparseSearch]  same shape; omit to run dense-only
  * @param {function} [deps.recentTurns]   ({meetingId, sinceMs}) => utterances
  * @param {function} [deps.rerank]        ({query, candidates, topN}) => candidates
- * @param {function} [deps.embedQuery]    (text) => vector, so one question is embedded once
- *   rather than once per layer. Optional: without it each layer embeds for itself.
+ * @param {function} [deps.embedQuery]    (text) => vector; embeds once per question instead of once per layer. Optional.
  */
 function createRetrieval({
     denseSearch, sparseSearch = null, recentTurns = null, rerank = null, embedQuery = null,
@@ -167,8 +139,7 @@ function createRetrieval({
         }) {
             const lists = [];
 
-            // One embedding for the whole question, reused by every layer. Embedding per layer
-            // tripled both the latency and the daily embedding quota a single question cost.
+            // One embedding per question, reused across layers: per-layer embedding tripled both latency and the daily embedding quota per question.
             let vector = null;
             if (embedQuery) {
                 try {
@@ -180,9 +151,7 @@ function createRetrieval({
                 }
             }
 
-            // A lane that throws is tolerated — dense can carry sparse and vice versa — but the
-            // count is kept, because every lane failing is a different situation from every lane
-            // returning nothing, and the caller has to be able to tell them apart.
+            // A lane throwing is tolerated (dense can carry sparse and vice versa), but the failure count is kept so the caller can tell "every lane failed" apart from "every lane returned nothing".
             let attempted = 0;
             let failed = 0;
 
@@ -190,8 +159,7 @@ function createRetrieval({
                 const args = { query, meetingId, ownerId, layer, limit: perLayer, vector };
                 attempted += sparseSearch ? 2 : 1;
 
-                // Invoked through Promise.resolve().then so a lane that throws synchronously
-                // degrades like one that rejects, instead of taking the whole answer with it.
+                // Wrapped in Promise.resolve().then so a synchronous throw degrades like a rejection instead of taking the whole answer down.
                 const run = (fn, name) => Promise.resolve()
                     .then(() => fn(args))
                     .catch((err) => {
@@ -260,10 +228,7 @@ function createRetrieval({
                     recent: recent.length,
                     hasOverlap: deduped.some((c) => c.hasOverlap),
                     unattributed: deduped.some((c) => !c.speakerLabel && !(c.speakers || []).length),
-                    // Every search lane down is not the same as the meeting not mentioning it.
-                    // Left undistinguished, a dead database reads to the user as a confident
-                    // "that was never discussed" — which is worse than an error, because it
-                    // sounds like an answer.
+                    // Every lane failing is not the same as the meeting not mentioning it: left undistinguished, a dead database reads as a confident "that was never discussed", which is worse than an error since it sounds like an answer.
                     unavailable: attempted > 0 && failed === attempted
                         && (!recentTurns || recentFailed),
                     laneFailures: failed,

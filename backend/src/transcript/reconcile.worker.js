@@ -73,8 +73,7 @@ function createReconcileWorker({
             const { entries } = stitchSegments(results);
             const live = await getTranscript(meetingId);
 
-            // A turn inside a failed window has no batch evidence, so aligning it would
-            // read as "batch heard nothing" and wrongly flag it.
+            // A turn inside a failed window has no batch evidence, so aligning it would read as "batch heard nothing" and wrongly flag it.
             const inFailedWindow = (turn) =>
                 failedRanges.some((s) => turn.t0Ms < s.t1Ms && s.t0Ms < turn.t1Ms);
             const alignable = live.filter((t) => !inFailedWindow(t));

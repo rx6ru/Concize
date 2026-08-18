@@ -1,6 +1,5 @@
-// Runs the post-meeting reconciliation pass once a meeting ends.
-// Needs a recording, so it only runs when RECORDING_DIR is set. Everything it does is a
-// correction to an existing transcript, so a failure leaves the live version as it is.
+// Runs the post-meeting reconciliation pass once a meeting ends. Needs a recording, so it only runs when RECORDING_DIR is set.
+// Everything it does is a correction to an existing transcript, so a failure leaves the live version as it is.
 
 'use strict';
 
