@@ -1,10 +1,8 @@
 # API
 
-Everything a client needs to build against Concize. Two surfaces: a REST/SSE API for meeting
-management and chat, and a WebSocket for the live audio session.
+Everything a client needs to build against Concize. Two surfaces: a REST/SSE API for meeting management and chat, and a WebSocket for the live audio session.
 
-Nothing here requires reading backend source. If something is ambiguous, that is a bug in this
-document — raise it rather than reading the implementation.
+Nothing here requires reading backend source. If something is ambiguous, that is a bug in this document — raise it rather than reading the implementation.
 
 - Base URL: `http://localhost:3000` in development
 - All request and response bodies are JSON unless stated otherwise
@@ -16,17 +14,14 @@ document — raise it rather than reading the implementation.
 
 A Supabase access token, sent as `Authorization: Bearer <token>`.
 
-The same token authenticates the WebSocket, where it travels as a `token` query parameter because
-browsers cannot set headers on a WebSocket handshake.
+The same token authenticates the WebSocket, where it travels as a `token` query parameter because browsers cannot set headers on a WebSocket handshake.
 
 > **Note for whoever owns auth:** the WebSocket token is the full-lifetime access token in a URL
 > query string, which lands in server logs, proxy logs and browser history. A short-lived
 > single-use ticket minted by a REST endpoint would be better. Not built yet — flagged so nobody
 > assumes the current behaviour is deliberate.
 
-Meetings are owned. A request for a meeting you do not own returns **404**, never 403 — the API
-never confirms that another user's meeting exists. Treat 404 on a meeting route as "gone or not
-yours" and do not distinguish the two in the UI.
+Meetings are owned. A request for a meeting you do not own returns **404**, never 403 — the API never confirms that another user's meeting exists. Treat 404 on a meeting route as "gone or not yours" and do not distinguish the two in the UI.
 
 ---
 
@@ -75,8 +70,7 @@ The caller's own meetings, newest first. Everything needed for a list view.
 }
 ```
 
-`title` comes from the summary and is `null` until one has been generated — expect `null` for a
-meeting that has just started, and render a placeholder rather than an empty string.
+`title` comes from the summary and is `null` until one has been generated — expect `null` for a meeting that has just started, and render a placeholder rather than an empty string.
 
 **401** if unauthenticated.
 
@@ -84,17 +78,13 @@ meeting that has just started, and render a placeholder rather than an empty str
 
 ### `DELETE /api/v1/meetings/:meetingId`
 
-Permanently deletes a meeting and everything derived from it: transcript, chunks, chat history,
-summary, and the search index entries. **Not reversible, and there is no soft delete** — confirm in
-the UI before calling.
+Permanently deletes a meeting and everything derived from it: transcript, chunks, chat history, summary, and the search index entries. **Not reversible, and there is no soft delete** — confirm in the UI before calling.
 
 **204** with no body on success.
 
 **404** if the meeting is gone or is not yours.
 
-**500** `{"error": "Failed to delete the meeting. Nothing was removed."}` — the delete is atomic
-enough to retry: it removes the search index first and only then the database rows, so a failure
-leaves the meeting intact rather than half-deleted. Safe to call again.
+**500** `{"error": "Failed to delete the meeting. Nothing was removed."}` — the delete is atomic enough to retry: it removes the search index first and only then the database rows, so a failure leaves the meeting intact rather than half-deleted. Safe to call again.
 
 ---
 
@@ -125,12 +115,9 @@ leaves the meeting intact rather than half-deleted. Safe to call again.
 }
 ```
 
-Turns are in spoken order. `nextCursor` is the `seq` to pass as `after` for the next page, or
-**`null` when there are no more** — it is always present, so `null` means "end", not "missing".
+Turns are in spoken order. `nextCursor` is the `seq` to pass as `after` for the next page, or **`null` when there are no more** — it is always present, so `null` means "end", not "missing".
 
-Paging is by `seq`, not offset, so a correction landing between two page requests cannot make a
-turn appear twice or vanish. Fields match the WebSocket `final` shape exactly, so one renderer can
-serve both the live and post-meeting views.
+Paging is by `seq`, not offset, so a correction landing between two page requests cannot make a turn appear twice or vanish. Fields match the WebSocket `final` shape exactly, so one renderer can serve both the live and post-meeting views.
 
 **404** if the meeting is not yours or does not exist.
 
@@ -138,9 +125,7 @@ serve both the live and post-meeting views.
 
 ### `GET /api/v1/meetings/:meetingId/transcript`
 
-Legacy. Returns flat text with **no speakers and no timings** — the shape the old batch pipeline
-wrote. Prefer `/utterances` for anything new; this exists for older clients and is unpaged, so it
-returns the whole meeting in one response.
+Legacy. Returns flat text with **no speakers and no timings** — the shape the old batch pipeline wrote. Prefer `/utterances` for anything new; this exists for older clients and is unpaged, so it returns the whole meeting in one response.
 
 **200** — the transcript document. **404** if the meeting has no transcript, or is not yours.
 
@@ -148,8 +133,7 @@ returns the whole meeting in one response.
 
 ### `GET /api/v1/meetings/:meetingId/summary`
 
-The rolling summary. It updates continuously during the meeting, so poll it (every 20–30s is
-plenty) or refresh it on demand.
+The rolling summary. It updates continuously during the meeting, so poll it (every 20–30s is plenty) or refresh it on demand.
 
 **200**
 ```json
@@ -164,9 +148,7 @@ plenty) or refresh it on demand.
 }
 ```
 
-`status` is one of `updating`, `done`. A summary that does not exist yet returns **404** with
-`{"success": false, "error": "Summary not found for this meeting"}` — expected early in a meeting,
-so render an empty state rather than an error.
+`status` is one of `updating`, `done`. A summary that does not exist yet returns **404** with `{"success": false, "error": "Summary not found for this meeting"}` — expected early in a meeting, so render an empty state rather than an error.
 
 ---
 
@@ -202,8 +184,7 @@ This is the one part of the contract that needs care.
 | 503 | `SERVICE_TIMEOUT` | Upstream unreachable |
 | 500 | `INTERNAL_SERVER_ERROR` | |
 
-**After the stream opens**, the status is already 200, so a failure arrives as an SSE `error`
-event instead. Handle both paths or a mid-stream failure will look like a silent truncation.
+**After the stream opens**, the status is already 200, so a failure arrives as an SSE `error` event instead. Handle both paths or a mid-stream failure will look like a silent truncation.
 
 #### The SSE stream
 
@@ -219,8 +200,7 @@ Concatenate `text` in arrival order.
 ```
 data: {"blocked":true,"replace":"I apologize, but I couldn't generate a helpful response. ..."}
 ```
-**Discard everything already rendered** for this answer and show `replace` instead. Some of the
-offending text has already reached you by the time this arrives; that is inherent to streaming.
+**Discard everything already rendered** for this answer and show `replace` instead. Some of the offending text has already reached you by the time this arrives; that is inherent to streaming.
 
 **Error**:
 ```
@@ -228,14 +208,12 @@ event: error
 data: {"code":"RATE_LIMIT_EXCEEDED","message":"..."}
 ```
 
-**Heartbeat** — a comment line, sent while waiting on the model so proxies do not time the
-connection out. `EventSource` ignores it; a hand-rolled parser must too:
+**Heartbeat** — a comment line, sent while waiting on the model so proxies do not time the connection out. `EventSource` ignores it; a hand-rolled parser must too:
 ```
 :heartbeat
 ```
 
-**End of stream:** the connection closes. There is **no `[DONE]` sentinel** — treat close as the
-terminator.
+**End of stream:** the connection closes. There is **no `[DONE]` sentinel** — treat close as the terminator.
 
 > `EventSource` cannot send a POST body, so use `fetch` with a streaming reader, or an SSE client
 > that supports POST.
@@ -248,10 +226,7 @@ terminator.
 ws://localhost:3000/rt?meetingId=<meetingId>&token=<supabase access token>
 ```
 
-Rejection happens at the HTTP upgrade, before a socket exists, so it arrives as an ordinary HTTP
-response, not a close code: **401** bad token, **404** meeting missing or not yours, **400** no
-`meetingId`. Once connected, the only close code the server originates is **4500** (a lane failed
-and the session cannot continue).
+Rejection happens at the HTTP upgrade, before a socket exists, so it arrives as an ordinary HTTP response, not a close code: **401** bad token, **404** meeting missing or not yours, **400** no `meetingId`. Once connected, the only close code the server originates is **4500** (a lane failed and the session cannot continue).
 
 ### Client → server
 
@@ -261,27 +236,19 @@ and the session cannot continue).
 [ uint32 BE sequence ][ raw little-endian 16-bit mono PCM @ 16 kHz ]
 ```
 
-The sequence number is not optional — a frame shorter than 5 bytes, or without it, is **silently
-dropped**. It exists so the session clock survives reordering and can detect loss. Start at 0 and
-increment by one per frame.
+The sequence number is not optional — a frame shorter than 5 bytes, or without it, is **silently dropped**. It exists so the session clock survives reordering and can detect loss. Start at 0 and increment by one per frame.
 
-The payload is raw PCM: not Opus, not WebM. Capture with an `AudioWorkletProcessor`;
-`MediaRecorder` output will not work. Send roughly 100 ms per frame. A sample-rate mismatch does
-not error — it produces garbled transcription, so resample to exactly 16 kHz client-side.
+The payload is raw PCM: not Opus, not WebM. Capture with an `AudioWorkletProcessor`; `MediaRecorder` output will not work. Send roughly 100 ms per frame. A sample-rate mismatch does not error — it produces garbled transcription, so resample to exactly 16 kHz client-side.
 
-**Do not drop the opening frames.** Losing the first ~300 ms of a session was measured to collapse
-speaker tracking from 15 distinct speakers to 1, because the diarizer's internal chunking is
-aligned to the start of the stream. Begin sending as soon as the socket opens.
+**Do not drop the opening frames.** Losing the first ~300 ms of a session was measured to collapse speaker tracking from 15 distinct speakers to 1, because the diarizer's internal chunking is aligned to the start of the stream. Begin sending as soon as the socket opens.
 
 **Control:** JSON text frames. Exactly one is understood:
 ```json
 { "event": "stop" }
 ```
-Anything else parses and is ignored. Malformed JSON returns
-`{"type":"error","code":"bad_message","fatal":false}` and the session continues.
+Anything else parses and is ignored. Malformed JSON returns `{"type":"error","code":"bad_message","fatal":false}` and the session continues.
 
-Closing the socket also ends the session cleanly, so `stop` is a courtesy rather than a
-requirement — but send it, because it lets the server finalise before the socket drops.
+Closing the socket also ends the session cleanly, so `stop` is a courtesy rather than a requirement — but send it, because it lets the server finalise before the socket drops.
 
 ### Server → client
 
@@ -314,25 +281,19 @@ Every message is JSON with a `type`.
 ```
 
 - `speaker` is `null` when unattributed. **On `partial` it is always `null`** — partials are never
-  attributed. Do not render a speaker on a partial.
+attributed. Do not render a speaker on a partial.
 - `confidence` is `confident` | `provisional` | `unknown`. Consider showing `provisional` and
-  `unknown` differently; the label may change.
+`unknown` differently; the label may change.
 - `overlap` means people were talking over each other. `overlapRatio` is how much of the span was
-  contested. Worth surfacing, because attribution is least reliable exactly there.
+contested. Worth surfacing, because attribution is least reliable exactly there.
 
 ### The three behaviours a client must get right
 
-**1. `revision` rewrites history.** Text is never held back waiting for speaker attribution — it is
-emitted immediately with `speaker: null` or a provisional label, and corrected afterwards. Key your
-rendered transcript by `turnId` and replace in place when a `revision` arrives for a `turnId`
-already on screen. A client that appends revisions will duplicate lines.
+**1. `revision` rewrites history.** Text is never held back waiting for speaker attribution — it is emitted immediately with `speaker: null` or a provisional label, and corrected afterwards. Key your rendered transcript by `turnId` and replace in place when a `revision` arrives for a `turnId` already on screen. A client that appends revisions will duplicate lines.
 
-**2. `partial` is replaced, not appended.** Each `partial` supersedes the previous one for the
-in-progress utterance. When the `final` arrives, drop the partial and render the final.
+**2. `partial` is replaced, not appended.** Each `partial` supersedes the previous one for the in-progress utterance. When the `final` arrives, drop the partial and render the final.
 
-**3. `lane.status` is not fatal.** The speaker lane can go down while transcription continues
-perfectly — words outrank speakers by design. On `{ lane: "speaker", status: "down" }`, keep
-rendering text and stop showing speaker labels. Do not tear down the session.
+**3. `lane.status` is not fatal.** The speaker lane can go down while transcription continues perfectly — words outrank speakers by design. On `{ lane: "speaker", status: "down" }`, keep rendering text and stop showing speaker labels. Do not tear down the session.
 
 ### Typical flow
 
@@ -355,10 +316,7 @@ DELETE /api/v1/meetings/:meetingId       → permanent
 So nobody builds UI against something that does not exist:
 
 - **Reconnecting is partial.** Timestamps now continue past the stored transcript rather than
-  restarting at zero, so a reconnect no longer overwrites the meeting's own timeline — send your
-  sequence numbers from 0 again and the server places them correctly. What is still missing:
-  audio buffered during the drop is not replayed, and speaker attribution degrades after a
-  reconnect because the diarizer's clustering restarts with no history.
+restarting at zero, so a reconnect no longer overwrites the meeting's own timeline — send your sequence numbers from 0 again and the server places them correctly. What is still missing: audio buffered during the drop is not replayed, and speaker attribution degrades after a reconnect because the diarizer's clustering restarts with no history.
 - **No overlap lane.** `overlap` and `overlapRatio` are in the contract and currently always
-  `false` / `0`. The field is stable; the data is not there yet.
+`false` / `0`. The field is stable; the data is not there yet.
 - **No speaker naming.** Speakers are `S1`, `S2`, … and cannot be renamed.

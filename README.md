@@ -1,22 +1,14 @@
 # Concize
 
-Real-time meeting intelligence for Indian-language and code-mixed speech. Audio streams in over
-a WebSocket, comes back as an attributed transcript while the meeting is still running, and can
-be queried by chat with citations back to who said what and when.
+Real-time meeting intelligence for Indian-language and code-mixed speech. Audio streams in over a WebSocket, comes back as an attributed transcript while the meeting is still running, and can be queried by chat with citations back to who said what and when.
 
-Built for the case most meeting tools handle badly: several people, Hinglish, long sessions, and
-speakers talking over each other. Leading English ASR models score 28-51% word error rate on
-Indian-language benchmarks, which makes the downstream summary and chat unusable no matter how
-good the LLM is.
+Built for the case most meeting tools handle badly: several people, Hinglish, long sessions, and speakers talking over each other. Leading English ASR models score 28-51% word error rate on Indian-language benchmarks, which makes the downstream summary and chat unusable no matter how good the LLM is.
 
-Two parts live here: the Node backend (`backend/`) and a Chrome extension that captures tab and
-microphone audio (`frontend/`). Speaker attribution runs as a separate Python service
-(`speaker-service/`) and is optional.
+Two parts live here: the Node backend (`backend/`) and a Chrome extension that captures tab and microphone audio (`frontend/`). Speaker attribution runs as a separate Python service (`speaker-service/`) and is optional.
 
 ## How it works
 
-One audio stream is fanned out to independent recognisers and their output is joined on a shared
-timeline. A slow or dead recogniser costs one capability, not the meeting.
+One audio stream is fanned out to independent recognisers and their output is joined on a shared timeline. A slow or dead recogniser costs one capability, not the meeting.
 
 ```
   chrome extension
@@ -38,14 +30,9 @@ timeline. A slow or dead recogniser costs one capability, not the meeting.
               embedding ──► Qdrant ──► retrieval ──► chat (SSE)
 ```
 
-Text is emitted the moment it is final, with `speaker: null` if attribution is not known yet.
-When the speaker lane catches up, the client gets a `revision` rather than the text having been
-delayed. Nothing is updated in place: a correction writes a new revision of the utterance and
-supersedes the old one in the same transaction, so a reader always sees exactly one current row
-per turn and every derived artefact can be rebuilt by replaying the log.
+Text is emitted the moment it is final, with `speaker: null` if attribution is not known yet. When the speaker lane catches up, the client gets a `revision` rather than the text having been delayed. Nothing is updated in place: a correction writes a new revision of the utterance and supersedes the old one in the same transaction, so a reader always sees exactly one current row per turn and every derived artefact can be rebuilt by replaying the log.
 
-After the meeting a batch pass re-transcribes the recording, which sees the whole thing at once
-and beats the streaming pass, and corrects the live record.
+After the meeting a batch pass re-transcribes the recording, which sees the whole thing at once and beats the streaming pass, and corrects the live record.
 
 ## Status
 
@@ -61,16 +48,16 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Incremental summarisation | working |
 | Session audio retention | working, opt in via RECORDING_DIR |
 | Post-meeting reconciliation | modules built, not scheduled |
+| Indic speaker models | not built, and this is the main gap |
 | Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
 | Layer 2 narrative chunks | working |
 | Layer 3 topic chunks | not built |
-| Overlapping-speech detection | not built |
+| Overlapping-speech detection | working, pyannote segmentation in the speaker service |
 
 ## Quick start
 
-Needs Node 20+, Docker, and keys for Sarvam (transcription), Groq or Cerebras (chat) and Gemini
-(embeddings).
+Needs Node 20+, Docker, and keys for Sarvam (transcription), Groq or Cerebras (chat) and Gemini (embeddings).
 
 ```sh
 git clone https://github.com/rx6ru/Concize.git
@@ -87,8 +74,7 @@ cp .env.example .env      # fill in the keys, see Configuration
 npm start
 ```
 
-The server refuses to start if Postgres, RabbitMQ or Qdrant are unreachable, so a clean boot
-means the stack is actually wired up:
+The server refuses to start if Postgres, RabbitMQ or Qdrant are unreachable, so a clean boot means the stack is actually wired up:
 
 ```
 info [systemCheck] Binaries verified (ffmpeg: .../ffmpeg)
@@ -99,8 +85,7 @@ info [server]      Server is running on port 3000
 info [chunkSearch] Chunk collection created {"collection":"concize_chunks"}
 ```
 
-Load `frontend/` as an unpacked extension from `chrome://extensions` to capture audio, or drive
-the WebSocket directly (see Protocol).
+Load `frontend/` as an unpacked extension from `chrome://extensions` to capture audio, or drive the WebSocket directly (see Protocol).
 
 ### Speaker attribution
 
@@ -112,13 +97,11 @@ python -m venv venv && ./venv/bin/pip install -r requirements.txt
 ./venv/bin/python app.py --device cuda:0 --port 8765
 ```
 
-Then set `SPEAKER_SERVICE_URL=ws://127.0.0.1:8765/speaker`. Without it, meetings transcribe
-normally and every turn comes back unattributed rather than guessed.
+Then set `SPEAKER_SERVICE_URL=ws://127.0.0.1:8765/speaker`. Without it, meetings transcribe normally and every turn comes back unattributed rather than guessed.
 
 ## Configuration
 
-Provider and model are chosen per task, so transcription can run on Sarvam while chat runs on
-Groq without touching code.
+Provider and model are chosen per task, so transcription can run on Sarvam while chat runs on Groq without touching code.
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -135,8 +118,7 @@ Groq without touching code.
 | `PORT` | `3000` | |
 | `LOG_LEVEL` | `info` | |
 
-API keys accept a comma-separated list (`GROQ_API_KEYS`, `GEMINI_API_KEYS`, `SARVAM_API_KEYS`)
-and are rotated per call. See `backend/.env.example` for the full set.
+API keys accept a comma-separated list (`GROQ_API_KEYS`, `GEMINI_API_KEYS`, `SARVAM_API_KEYS`) and are rotated per call. See `backend/.env.example` for the full set.
 
 ## Protocol
 
@@ -146,12 +128,9 @@ and are rotated per call. See `backend/.env.example` for the full set.
 ws://host:3000/rt?token=<supabase jwt>&meetingId=<id>
 ```
 
-Authorisation happens on the HTTP upgrade, before a socket exists. A meeting owned by someone
-else is rejected with 404 rather than 403, so the API never confirms that it exists.
+Authorisation happens on the HTTP upgrade, before a socket exists. A meeting owned by someone else is rejected with 404 rather than 403, so the API never confirms that it exists.
 
-The client sends binary frames of 16 kHz mono little-endian PCM, each prefixed with a big-endian
-uint32 sequence number. The session clock comes from that sequence rather than arrival time, so
-the lanes agree on timestamps under network jitter.
+The client sends binary frames of 16 kHz mono little-endian PCM, each prefixed with a big-endian uint32 sequence number. The session clock comes from that sequence rather than arrival time, so the lanes agree on timestamps under network jitter.
 
 ```jsonc
 {"type":"session.ready","meetingId":"..."}
@@ -202,60 +181,50 @@ Files are named `<subject>.<role>.js`, so a directory listing tells you what eac
 
 The decisions worth knowing about, and the measurements behind them.
 
-**Chunk boundaries are rules, not an LLM call.** A chunk closes on speaker turn + silence gap +
-semantic shift, with a token and duration cap as backstop. It runs on every utterance on the live
-path, and it has to be deterministic or replaying the log stops rebuilding the same chunks.
+**Chunk boundaries are rules, not an LLM call.** A chunk closes on speaker turn + silence gap + semantic shift, with a token and duration cap as backstop. It runs on every utterance on the live path, and it has to be deterministic or replaying the log stops rebuilding the same chunks.
 
-**Retrieval fuses on rank, not score.** Cosine similarity and lexical rank live on incompatible
-scales, and normalising them to combine quietly favours one engine. Reciprocal rank fusion only
-uses each engine's ordering. Recent speech is retrieved as its own lane and never trimmed by
-`topN`, because during a live meeting most questions are about what was just said.
+**Retrieval fuses on rank, not score.** Cosine similarity and lexical rank live on incompatible scales, and normalising them to combine quietly favours one engine. Reciprocal rank fusion only uses each engine's ordering. Recent speech is retrieved as its own lane and never trimmed by `topN`, because during a live meeting most questions are about what was just said.
 
-**The lexical lane is Postgres full text search, indexed `simple` rather than `english`.**
-Stemming mangles code-mixed speech, and exact tokens are the point: names, ticket ids, product
-codes are what dense embeddings smear. It also contributes something dense retrieval cannot,
-which is absence. Asked for a ticket id that was never mentioned, the dense lane still returns
-its nearest chunk at cosine 0.52 while the lexical lane correctly returns nothing.
+**The lexical lane is Postgres full text search, indexed `simple` rather than `english`.** Stemming mangles code-mixed speech, and exact tokens are the point: names, ticket ids, product codes are what dense embeddings smear. It also contributes something dense retrieval cannot, which is absence. Asked for a ticket id that was never mentioned, the dense lane still returns its nearest chunk at cosine 0.52 while the lexical lane correctly returns nothing.
 
-**Uncertainty reaches the prompt.** Every turn carries whether its speaker is `confident`,
-`provisional` or `unknown`, and overlapping audio is marked. The context block renders both
-inline and the instructions tell the model to hedge rather than name someone. Incomplete answers
-are acceptable, confidently wrong ones are not.
+**Uncertainty reaches the prompt.** Every turn carries whether its speaker is `confident`, `provisional` or `unknown`, and overlapping audio is marked. The context block renders both inline and the instructions tell the model to hedge rather than name someone. Incomplete answers are acceptable, confidently wrong ones are not.
 
-**Retrieved transcript is flagged, not dropped.** Anyone in a meeting can say "ignore your
-previous instructions" out loud and it lands verbatim in retrieved context. Measured on
-`llama-prompt-guard-2-86m`, a benign meeting line ("so the fix is to ignore untrusted
-instructions from the transcript") scores 0.9995 and a real attack scores 0.9996. No threshold
-separates them, so screening marks lines and the defence lives in the prompt structure instead.
-User questions are still blocked outright, where the same model is clean.
+**Retrieved transcript is flagged, not dropped.** Anyone in a meeting can say "ignore your previous instructions" out loud and it lands verbatim in retrieved context. Measured on `llama-prompt-guard-2-86m`, a benign meeting line ("so the fix is to ignore untrusted instructions from the transcript") scores 0.9995 and a real attack scores 0.9996. No threshold separates them, so screening marks lines and the defence lives in the prompt structure instead. User questions are still blocked outright, where the same model is clean.
 
-**The speaker threshold is 0.70, not the library default of 0.60.** Measured on an L40S against
-LibriSpeech ground truth with 40-speaker sessions: 0.60 gives 0.854 turn accuracy, 0.70 gives
-0.942, and latency is flat across the sweep. The roster cap is set far above any real meeting
-because when it fills the matcher stops applying its threshold and force-matches to the nearest
-centroid (cosine 0.3185 accepted against 0.6), merging two people into one id with nothing
-downstream able to tell. Adaptive score normalisation measured worse at every setting and is not
-used.
+**The speaker threshold is 0.70, not the library default of 0.60.** Measured on an L40S against LibriSpeech ground truth with 40-speaker sessions: 0.60 gives 0.854 turn accuracy, 0.70 gives 0.942, and latency is flat across the sweep. The roster cap is set far above any real meeting because when it fills the matcher stops applying its threshold and force-matches to the nearest centroid (cosine 0.3185 accepted against 0.6), merging two people into one id with nothing downstream able to tell. Adaptive score normalisation measured worse at every setting and is not used.
+
+## What the measurements say
+
+Numbers come from AMI meeting audio with human transcripts, and from Indic DiarBench for Hindi. The harness lives outside this repo. Every design note above that cites a number cites one of these.
+
+| Measured | Consequence |
+|---|---|
+| Overlap derived from diarization segments scores 23.6% F1. A dedicated model scores 69.2%. | Deriving it was abandoned. A clustering backend puts one speaker on a segment, so two people talking at once inside a segment is invisible and there is nothing to intersect. |
+| The streaming detector scores 63.3% F1 against 63.4% for the same model run offline. | What ships is what was measured. Holding back one model window at the buffer edge costs latency but recovers 12 points of recall. |
+| Live speaker attribution: 34.4% word-weighted error. Sarvam's batch diarization on the same audio: 55.0%. | The batch pass corrects wording but no longer overwrites speakers. It used to. |
+| 16 speakers across 91 minutes: 30.9% error, against 34.4% on four-speaker meetings. | Accuracy does not fall off with speaker count. Over-segmentation is cheap; confusing two people is not. |
+| Hindi speaker error is 61.0% against 34.4% on English. The floor imposed by segmentation alone is 53.8%. | The VAD and the embedding model are both Chinese (`fsmn-vad`, `campplus_sv_zh-cn`). On Hindi the VAD returns 5-11 speech regions where the reference has 18-66 turns. |
+| Swapping our transcript for the human one, same model and prompt, moves answer accuracy 21 to 36 points. | Transcription is the ceiling on answer quality. Work on retrieval does not move it. |
+| Evidence coverage in retrieved context: 72.7% for wrong answers, 72.1% for right ones. | Retrieval is not the bottleneck. A reranker was planned and then dropped on this result. |
+| Layer 2 summaries took 68% of the context budget on a 71-minute meeting. | Capped per layer. They rank well because they read like the question, and cost three times a verbatim chunk. |
+
+The Hindi row is the one that changed plans. Swapping only the VAD drops the segmentation floor by 8 to 16 points on every corpus tested and still makes speaker error worse, because shorter segments hand the Chinese embedding model less audio per segment and it starts inventing speakers. On ES2004a it goes from 10 hypothesis speakers to 18. Both models have to be replaced in one step. A Silero adapter is committed and deliberately left switched off for that reason, with the numbers in its header.
 
 ## Limitations
 
 - About one turn in seventeen is still attributed to the wrong speaker at 40 speakers, and 6 of
-  40 identities hold more than one person. That is why confidence travels with the data.
+40 identities hold more than one person. That is why confidence travels with the data.
 - The speaker tracker is sensitive to where the stream starts. Losing the first 300 ms took it
-  from 15 speaker centres to 1 in testing. The lane holds audio until the service connects now,
-  but the underlying fragility is upstream.
+from 15 speaker centres to 1 in testing. The lane holds audio until the service connects now, but the underlying fragility is upstream.
 - Sarvam's realtime API does not diarize, which is why speakers are a separate lane at all.
 - Batch transcription caps a file at 2 hours, so longer meetings are cut into overlapping
-  segments and stitched. A speaker silent through an overlap window appears as a new identity in
-  the following segment.
+segments and stitched. A speaker silent through an overlap window appears as a new identity in the following segment.
 
 ## Tests
 
 ```sh
-cd backend && npm test                      # 504 tests, no network or GPU needed
-cd speaker-service && python test_speaker.py
+cd backend && npm test                      # 763 tests, no network or GPU needed
+cd speaker-service && python test_speaker.py test_overlap.py   # 23 more
 ```
 
-Database tests run against `pg-mem`, and the live pipeline test drives a real WebSocket through
-the gateway, fusion, the transcript log and chunk derivation. Note that pg-mem applies a partial
-index without its predicate, which is why the schema uses composite indexes instead.
+Database tests run against `pg-mem`, and the live pipeline test drives a real WebSocket through the gateway, fusion, the transcript log and chunk derivation. Note that pg-mem applies a partial index without its predicate, which is why the schema uses composite indexes instead.
