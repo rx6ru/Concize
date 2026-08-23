@@ -53,7 +53,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'we should revisit the pricing model next quarter'));
         await insertChunk('fts-1', chunk(1, 'Priya will file ticket PROJ-4417 before Friday'));
 
-        const hits = await searchChunkText('fts-1', { text: 'PROJ-4417' });
+        const hits = await searchChunkText('fts-1', { text: 'PROJ-4417', ownerId: 'user-A' });
 
         expect(hits).toHaveLength(1);
         expect(hits[0].text).toContain('PROJ-4417');
@@ -63,7 +63,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'pricing came up once'));
         await insertChunk('fts-1', chunk(1, 'pricing pricing pricing, the whole pricing model'));
 
-        const hits = await searchChunkText('fts-1', { text: 'pricing model' });
+        const hits = await searchChunkText('fts-1', { text: 'pricing model', ownerId: 'user-A' });
 
         expect(hits[0].ordinal).toBe(1);
     });
@@ -72,7 +72,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'deployment instructions are in the runbook',
             { speakers: ['S2', 'S3'], hasOverlap: true }));
 
-        const [hit] = await searchChunkText('fts-1', { text: 'runbook' });
+        const [hit] = await searchChunkText('fts-1', { text: 'runbook', ownerId: 'user-A' });
 
         expect(hit).toMatchObject({
             layer: 1, ordinal: 0, rev: 0, t0Ms: 0, t1Ms: 900,
@@ -85,7 +85,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'yeah that works for me',
             { contextPrefix: '[Q3 roadmap planning | 0:00-0:30 | Speakers: S1]' }));
 
-        const hits = await searchChunkText('fts-1', { text: 'roadmap' });
+        const hits = await searchChunkText('fts-1', { text: 'roadmap', ownerId: 'user-A' });
         expect(hits).toHaveLength(1);
     });
 
@@ -94,7 +94,15 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'shared keyword here'));
         await insertChunk('fts-2', chunk(0, 'shared keyword here'));
 
-        expect(await searchChunkText('fts-1', { text: 'keyword' })).toHaveLength(1);
+        expect(await searchChunkText('fts-1', { text: 'keyword', ownerId: 'user-A' })).toHaveLength(1);
+    });
+
+    // Every test above drifted for exactly this reason: ownerId became mandatory and none of them
+    // passed it. Nothing asserted the rule itself, so the suite failed instead of the rule holding.
+    it('refuses to search at all without an owner, rather than matching on meeting alone', async () => {
+        await insertChunk('fts-1', chunk(0, 'confidential keyword'));
+
+        await expect(searchChunkText('fts-1', { text: 'keyword' })).rejects.toThrow(/ownerId is required/);
     });
 
     it('will not return another tenant chunk even with the right meeting id', async () => {
@@ -108,7 +116,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'original wording mentions widgets'));
         await insertChunk('fts-1', chunk(0, 'corrected wording mentions widgets', { rev: 1 }));
 
-        const hits = await searchChunkText('fts-1', { text: 'widgets' });
+        const hits = await searchChunkText('fts-1', { text: 'widgets', ownerId: 'user-A' });
 
         expect(hits).toHaveLength(1);
         expect(hits[0].rev).toBe(1);
@@ -118,28 +126,28 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'summary mentions budget', { layer: 2 }));
         await insertChunk('fts-1', chunk(0, 'verbatim mentions budget', { layer: 1 }));
 
-        expect(await searchChunkText('fts-1', { text: 'budget', layer: 1 })).toHaveLength(1);
-        expect(await searchChunkText('fts-1', { text: 'budget' })).toHaveLength(2);
+        expect(await searchChunkText('fts-1', { text: 'budget', layer: 1, ownerId: 'user-A' })).toHaveLength(1);
+        expect(await searchChunkText('fts-1', { text: 'budget', ownerId: 'user-A' })).toHaveLength(2);
     });
 
     it('respects the limit', async () => {
         for (let i = 0; i < 5; i++) await insertChunk('fts-1', chunk(i, `mentions budget ${i}`));
 
-        expect(await searchChunkText('fts-1', { text: 'budget', limit: 2 })).toHaveLength(2);
+        expect(await searchChunkText('fts-1', { text: 'budget', limit: 2, ownerId: 'user-A' })).toHaveLength(2);
     });
 
     it('returns nothing rather than everything for an empty query', async () => {
         await insertChunk('fts-1', chunk(0, 'something was said'));
 
-        expect(await searchChunkText('fts-1', { text: '' })).toEqual([]);
-        expect(await searchChunkText('fts-1', { text: '   ' })).toEqual([]);
+        expect(await searchChunkText('fts-1', { text: '', ownerId: 'user-A' })).toEqual([]);
+        expect(await searchChunkText('fts-1', { text: '   ', ownerId: 'user-A' })).toEqual([]);
     });
 
     it('matches on any query term, not all of them', async () => {
         // a real question shares only a word or two with the chunk that answers it
         await insertChunk('fts-1', chunk(0, 'the budget is fixed for now'));
 
-        await expect(searchChunkText('fts-1', { text: "what's the budget?! (roughly)" }))
+        await expect(searchChunkText('fts-1', { text: "what's the budget?! (roughly)", ownerId: 'user-A' }))
             .resolves.toHaveLength(1);
     });
 
@@ -147,7 +155,7 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'budget was mentioned'));
         await insertChunk('fts-1', chunk(1, 'the budget for the roadmap was approved'));
 
-        const hits = await searchChunkText('fts-1', { text: 'budget roadmap approved' });
+        const hits = await searchChunkText('fts-1', { text: 'budget roadmap approved', ownerId: 'user-A' });
         expect(hits[0].ordinal).toBe(1);
     });
 
@@ -155,16 +163,16 @@ describeIfPg('lexical chunk search', () => {
         await insertChunk('fts-1', chunk(0, 'the budget is fixed'));
 
         for (const q of ['budget & | !', '(((', 'budget <-> :*', "'; DROP TABLE chunks; --"]) {
-            await expect(searchChunkText('fts-1', { text: q })).resolves.toEqual(expect.any(Array));
+            await expect(searchChunkText('fts-1', { text: q, ownerId: 'user-A' })).resolves.toEqual(expect.any(Array));
         }
         // and the table is still there
-        expect(await searchChunkText('fts-1', { text: 'budget' })).toHaveLength(1);
+        expect(await searchChunkText('fts-1', { text: 'budget', ownerId: 'user-A' })).toHaveLength(1);
     });
 
     it('matches code-mixed text, which is why the index is simple and not english', async () => {
         await insertChunk('fts-1', chunk(0, 'pricing ke baare me kal decide karenge'));
 
-        expect(await searchChunkText('fts-1', { text: 'karenge' })).toHaveLength(1);
+        expect(await searchChunkText('fts-1', { text: 'karenge', ownerId: 'user-A' })).toHaveLength(1);
     });
 
     // Sharing (meeting_shares) grants a reader access at the HTTP layer; it never changes how
