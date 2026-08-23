@@ -38,6 +38,7 @@ const NON_CONTEXT_PROMPT_TOKENS = 1600;
  */
 function contextBudget() {
     const { model, taskConfig } = getChatInference();
+    if (taskConfig.contextTokens) return taskConfig.contextTokens;
     return promptBudget(taskConfig.provider, model, {
         completionTokens: taskConfig.maxTokens,
         reserve: NON_CONTEXT_PROMPT_TOKENS,
