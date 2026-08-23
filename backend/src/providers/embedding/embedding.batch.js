@@ -4,8 +4,8 @@
 
 'use strict';
 
-const config = require('../../core/config');
 const { runResilient } = require('../llm/resilient.inference');
+const geminiService = require('../llm/gemini');
 const { ledger } = require('../../core/usage.ledger');
 const { createLogger } = require('../../core/logger');
 
@@ -43,7 +43,10 @@ async function embedBatch(texts, { model, outputDimensionality, apiKey }) {
 
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(`embedding batch failed: ${res.status} ${JSON.stringify(json).slice(0, 200)}`);
+        // Status travels with the error so the rotator can tell a spent key (429) from a bad one (401/403).
+        const err = new Error(`embedding batch failed: ${res.status} ${JSON.stringify(json).slice(0, 200)}`);
+        err.status = res.status;
+        throw err;
     }
 
     const vectors = (json.embeddings || []).map((e) => e.values);
@@ -58,20 +61,28 @@ async function embedBatch(texts, { model, outputDimensionality, apiKey }) {
 async function getEmbeddings(texts, opts = {}) {
     if (!Array.isArray(texts) || texts.length === 0) return [];
 
-    const apiKey = opts.apiKey || (config.inference.geminiKeys || [])[0];
-    if (!apiKey) throw new Error('no Gemini API key configured');
-
     const model = opts.model || MODEL_ID;
     const outputDimensionality = opts.outputDimensionality ?? DEFAULT_OUTPUT_DIMENSIONALITY;
 
     // Through the resilient wrapper, exactly as the single-text path was: per-model request spacing from provider.limits.json, jittered retry, breaker. Batching makes each failure more expensive, a 429 now costs a whole pass rather than one chunk, so this matters more here, not less.
     const out = [];
     for (const batch of chunked(texts, BATCH_SIZE)) {
-        const vectors = await runResilient(
-            'gemini',
-            () => embedBatch(batch, { model, outputDimensionality, apiKey }),
-            { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
-        );
+        // Per batch, not once for the whole call: pinning geminiKeys[0] spent one key's daily quota while the rest of the pool sat untouched, which is the same gap the LLM path closed with rotation long ago.
+        const pooled = !opts.apiKey;
+        const apiKey = opts.apiKey || geminiService.getNextKey();
+        let vectors;
+        try {
+            vectors = await runResilient(
+                'gemini',
+                () => embedBatch(batch, { model, outputDimensionality, apiKey }),
+                { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
+            );
+            if (pooled) geminiService.reportSuccess(apiKey);
+        } catch (err) {
+            // Only a key this function drew from the pool is the pool's to rest.
+            if (pooled) geminiService.reportFailure(apiKey, err.status);
+            throw err;
+        }
         out.push(...vectors);
         // The free-tier quota is metered per request (provider.limits.json), but real billing on this model is per token, so an estimated token count is recorded alongside the request either way.
         const tokens = batch.reduce((sum, text) => sum + estimateTokens(text), 0);
