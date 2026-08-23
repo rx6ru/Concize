@@ -108,8 +108,17 @@ function installRecording(opts = {}) {
         },
     };
     global.ConcizeLiveRender = { partialTracker: () => ({}) };
+    // Without this the worklet load throws, offscreen.js's own try/catch swallows it, and the
+    // function returns early -- while every assertion below it still passes. These tests were
+    // green against a half-executed path until a review caught it.
+    global.chrome.runtime.getURL = (p) => p;
     global.CONCIZE_CONFIG = { BACKEND_URL: 'http://localhost:3000' };
-    global.AudioWorkletNode = class { constructor() { this.port = { onmessage: null }; } };
+    // Needs connect(): the capture node is wired source -> node -> sink -> destination, and a
+    // stub without it made the graph-building half of startRecording unreachable.
+    global.AudioWorkletNode = class {
+        constructor() { this.port = { onmessage: null }; this.connected = []; }
+        connect(next) { this.connected.push(next); return next; }
+    };
     global.window = { location: { hash: '' } };
 
     // The worklet and graph nodes the capture path builds after the stream is acquired.
@@ -123,7 +132,7 @@ function installRecording(opts = {}) {
 }
 
 test('threads the token from the message instead of reading chrome.storage', async () => {
-    const { clients } = installRecording();
+    const { clients, messages } = installRecording();
     const { startRecording } = load();
 
     await startRecording('stream-1', 'token-from-popup');
@@ -131,6 +140,13 @@ test('threads the token from the message instead of reading chrome.storage', asy
     assert.strictEqual(clients.length, 1, 'no live client was constructed');
     assert.strictEqual(clients[0].cfg.token, 'token-from-popup');
     assert.strictEqual(clients[0].started, true);
+
+    // Everything above is true before the worklet is even loaded, so on its own it proves only
+    // that the function got started. These two are the last things startRecording does.
+    assert.strictEqual(global.window.location.hash, 'recording', 'startRecording bailed before finishing');
+    assert.ok(messages.find((m) => m.type === 'update-icon' && m.recording === true),
+        'the icon was never told recording actually began');
+    assert.strictEqual(messages.filter((m) => m.type === 'recording-error').length, 0);
 });
 
 test('refuses to record without a token, and says so durably', async () => {
@@ -155,4 +171,5 @@ test('never touches chrome.storage, which does not exist in an offscreen documen
     await startRecording('stream-1', 'token-from-popup');
 
     assert.strictEqual(clients.length, 1, 'startRecording reached for an API it cannot have');
+    assert.strictEqual(global.window.location.hash, 'recording', 'it did not run to the end');
 });

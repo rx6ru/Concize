@@ -17,6 +17,16 @@ class ChatInterface {
 
     init() {
         this.showSubject();
+        // The popup can switch meetings while this window stays open, and the send path re-reads
+        // the meeting every time. Without this the header keeps naming the meeting it was opened
+        // on while the answers come from a different one, which is worse than naming none.
+        if (chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.addListener((changes, area) => {
+                if (area === 'local' && ('meetingId' in changes || 'meetingTitle' in changes)) {
+                    this.showSubject();
+                }
+            });
+        }
 
         this.sendButton.addEventListener('click', () => this.sendMessage());
         this.closeButton.addEventListener('click', () => window.close());

@@ -120,6 +120,14 @@ test('a transcript longer than one page is fetched whole, not truncated at the c
     await popup.openMeeting('LONG');
 
     assert.deepStrictEqual(asked, [0, 500, 1000], 'should have followed the cursor across three pages');
+
+    // Asserting the request offsets alone cannot tell "kept every page" from "kept only the last
+    // one", which is a worse bug than the truncation this replaced. Check what was actually kept.
+    const text = popup.transcriptText();
+    assert.ok(text.includes('line 0'), 'the first page was dropped');
+    assert.ok(text.includes('line 700'), 'the middle page was dropped');
+    assert.ok(text.includes('line 1149'), 'the last page was dropped');
+    assert.strictEqual(text.split('\n').length, total, `kept ${text.split('\n').length} of ${total} lines`);
 });
 
 test('the chat window is left pointing at the meeting actually on screen', async () => {

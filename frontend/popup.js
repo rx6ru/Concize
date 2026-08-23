@@ -112,7 +112,7 @@ async function handleSignUp() {
 
 async function handleSignOut() {
     await ConcizeAuth.signOut();
-    await chrome.storage.local.remove('meetingId');
+    await chrome.storage.local.remove(['meetingId', 'meetingTitle']);
     await applyAuthState();
 }
 
@@ -807,6 +807,11 @@ async function loadTranscript(meetingId, generation) {
         // "no more pages" from "field missing" without guessing from the batch length.
         if (nextCursor === null || nextCursor === undefined) break;
         after = nextCursor;
+        // Running out of pages is the same silent truncation this loop exists to remove, just
+        // twenty thousand utterances further out. Say so rather than quietly stop.
+        if (page === TRANSCRIPT_MAX_PAGES - 1) {
+            showStatusMessage(`Showing the first ${utterances.length} lines of a very long meeting.`, true);
+        }
     }
 
     if (generation !== undefined && generation !== openGeneration) return false;
@@ -937,5 +942,6 @@ if (typeof module !== "undefined" && module.exports) {
         deleteControl,
         currentShare: () => currentShareMeetingId,
         storedMeeting: () => chrome.storage.local._v || {},
+        transcriptText: () => fullTranscriptionText,
     };
 }
