@@ -10,6 +10,35 @@ const { createLogger } = require('../core/logger');
 
 const logger = createLogger('summaryService');
 
+
+// A model asked for JSON still emits a raw newline or tab inside a string value now and then, and
+// JSON.parse rejects the whole document for it. Observed in production as
+// "Bad control character in string literal in JSON at position 1028", which cost the summary for
+// that chunk. Escaping them is a repair, not a reinterpretation: the text is unchanged.
+function parseLenient(text) {
+    try {
+        return JSON.parse(text);
+    } catch (first) {
+        let repaired = '';
+        let inString = false;
+        let escaped = false;
+        for (const ch of text) {
+            if (escaped) { repaired += ch; escaped = false; continue; }
+            if (ch === '\\' && inString) { repaired += ch; escaped = true; continue; }
+            if (ch === '"') { inString = !inString; repaired += ch; continue; }
+            if (inString && ch < ' ') {
+                repaired += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t'
+                    : `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`;
+                continue;
+            }
+            repaired += ch;
+        }
+        // Throw the original error if the repair did not help; it names the position, which is the
+        // useful half of the message.
+        try { return JSON.parse(repaired); } catch { throw first; }
+    }
+}
+
 /**
  * Generates an incremental update to the meeting summary.
  * @param {string} currentSummary existing summary text, or empty string
@@ -46,7 +75,7 @@ const generateIncrementalSummary = async (currentSummary, newTranscript, wordLim
             throw new Error('Empty response from LLM');
         }
 
-        const parsed = JSON.parse(result);
+        const parsed = parseLenient(result);
         if (!parsed.summary || !parsed.title) {
             throw new Error('Invalid structure from LLM. Missing title or summary.');
         }
@@ -83,4 +112,4 @@ const processSummaryUpdate = async (jobId, rawText, chunkIndex, context = {}) =>
     }
 };
 
-module.exports = { processSummaryUpdate };
+module.exports = { processSummaryUpdate, parseLenient };
