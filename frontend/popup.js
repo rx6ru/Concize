@@ -15,6 +15,12 @@ const shareEmail = document.getElementById("shareEmail");
 const shareButton = document.getElementById("shareButton");
 // The meeting the share controls currently act on, set when one is opened.
 let currentShareMeetingId = null;
+// Opening a meeting fans out into several independent requests. Clicking a second meeting while
+// the first is still loading used to let the slower chain finish and write its results over the
+// newer one, so the share panel could end up bound to a meeting other than the one on screen --
+// and sharing it would then grant a stranger access to the wrong meeting. Each open takes a
+// number; a load that is no longer the current one discards its result instead of rendering it.
+let openGeneration = 0;
 const summaryDisplayArea = document.getElementById("summaryDisplayArea");
 const summaryContent = document.getElementById("summaryContent");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
@@ -430,6 +436,9 @@ function deleteControl(meeting) {
         } catch (err) {
             console.error("Could not delete meeting:", err);
             showStatusMessage("Could not delete that meeting. Nothing was removed.", true);
+            // Disarm as well as repaint. Leaving `armed` set put the button back to looking
+            // untouched while still being one ordinary click away from deleting.
+            armed = false;
             button.disabled = false;
             button.textContent = "Delete";
             button.classList.remove("armed");
@@ -444,7 +453,7 @@ function deleteControl(meeting) {
  * section appears at all: a 403 means the caller is a shared reader rather than the owner, and
  * sharing is not theirs to manage.
  */
-async function loadShares(meetingId) {
+async function loadShares(meetingId, generation) {
     shareArea.classList.add("hidden");
     shareList.textContent = "";
     try {
@@ -453,6 +462,8 @@ async function loadShares(meetingId) {
             headers: { "Content-Type": "application/json" },
         });
         if (!res.ok) return;
+
+        if (generation !== openGeneration) return;
 
         const { shares = [] } = await res.json();
         for (const share of shares) {
@@ -535,7 +546,7 @@ shareButton.addEventListener("click", async () => {
  * summary yet is the normal case while one is still being written, and it must not stop the
  * transcript from rendering.
  */
-async function loadSummary(meetingId) {
+async function loadSummary(meetingId, generation) {
     summaryDisplayArea.classList.add("hidden");
     shareArea.classList.add("hidden");
     summaryContent.textContent = "";
@@ -545,7 +556,7 @@ async function loadSummary(meetingId) {
             headers: { "Content-Type": "application/json" },
         });
         // 404 is "not summarised yet", not a failure worth telling the user about.
-        if (!res.ok) return;
+        if (!res.ok || generation !== openGeneration) return;
 
         const { summary } = await res.json();
         if (!summary || !summary.content) return;
@@ -561,6 +572,7 @@ async function loadSummary(meetingId) {
 
 /** Shows one meeting's transcript, whether or not it is the one being recorded. */
 async function openMeeting(meetingId) {
+    const generation = ++openGeneration;
     hideStatusMessage();
     showStatusMessage("Loading transcript...");
     try {
@@ -568,9 +580,11 @@ async function openMeeting(meetingId) {
         // write it. Opening an older meeting and asking a question answered it about whichever
         // meeting was recorded last, with nothing to indicate the mismatch.
         await chrome.storage.local.set({ meetingId });
-        await loadSummary(meetingId);
-        await loadShares(meetingId);
-        if (await loadTranscript(meetingId)) {
+        if (generation !== openGeneration) return;
+        await loadSummary(meetingId, generation);
+        await loadShares(meetingId, generation);
+        if (generation !== openGeneration) return;
+        if (await loadTranscript(meetingId, generation)) {
             transcriptionDisplayArea.classList.remove("hidden");
             downloadButtonWrapper.classList.remove("hidden");
             hideStatusMessage();
@@ -750,7 +764,7 @@ async function renameSpeaker(meetingId, label, current) {
 }
 
 /** Fetches the speaker-attributed log and renders it. */
-async function loadTranscript(meetingId) {
+async function loadTranscript(meetingId, generation) {
     const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/utterances?limit=500`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
@@ -761,6 +775,7 @@ async function loadTranscript(meetingId) {
     }
 
     const { utterances = [] } = await res.json();
+    if (generation !== undefined && generation !== openGeneration) return false;
     if (!utterances.length) return false;
 
     renderTurns(utterances, meetingId);
@@ -879,3 +894,13 @@ chrome.runtime.onMessage.addListener((message) => {
         }
     }
 });
+
+// Exported for tests; the extension loads this file as a plain script and uses none of it.
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+        openMeeting,
+        loadShares,
+        deleteControl,
+        currentShare: () => currentShareMeetingId,
+    };
+}
