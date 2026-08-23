@@ -124,9 +124,14 @@ async function stopRecording() {
   console.log("Recording process stopped.");
 }
 
-/** Forwards the events worth showing live in the popup; the rest (session.ready, watermark, partials) stay internal. */
+/** Forwards the events worth showing live in the popup; session.ready and watermark stay internal. */
 function handleServerEvent(msg) {
   switch (msg.type) {
+    // Volatile and unattributed, and the only thing standing between a speaker and the six second
+    // median wait for a final. Shown as one provisional line the final then replaces.
+    case "partial":
+      chrome.runtime.sendMessage({ type: "live-partial", target: "popup", text: msg.text });
+      break;
     case "final":
     case "revision":
       chrome.runtime.sendMessage({

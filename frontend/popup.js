@@ -380,7 +380,42 @@ function clock(ms) {
  * Renders or updates one turn as it comes off the live socket. A revision reuses the element
  * already on screen for its turnId instead of duplicating it.
  */
+const partials = ConcizeLiveRender.partialTracker();
+let partialElement = null;
+
+/** The one provisional line, shown until a final replaces it. */
+function showPartial(text) {
+    const shown = partials.onPartial({ text });
+    if (!shown) return;
+
+    transcriptionDisplayArea.classList.remove("hidden");
+    if (!partialElement) {
+        partialElement = document.createElement("div");
+        partialElement.className = "turn partial";
+        const speaker = document.createElement("span");
+        speaker.className = "turn-speaker unnamed";
+        speaker.textContent = "…";
+        const body = document.createElement("div");
+        const el = document.createElement("span");
+        el.className = "turn-text";
+        body.append(el);
+        partialElement.append(speaker, body);
+        transcriptTurns.append(partialElement);
+    }
+    partialElement.querySelector(".turn-text").textContent = shown;
+}
+
+/** Drops the provisional line once its final has arrived. */
+function clearPartial() {
+    partials.onFinal();
+    if (partialElement) {
+        partialElement.remove();
+        partialElement = null;
+    }
+}
+
 function showLiveTurn(turn) {
+    clearPartial();
     transcriptionDisplayArea.classList.remove("hidden");
 
     let el = liveTurnElements.get(turn.turnId);
@@ -410,6 +445,7 @@ function showLiveTurn(turn) {
 
 /** Clears the live view for a fresh recording. A previously loaded meeting's turns are not this one's. */
 function resetLiveTranscript() {
+    clearPartial();
     liveTurnElements.clear();
     transcriptTurns.textContent = "";
     transcriptionDisplayArea.classList.add("hidden");
@@ -587,6 +623,9 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "recording-stopped":
                 updateUIForRecording(false);
+                break;
+            case "live-partial":
+                showPartial(message.text);
                 break;
             case "live-turn":
                 showLiveTurn(message.turn);

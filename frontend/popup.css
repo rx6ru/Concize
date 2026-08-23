@@ -436,3 +436,13 @@ body {
 .meeting-status.recording {
     color: var(--error);
 }
+
+/* Provisional text: the words are still arriving and attribution is not settled. */
+.turn.partial .turn-text {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.turn.partial .turn-speaker {
+    color: var(--muted-soft);
+}
