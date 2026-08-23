@@ -344,10 +344,11 @@ ${userPrompt}`;
                 const guard = createStreamGuard();
 
                 for await (const chunk of stream) {
-                    if (res.writableEnded || !res.writable) break;
-
-                    // The usage chunk carries no choices, so it has to be captured here rather than after the delta check below.
+                    // Read before the writability check, not after: this chunk is already in hand, and on a client disconnect it is often the terminal usage chunk. Bailing first threw away the only real token count the call would ever report.
+                    // It carries no choices either, so it cannot wait until after the delta check below.
                     if (chunk.usage) attemptUsage = chunk.usage;
+
+                    if (res.writableEnded || !res.writable) break;
 
                     const chunkText = chunk.choices[0]?.delta?.content || '';
                     if (!chunkText) continue;

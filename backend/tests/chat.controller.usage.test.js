@@ -97,6 +97,24 @@ describe('chat completion usage recording', () => {
         expect(ledger.record).toHaveBeenCalledWith('groq', 'mock-chat-model', 42);
     });
 
+    // A client that closes the tab mid-answer still cost real tokens. The loop used to bail on the
+    // disconnect before reading the chunk already in hand, which is usually the terminal usage one.
+    it('still records usage from the chunk in hand when the client has already disconnected', async () => {
+        mockStreamChunks = [
+            { choices: [{ delta: { content: 'Hello' } }] },
+            { choices: [], usage: { total_tokens: 42 } },
+        ];
+
+        const res = new MockResponse();
+        // Disconnects after the first delta is written, so the usage chunk arrives unwritable.
+        const write = res.write.bind(res);
+        res.write = (chunk) => { write(chunk); res.writableEnded = true; };
+
+        await getLLMStreamResponse(res, 'Hello', 'job1', 'user-A');
+
+        expect(ledger.record).toHaveBeenCalledWith('groq', 'mock-chat-model', 42);
+    });
+
     it('records nothing when the provider never sends a usage chunk, rather than guessing zero', async () => {
         mockStreamChunks = [{ choices: [{ delta: { content: 'Hello' } }] }];
 
