@@ -158,6 +158,10 @@ function attachGateway({
                 sessionId: meetingId,
                 onEvent: (e) => session.handleLaneEvent('words', e),
                 onError: (err, meta) => session.handleLaneError('words', err, meta),
+                // words never reconnects, so an unexpected close is a fatal lane failure, not routine teardown.
+                onClose: (info) => {
+                    if (info.unexpected) session.handleLaneError('words', new Error('lane closed unexpectedly'), { fatal: true });
+                },
             }));
         } catch (err) {
             logger.error('Lane setup failed', { meetingId, error: err.message });

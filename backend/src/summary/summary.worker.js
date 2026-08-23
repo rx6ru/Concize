@@ -17,7 +17,16 @@ let channel, connection;
 const handleMessage = async (channel, msg) => {
     if (!msg) return;
 
-    const payload = JSON.parse(msg.content.toString());
+    // Outside a try this throws inside an async consume callback, which Node turns into an
+    // unhandled rejection and the process exits. One malformed message would stop every summary.
+    let payload;
+    try {
+        payload = JSON.parse(msg.content.toString());
+    } catch (error) {
+        logger.error('Unparseable queue message, dropping', { error: error.message });
+        channel.nack(msg, false, false);
+        return;
+    }
 
     // Sent when a meeting ends. It rides the queue rather than being called directly so it lands after the last chunk, otherwise the chunk's save flips status back.
     if (payload.finalise) {

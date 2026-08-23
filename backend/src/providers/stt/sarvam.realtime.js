@@ -78,6 +78,7 @@ function createSarvamRealtimeLane(opts) {
 
     let ready = false;
     let closed = false;
+    let endRequested = false;   // true once close() was called, so an unexpected drop can be told apart from a normal end
     const pending = [];
     const state = { framesSent: 0, finals: 0, lastEventAt: null, appliedConfig: null };
 
@@ -123,10 +124,14 @@ function createSarvamRealtimeLane(opts) {
 
     ws.on('close', (code, reason) => {
         closed = true;
-        logger.info('Sarvam realtime session closed', {
-            sessionId, code, framesSent: state.framesSent, finals: state.finals,
-        });
-        onClose({ code, reason: reason?.toString() || '' });
+        // this lane never reconnects (unlike speaker), so a drop nobody asked for ends live transcription
+        // for the rest of the meeting; that needs to be loud, not an info line indistinguishable from a normal end.
+        const unexpected = !endRequested;
+        logger[unexpected ? 'warn' : 'info'](
+            unexpected ? 'Sarvam realtime session dropped unexpectedly, no reconnect' : 'Sarvam realtime session closed',
+            { sessionId, code, framesSent: state.framesSent, finals: state.finals },
+        );
+        onClose({ code, reason: reason?.toString() || '', unexpected });
     });
 
     return {
@@ -149,6 +154,7 @@ function createSarvamRealtimeLane(opts) {
 
         close() {
             if (closed) return;
+            endRequested = true;
             send({ event: 'end' });
             setTimeout(() => ws.readyState === WebSocket.OPEN && ws.close(), 2000);
         },

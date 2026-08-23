@@ -199,7 +199,9 @@ class ChatInterface {
                 let errorMessage = `Server Error (${response.status})`;
                 try {
                     const errorData = await response.json();
-                    if (errorData.error && errorData.error.message) {
+                    if (typeof errorData.error === 'string') {
+                        errorMessage = errorData.error;
+                    } else if (errorData.error && errorData.error.message) {
                         errorMessage = errorData.error.message;
                     }
                 } catch (parseErr) {
@@ -266,6 +268,15 @@ class ChatInterface {
                                 // Handle Standard Text
                                 if (jsonData.event === 'stream_end') {
                                     break;
+                                } else if (jsonData.blocked) {
+                                    // Output guard tripped mid-stream: replace whatever rendered so far with the safe fallback.
+                                    if (!indicatorRemoved) {
+                                        indicator.remove();
+                                        indicatorRemoved = true;
+                                    }
+                                    accumulatedText = jsonData.replace || accumulatedText;
+                                    bubbleDiv.innerHTML = marked.parse(accumulatedText);
+                                    this.scrollToBottom();
                                 } else if (jsonData.text) {
                                     if (!indicatorRemoved) {
                                         indicator.remove();
