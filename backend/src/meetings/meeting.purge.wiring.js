@@ -5,6 +5,7 @@
 const { getQdrant } = require('../infra/qdrant');
 const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.service');
 const { createChunkSearch } = require('../chat/chunk.search');
+const { purgeChatVectors } = require('../providers/embedding/chat.embedding');
 const { createMeetingPurge } = require('./meeting.purge');
 const { deleteMeeting } = require('./meeting.repository');
 
@@ -15,7 +16,7 @@ function purgeMeeting(meetingId) {
     if (!purge) {
         // embed is unused for a delete-by-filter, but the adapter is one object.
         const index = createChunkSearch({ client: getQdrant(), embed: getEmbeddingWithRetry });
-        purge = createMeetingPurge({ purgeVectors: index.purgeMeeting, deleteMeeting });
+        purge = createMeetingPurge({ purgeVectors: index.purgeMeeting, purgeChatVectors, deleteMeeting });
     }
     return purge(meetingId);
 }

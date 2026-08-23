@@ -13,14 +13,19 @@ const logger = createLogger('meetingPurge');
 
 /**
  * @param {object} deps
- * @param {function} deps.purgeVectors   (meetingId) => Promise<void>
- * @param {function} deps.deleteMeeting  (meetingId) => Promise<boolean>
+ * @param {function} deps.purgeVectors      (meetingId) => Promise<void>
+ * @param {function} deps.purgeChatVectors  (meetingId) => Promise<void>
+ * @param {function} deps.deleteMeeting     (meetingId) => Promise<boolean>
  * @returns {function(string): Promise<{deleted: boolean}>}
  */
-function createMeetingPurge({ purgeVectors, deleteMeeting }) {
+function createMeetingPurge({ purgeVectors, purgeChatVectors, deleteMeeting }) {
     return async function purge(meetingId) {
         // Vectors first, and the error is deliberately not swallowed: leaving the meeting intact makes this retryable, whereas dropping the row first would strand the vectors.
         await purgeVectors(meetingId);
+
+        // A second collection, and the one a user would be most upset to find still there: every
+        // chat turn embeds the question and the answer, and an answer quotes the transcript.
+        await purgeChatVectors(meetingId);
 
         const deleted = await deleteMeeting(meetingId);
         logger.info('Meeting purged', { meetingId, deleted });

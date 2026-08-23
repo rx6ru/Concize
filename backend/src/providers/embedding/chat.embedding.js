@@ -87,7 +87,17 @@ const upsertChatPair = async (jobId, userChat, aiChat, chatId, ownerId) => {
     }
 };
 
+/** Removes every chat vector for one meeting. Payload key is jobId, not meetingId, as written above. */
+async function purgeChatVectors(jobId) {
+    await client.delete(CHAT_COLLECTION_NAME, {
+        wait: true,
+        filter: { must: [{ key: 'jobId', match: { value: jobId } }] },
+    });
+    logger.info('Chat vectors purged', { jobId });
+}
+
 module.exports = {
     createChatCollection,
     upsertChatPair,
+    purgeChatVectors,
 };
