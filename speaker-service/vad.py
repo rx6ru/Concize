@@ -15,7 +15,10 @@
 #
 # The floor falls every time but actual error moves either way: ship this together with a multilingual embedding model, swap both, or neither.
 #
-# That candidate was measured on 2026-08-24 and did not clear its gate. Silero + wespeaker-voxceleb-resnet34-LM moves English a long way (ES2004a 39.2% -> 26.0%, IS1003b 28.7% -> 24.6%) and Hindi the wrong way (61.0% -> 62.2%), because wespeaker is trained on VoxCeleb and confuses Hindi speaker identities badly enough to eat the whole segmentation gain. See Concize-KB/10-decisions/speaker-models.md.
+# That candidate was measured on 2026-08-24 across 20 code-mixed clips and is not shipping. Silero + wespeaker-voxceleb-resnet34-LM wins on 3+ speaker calls (3-speaker 57.1% -> 54.3%, 6+ 67.4% -> 64.6%) and on English (ES2004a 39.2% -> 26.0%), but on two-speaker calls it is an accuracy tie that reports 2.5x the real number of speakers: a 54-second two-person clip comes back with ten identities against the baseline's three.
+# Two people is the product's core case, and a speaker count that wrong is visible to a user whatever the error rate says. See Concize-KB/20-measurements/code-mixed-corpus.md.
+#
+# Silero's segmentation is worth keeping, and this is why: it takes the two-speaker segmentation floor from 37.5% to 21.9%. The clustering is what fails. That makes the embedding model, not the VAD, the thing to replace.
 #
 # The fsmn/ES2004a figure above was 38.0% until 2026-08-24. That number was computed on 2026-08-16 and this file and speaker.py both changed on the 19th; re-measuring the identical configuration gives 39.2%. The pipeline is deterministic here, so it was stale, not noisy.
 #
