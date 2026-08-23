@@ -1,7 +1,7 @@
 // tests/authenticate.test.js
-// TDD for the dual-mode authentication middleware.
-// Verifies: Bearer-JWT happy path, invalid-JWT rejection (no fallthrough),
-// legacy x-auth-code behind a flag (mapped to a synthetic ownerId), and hard denial.
+// The authentication middleware accepts a Supabase JWT and nothing else.
+// Legacy x-auth-code was removed in v4; the tests that guarded it are replaced by ones
+// proving it is gone.
 
 const { createAuthenticate } = require('../src/http/middleware/authenticate');
 
@@ -19,20 +19,14 @@ function run(middleware, req) {
         const res = mockRes();
         const next = jest.fn(() => resolve({ res, nexted: true }));
         Promise.resolve(middleware(req, res, () => next())).then(() => {
-            // If next wasn't called, resolve with the response that was sent.
             if (!next.mock.calls.length) resolve({ res, nexted: false });
         });
     });
 }
 
 describe('createAuthenticate', () => {
-    const SYNTHETIC = 'legacy-owner-id';
-
     const verifyAccessToken = jest.fn();
-    const make = (legacyEnabled = true) => createAuthenticate({
-        verifyAccessToken,
-        legacy: { enabled: legacyEnabled, codes: ['lostnfound'], ownerId: SYNTHETIC },
-    });
+    const make = () => createAuthenticate({ verifyAccessToken });
 
     beforeEach(() => verifyAccessToken.mockReset());
 
@@ -43,54 +37,64 @@ describe('createAuthenticate', () => {
 
         expect(nexted).toBe(true);
         expect(res.statusCode).toBeNull();
-        expect(req.user).toEqual(expect.objectContaining({ id: 'user-99', email: 'x@y.z', mode: 'jwt' }));
+        expect(req.user).toEqual(expect.objectContaining({ id: 'user-99', email: 'x@y.z' }));
         expect(verifyAccessToken).toHaveBeenCalledWith('good.token.here');
     });
 
-    it('rejects an invalid Bearer JWT with 401 and does NOT fall back to legacy', async () => {
+    it('rejects an invalid Bearer JWT with 401', async () => {
         verifyAccessToken.mockRejectedValue(new Error('bad signature'));
+        const req = { method: 'POST', headers: { authorization: 'Bearer bad' } };
+        const { res, nexted } = await run(make(), req);
+
+        expect(nexted).toBe(false);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects a request with no credentials at all', async () => {
+        const req = { method: 'POST', headers: {} };
+        const { res, nexted } = await run(make(), req);
+
+        expect(nexted).toBe(false);
+        expect(res.statusCode).toBe(401);
+        expect(verifyAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('ignores x-auth-code entirely, however it is spelled', async () => {
+        // The header used to be a way in. A request carrying it and nothing else must be refused
+        // exactly like one carrying nothing.
+        for (const headers of [
+            { 'x-auth-code': 'lostnfound' },
+            { 'X-Auth-Code': 'lostnfound' },
+            { 'x-auth-code': '' },
+        ]) {
+            const req = { method: 'POST', headers };
+            const { res, nexted } = await run(make(), req);
+            expect(nexted).toBe(false);
+            expect(res.statusCode).toBe(401);
+        }
+        expect(verifyAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to any header when the JWT fails', async () => {
+        verifyAccessToken.mockRejectedValue(new Error('expired'));
         const req = { method: 'POST', headers: { authorization: 'Bearer bad', 'x-auth-code': 'lostnfound' } };
         const { res, nexted } = await run(make(), req);
 
         expect(nexted).toBe(false);
         expect(res.statusCode).toBe(401);
-        expect(req.user).toBeUndefined();
     });
 
-    it('accepts a legacy x-auth-code (flag on) and maps it to the synthetic ownerId', async () => {
-        const req = { method: 'POST', headers: { 'x-auth-code': 'lostnfound' } };
-        const { res, nexted } = await run(make(true), req);
-
-        expect(nexted).toBe(true);
-        expect(req.user).toEqual(expect.objectContaining({ id: SYNTHETIC, mode: 'legacy' }));
-        expect(verifyAccessToken).not.toHaveBeenCalled();
-    });
-
-    it('rejects a legacy x-auth-code when the legacy flag is off', async () => {
-        const req = { method: 'POST', headers: { 'x-auth-code': 'lostnfound' } };
-        const { res, nexted } = await run(make(false), req);
-
-        expect(nexted).toBe(false);
-        expect(res.statusCode).toBe(401);
-    });
-
-    it('rejects a wrong legacy code', async () => {
-        const req = { method: 'POST', headers: { 'x-auth-code': 'wrong' } };
-        const { res, nexted } = await run(make(true), req);
-        expect(nexted).toBe(false);
-        expect(res.statusCode).toBe(401);
-    });
-
-    it('rejects when no credentials are provided at all', async () => {
-        const req = { method: 'POST', headers: {} };
-        const { res, nexted } = await run(make(true), req);
-        expect(nexted).toBe(false);
-        expect(res.statusCode).toBe(401);
-    });
-
-    it('lets CORS preflight (OPTIONS) through without auth', async () => {
+    it('lets a CORS preflight through, since it carries no credentials', async () => {
         const req = { method: 'OPTIONS', headers: {} };
-        const { nexted } = await run(make(true), req);
+        const { nexted } = await run(make(), req);
         expect(nexted).toBe(true);
+    });
+
+    it('accepts a JWT even when a stale x-auth-code is also present', async () => {
+        verifyAccessToken.mockResolvedValue({ sub: 'user-1' });
+        const req = { method: 'POST', headers: { authorization: 'Bearer good', 'x-auth-code': 'lostnfound' } };
+        const { nexted } = await run(make(), req);
+        expect(nexted).toBe(true);
+        expect(req.user.id).toBe('user-1');
     });
 });

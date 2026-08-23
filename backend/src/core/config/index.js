@@ -93,9 +93,6 @@ if (auth.supabase.mode === 'jwks' && !auth.supabase.jwksUri) {
 if (auth.supabase.mode === 'hs256' && !auth.supabase.jwtSecret) {
     warnings.push('AUTH_MODE is hs256 but SUPABASE_JWT_SECRET is not set. JWT auth will be misconfigured.');
 }
-if (auth.legacy.enabled) {
-    logger.info('Legacy x-auth-code auth is ENABLED. This is a security caveat — disable in production via LEGACY_AUTH_ENABLED=false.');
-}
 
 if (errors.length > 0) {
     errors.forEach(e => logger.error(e));

@@ -13,7 +13,6 @@ const verifyAccessToken = createTokenVerifier(config.auth.supabase);
 
 const authenticate = createAuthenticate({
     verifyAccessToken,
-    legacy: config.auth.legacy,
 });
 
 const requireMeetingAccess = createRequireMeetingAccess({ getMeetingOwner });
