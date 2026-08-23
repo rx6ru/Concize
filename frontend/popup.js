@@ -250,9 +250,9 @@ startButton.addEventListener("click", async () => {
         }
         const meetingId = startMeetingData.meetingId;
         console.log(`Meeting session started with meetingId: ${meetingId}`);
-        // The title rides along so the chat window, which is a separate window with its own
-        // header, can say which meeting it is answering about.
-        await chrome.storage.local.set({ meetingId, meetingTitle: title || null });
+        // A meeting being recorded has no summary and so no title yet; clear any previous one
+        // rather than leave the chat window naming the meeting before this.
+        await chrome.storage.local.set({ meetingId, meetingTitle: null });
         resetLiveTranscript();
 
         const [tab] = await chrome.tabs.query({
@@ -590,8 +590,9 @@ async function openMeeting(meetingId, title) {
     try {
         // The chat window reads the meeting out of storage, and only starting a recording used to
         // write it. Opening an older meeting and asking a question answered it about whichever
-        // meeting was recorded last, with nothing to indicate the mismatch.
-        await chrome.storage.local.set({ meetingId });
+        // meeting was recorded last, with nothing to indicate the mismatch. The title travels
+        // with it so that window can name what it is answering about.
+        await chrome.storage.local.set({ meetingId, meetingTitle: title || null });
         if (generation !== openGeneration) return;
         await loadSummary(meetingId, generation);
         await loadShares(meetingId, generation);
