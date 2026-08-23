@@ -29,6 +29,16 @@ const tasksUsingCerebras = ['chat', 'clean', 'summary']
 const tasksUsingGroq = ['chat', 'clean', 'summary']
     .filter(task => inference[task].provider === 'groq');
 
+const tasksUsingOpenRouter = ['chat', 'clean', 'summary']
+    .filter(task => inference[task].provider === 'openrouter');
+
+if (tasksUsingOpenRouter.length > 0 && inference.openrouterKeys.length === 0) {
+    warnings.push(
+        `Tasks [${tasksUsingOpenRouter.join(', ')}] are configured to use OpenRouter, ` +
+        `but no OPENROUTER_API_KEYS are set.`
+    );
+}
+
 if (tasksUsingCerebras.length > 0 && inference.cerebrasKeys.length === 0) {
     warnings.push(
         `Tasks [${tasksUsingCerebras.join(', ')}] are configured to use Cerebras, ` +

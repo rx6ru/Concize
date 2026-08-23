@@ -1,7 +1,7 @@
 // LLM inference provider and model configuration
-// Supports per-task provider (groq | cerebras | sarvam) and model selection
+// Supports per-task provider (groq | cerebras | openrouter | sarvam) and model selection
 
-const VALID_PROVIDERS = ['groq', 'cerebras', 'sarvam'];
+const VALID_PROVIDERS = ['groq', 'cerebras', 'openrouter', 'sarvam'];
 
 // Supports both plural (GROQ_API_KEYS, comma-separated) and singular (GROQ_API_KEY) env var forms.
 function parseKeys(pluralKey, singularKey) {
@@ -21,6 +21,7 @@ function validateProvider(provider, taskName) {
 
 const groqKeys = parseKeys('GROQ_API_KEYS', 'GROQ_API_KEY');
 const cerebrasKeys = parseKeys('CEREBRAS_API_KEYS', 'CEREBRAS_API_KEY');
+const openrouterKeys = parseKeys('OPENROUTER_API_KEYS', 'OPENROUTER_API_KEY');
 const geminiKeys = parseKeys('GEMINI_API_KEYS', 'GEMINI_API_KEY');
 const sarvamKeys = parseKeys('SARVAM_API_KEYS', 'SARVAM_API_KEY');
 
@@ -59,6 +60,7 @@ const transcriptionFilters = {
 module.exports = {
     groqKeys,
     cerebrasKeys,
+    openrouterKeys,
     geminiKeys,
     sarvamKeys,
     chat,

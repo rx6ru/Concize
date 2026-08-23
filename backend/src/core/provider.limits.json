@@ -21,7 +21,12 @@
       "error.details[].violations[].quotaId names the window, .quotaValue is the number.",
       "e.g. GenerateRequestsPerDayPerProjectPerModel-FreeTier -> requestsPerDay."
     ],
-    "sarvam": "dev-docs/sarvam/04-batch-api.md, job_parameters."
+    "sarvam": "dev-docs/sarvam/04-batch-api.md, job_parameters.",
+    "openrouter": [
+      "Responses carry x-ratelimit-limit / -remaining / -reset for the account, not the model.",
+      "Per-model context length: GET https://openrouter.ai/api/v1/models, field context_length.",
+      "curl -s https://openrouter.ai/api/v1/models | jq '.data[]|select(.id==\"<id>\")|.context_length'"
+    ]
   },
 
   "defaults": {
@@ -206,6 +211,24 @@
           "sampleRatesHz": [8000, 16000]
         }
       }
+    },
+    "openrouter": {
+      "tier": "unknown",
+      "verifiedOn": null,
+      "source": "not measured yet",
+      "_maxRequestTokens": [
+        "OpenRouter routes to many upstream models, so the ceiling belongs to the model, not the",
+        "account. Add a models entry with the real number once a request has actually been sent.",
+        "Left null everywhere so a caller sees 'not established' rather than a guess."
+      ],
+      "defaults": {
+        "requestsPerMinute": null,
+        "requestsPerDay": null,
+        "tokensPerMinute": null,
+        "tokensPerDay": null,
+        "maxRequestTokens": null
+      },
+      "models": {}
     }
   }
 }

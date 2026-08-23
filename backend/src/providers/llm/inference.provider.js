@@ -3,10 +3,11 @@
 const config = require('../../core/config');
 const groqService = require('./groq');
 const cerebrasService = require('./cerebras');
+const openrouterService = require('./openrouter');
 
 /**
  * Returns the correct service singleton based on provider name.
- * @param {string} provider - 'groq' or 'cerebras'
+ * @param {string} provider - 'groq', 'cerebras' or 'openrouter'
  * @returns {Object} Service instance with getClient()
  */
 function getService(provider) {
@@ -15,6 +16,8 @@ function getService(provider) {
             return groqService;
         case 'cerebras':
             return cerebrasService;
+        case 'openrouter':
+            return openrouterService;
         default:
             throw new Error(`Unknown inference provider: "${provider}"`);
     }
