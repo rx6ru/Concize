@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local
+          POSTGRES_DB: concize
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+        working-directory: backend
+
+      - run: npx jest
+        working-directory: backend
+
+      # Most tests run against pg-mem; this one suite needs real Postgres for full text
+      # search, which pg-mem doesn't have. TEST_POSTGRES_URL here overrides the localhost
+      # default the npm script falls back to for the docker-compose.dev.yml stack.
+      - run: npm run test:pg
+        working-directory: backend
+        env:
+          TEST_POSTGRES_URL: postgres://postgres:local@localhost:5432/concize
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: node --test 'frontend/tests/*.test.js'
+
+  speaker-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # torch/funasr are not installed here: they're a multi-GB CUDA/CPU wheel install that
+      # would make this job the slowest thing in the workflow for a sidecar that's optional
+      # in the first place. This step only checks that the source compiles. test_speaker.py
+      # and test_overlap.py load the real models and stay a local-only check.
+      - run: python -m compileall speaker-service

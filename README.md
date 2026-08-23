@@ -248,9 +248,12 @@ segments and stitched. A speaker silent through an overlap window appears as a n
 ## Tests
 
 ```sh
-cd backend && npm test                                # 865 tests, no network or GPU needed
-node --test 'frontend/tests/*.test.js'                # 53, the capture protocol and the sanitizer
+cd backend && npm test                                # 933 tests, no network or GPU needed
+cd backend && npm run test:pg                         # 18 more, needs the docker-compose Postgres
+node --test 'frontend/tests/*.test.js'                # 60, the capture protocol and the sanitizer
 cd speaker-service && .venv/bin/python test_speaker.py && .venv/bin/python test_overlap.py   # 23
 ```
+
+CI runs the first three on every push; the speaker tests load real models and stay local.
 
 Database tests run against `pg-mem`, and the live pipeline test drives a real WebSocket through the gateway, fusion, the transcript log and chunk derivation. Note that pg-mem applies a partial index without its predicate, which is why the schema uses composite indexes instead.
