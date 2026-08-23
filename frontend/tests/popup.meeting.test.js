@@ -42,7 +42,16 @@ function install() {
     global.window = { close() {} };
     global.chrome = {
         runtime: { sendMessage() {}, getURL: (p) => p, onMessage: { addListener() {} } },
-        storage: { local: { get: async () => ({}), set: async () => {} } },
+        storage: { local: {
+            _v: {},
+            get: async (keys) => {
+                const k = Array.isArray(keys) ? keys : [keys];
+                return Object.fromEntries(k.filter((n) => n in global.chrome.storage.local._v)
+                    .map((n) => [n, global.chrome.storage.local._v[n]]));
+            },
+            set: async (obj) => { Object.assign(global.chrome.storage.local._v, obj); },
+            remove: async () => {},
+        } },
         windows: { create() {} },
         tabs: { query: async () => [{ id: 1, url: 'https://example.com' }], update: async () => {} },
         offscreen: { hasDocument: async () => false, createDocument: async () => {} },
@@ -111,6 +120,29 @@ test('a transcript longer than one page is fetched whole, not truncated at the c
     await popup.openMeeting('LONG');
 
     assert.deepStrictEqual(asked, [0, 500, 1000], 'should have followed the cursor across three pages');
+});
+
+test('the chat window is left pointing at the meeting actually on screen', async () => {
+    const popup = install();
+
+    const defer2 = (ms) => new Promise((r) => setTimeout(r, ms));
+    fetchImpl = async (path) => {
+        // Meeting A is slow everywhere; B is quick.
+        if (path.includes('/A/')) await defer2(40);
+        if (path.includes('/shares')) return { ok: true, status: 200, json: async () => ({ shares: [] }) };
+        return { ok: true, status: 200, json: async () => ({ summary: null, utterances: [], nextCursor: null }) };
+    };
+
+    const a = popup.openMeeting('A', 'Meeting A');
+    await defer2(5);
+    const b = popup.openMeeting('B', 'Meeting B');
+    await Promise.all([a, b]);
+    await defer2(80);
+
+    const stored = popup.storedMeeting();
+    assert.strictEqual(stored.meetingId, 'B',
+        'chat would have answered about a meeting the user had navigated away from');
+    assert.strictEqual(stored.meetingTitle, 'Meeting B');
 });
 
 test('a failed delete still needs two clicks the next time', async () => {

@@ -936,5 +936,6 @@ if (typeof module !== "undefined" && module.exports) {
         loadShares,
         deleteControl,
         currentShare: () => currentShareMeetingId,
+        storedMeeting: () => chrome.storage.local._v || {},
     };
 }
