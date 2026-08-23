@@ -9,6 +9,8 @@ const toggleButtonWrapper = document.getElementById("toggleButtonWrapper");
 const getTranscriptionButton = document.getElementById("getTranscriptionButton");
 const transcriptionDisplayArea = document.getElementById("transcriptionDisplayArea");
 const transcriptTurns = document.getElementById("transcriptTurns");
+const summaryDisplayArea = document.getElementById("summaryDisplayArea");
+const summaryContent = document.getElementById("summaryContent");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
 const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
 const openChatButton = document.getElementById("openChat");
@@ -417,11 +419,40 @@ function deleteControl(meeting) {
     return button;
 }
 
+/**
+ * The meeting's summary, if there is one. Its own request and its own failure: a meeting with no
+ * summary yet is the normal case while one is still being written, and it must not stop the
+ * transcript from rendering.
+ */
+async function loadSummary(meetingId) {
+    summaryDisplayArea.classList.add("hidden");
+    summaryContent.textContent = "";
+    try {
+        const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/summary`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        // 404 is "not summarised yet", not a failure worth telling the user about.
+        if (!res.ok) return;
+
+        const { summary } = await res.json();
+        if (!summary || !summary.content) return;
+
+        // The summary is model output over a transcript, so it goes through the same hardened
+        // renderer the chat answers use rather than into innerHTML raw.
+        summaryContent.innerHTML = ConcizeMarkdown.renderSafe(summary.content);
+        summaryDisplayArea.classList.remove("hidden");
+    } catch (err) {
+        console.error("Could not load summary:", err);
+    }
+}
+
 /** Shows one meeting's transcript, whether or not it is the one being recorded. */
 async function openMeeting(meetingId) {
     hideStatusMessage();
     showStatusMessage("Loading transcript...");
     try {
+        await loadSummary(meetingId);
         if (await loadTranscript(meetingId)) {
             transcriptionDisplayArea.classList.remove("hidden");
             downloadButtonWrapper.classList.remove("hidden");
@@ -515,6 +546,7 @@ function resetLiveTranscript() {
     liveTurnElements.clear();
     transcriptTurns.textContent = "";
     transcriptionDisplayArea.classList.add("hidden");
+    summaryDisplayArea.classList.add("hidden");
     downloadButtonWrapper.classList.add("hidden");
 }
 

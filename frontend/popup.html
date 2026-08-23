@@ -103,6 +103,12 @@
             <div id="meetingList"></div>
         </div>
 
+        <!-- Summary Display Area -->
+        <div id="summaryDisplayArea" class="transcription-box hidden">
+            <h3>Summary</h3>
+            <div id="summaryContent"></div>
+        </div>
+
         <!-- Transcription Display Area -->
         <div id="transcriptionDisplayArea" class="transcription-box hidden">
             <h3>Transcript</h3>
@@ -123,6 +129,8 @@
         </div><!-- /#appSection -->
     </div>
     <!-- Config + auth must load before popup.js -->
+    <script src="marked.min.js"></script>
+    <script src="markdown.sanitize.js"></script>
     <script src="config.js"></script>
     <script src="auth.js"></script>
     <script src="live.render.js"></script>
