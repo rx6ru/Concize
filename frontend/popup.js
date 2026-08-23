@@ -9,6 +9,12 @@ const toggleButtonWrapper = document.getElementById("toggleButtonWrapper");
 const getTranscriptionButton = document.getElementById("getTranscriptionButton");
 const transcriptionDisplayArea = document.getElementById("transcriptionDisplayArea");
 const transcriptTurns = document.getElementById("transcriptTurns");
+const shareArea = document.getElementById("shareArea");
+const shareList = document.getElementById("shareList");
+const shareEmail = document.getElementById("shareEmail");
+const shareButton = document.getElementById("shareButton");
+// The meeting the share controls currently act on, set when one is opened.
+let currentShareMeetingId = null;
 const summaryDisplayArea = document.getElementById("summaryDisplayArea");
 const summaryContent = document.getElementById("summaryContent");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
@@ -427,12 +433,104 @@ function deleteControl(meeting) {
 }
 
 /**
+ * Who the meeting is shared with. Owner-only on the server, which is what decides whether this
+ * section appears at all: a 403 means the caller is a shared reader rather than the owner, and
+ * sharing is not theirs to manage.
+ */
+async function loadShares(meetingId) {
+    shareArea.classList.add("hidden");
+    shareList.textContent = "";
+    try {
+        const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/shares`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) return;
+
+        const { shares = [] } = await res.json();
+        for (const share of shares) {
+            const row = document.createElement("div");
+            row.className = "share-row";
+
+            const who = document.createElement("span");
+            who.className = "share-who";
+            // An account issued by Supabase has no local row to resolve an email from.
+            who.textContent = share.email || share.userId;
+
+            const revoke = document.createElement("button");
+            revoke.type = "button";
+            revoke.className = "share-revoke";
+            revoke.textContent = "Revoke";
+            revoke.addEventListener("click", async () => {
+                revoke.disabled = true;
+                try {
+                    const del = await ConcizeAuth.authedFetch(
+                        `/api/v1/meetings/${meetingId}/shares/${share.id}`,
+                        { method: "DELETE" }
+                    );
+                    // Already revoked is the outcome that was asked for.
+                    if (!del.ok && del.status !== 404) throw new Error(`server returned ${del.status}`);
+                    await loadShares(meetingId);
+                } catch (err) {
+                    showStatusMessage(`Could not revoke access: ${err.message}`, true);
+                    revoke.disabled = false;
+                }
+            });
+
+            row.append(who, revoke);
+            shareList.append(row);
+        }
+
+        if (!shares.length) {
+            const empty = document.createElement("span");
+            empty.className = "share-empty";
+            empty.textContent = "Nobody yet.";
+            shareList.append(empty);
+        }
+
+        currentShareMeetingId = meetingId;
+        shareArea.classList.remove("hidden");
+    } catch (err) {
+        console.error("Could not load shares:", err);
+    }
+}
+
+
+shareButton.addEventListener("click", async () => {
+    const email = shareEmail.value.trim();
+    if (!email || !currentShareMeetingId) return;
+
+    shareButton.disabled = true;
+    try {
+        const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${currentShareMeetingId}/shares`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+        });
+        if (!res.ok) throw new Error(`server returned ${res.status}`);
+
+        // The server answers the same way whether or not that email has an account, so that this
+        // cannot be used to find out who is registered. Say exactly that rather than implying it
+        // worked.
+        const { message } = await res.json();
+        showStatusMessage(message || "Access granted if that email has an account.");
+        shareEmail.value = "";
+        await loadShares(currentShareMeetingId);
+    } catch (err) {
+        showStatusMessage(`Could not share this meeting: ${err.message}`, true);
+    } finally {
+        shareButton.disabled = false;
+    }
+});
+
+/**
  * The meeting's summary, if there is one. Its own request and its own failure: a meeting with no
  * summary yet is the normal case while one is still being written, and it must not stop the
  * transcript from rendering.
  */
 async function loadSummary(meetingId) {
     summaryDisplayArea.classList.add("hidden");
+    shareArea.classList.add("hidden");
     summaryContent.textContent = "";
     try {
         const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/summary`, {
@@ -460,6 +558,7 @@ async function openMeeting(meetingId) {
     showStatusMessage("Loading transcript...");
     try {
         await loadSummary(meetingId);
+        await loadShares(meetingId);
         if (await loadTranscript(meetingId)) {
             transcriptionDisplayArea.classList.remove("hidden");
             downloadButtonWrapper.classList.remove("hidden");
