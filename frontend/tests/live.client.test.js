@@ -139,3 +139,67 @@ test('audio buffered while disconnected is bounded', () => {
     FakeSocket.last.message({ type: 'session.ready' });
     assert.strictEqual(FakeSocket.last.sent.length, 3, 'the oldest frames are dropped, not the newest');
 });
+
+test('ending a meeting while disconnected does not lose the tail', () => {
+    // Reproduction from critique-01.md finding 7a: the socket never opens at all.
+    const { client } = makeClient();
+    client.start();
+    client.pushAudio(new Float32Array(1600), 16000);   // exactly one 100ms frame
+    client.stop();
+
+    assert.strictEqual(client.pending.length, 1, 'the tail frame stays queued, not dropped');
+    assert.strictEqual(client.stopped, false, 'nothing has delivered it yet, so this is not done');
+
+    // Whatever eventually gets a connection through still owes it that frame and the stop event.
+    FakeSocket.last.open();
+    FakeSocket.last.message({ type: 'session.ready' });
+    const binary = FakeSocket.last.sent.filter((s) => typeof s !== 'string');
+    const control = FakeSocket.last.sent.filter((s) => typeof s === 'string').map(JSON.parse);
+    assert.strictEqual(binary.length, 1, 'the queued tail frame is sent once a connection succeeds');
+    assert.deepStrictEqual(control.at(-1), { event: 'stop' }, 'stop follows once the tail is out');
+    assert.strictEqual(client.stopped, true);
+});
+
+test('a meeting ended mid-outage delivers its tail once the connection recovers, correctly numbered', () => {
+    const { client } = makeClient();
+    client.start();
+    FakeSocket.last.open();
+    FakeSocket.last.message({ type: 'session.ready' });
+    client.pushAudio(new Float32Array(1600), 16000);   // sent immediately, seq 0
+
+    FakeSocket.last.drop();                             // disconnected; a reconnect attempt is now queued
+    client.pushAudio(new Float32Array(1600), 16000);    // captured while offline, held in pending
+    client.stop();                                       // ends the meeting mid-outage
+
+    assert.strictEqual(client.stopped, false, 'still nothing to deliver it on');
+    assert.strictEqual(FakeSocket.opened.length, 2, 'the drop already triggered one reconnect attempt');
+
+    FakeSocket.last.open();
+    FakeSocket.last.message({ type: 'session.ready' });
+    const seqOf = (buf) => new DataView(buf).getUint32(0, false);
+    const seqs = FakeSocket.last.sent.filter((s) => typeof s !== 'string').map(seqOf);
+    const control = FakeSocket.last.sent.filter((s) => typeof s === 'string').map(JSON.parse);
+    assert.deepStrictEqual(seqs, [0], 'renumbered to open the new session at zero, not its old number');
+    assert.deepStrictEqual(control.at(-1), { event: 'stop' });
+    assert.strictEqual(client.stopped, true);
+});
+
+test('reconnect renumbers audio queued across repeated failed attempts, no duplicates', () => {
+    // Reproduction from critique-01.md finding 7b, variant 1: several connections in a row never
+    // reach session.ready while capture keeps producing audio.
+    const { client } = makeClient();
+    client.start();
+    client.pushAudio(new Float32Array(1600), 16000);   // queued before any attempt ever connects
+
+    FakeSocket.last.drop();                             // attempt 1 fails
+    client.pushAudio(new Float32Array(1600), 16000);
+
+    FakeSocket.last.drop();                             // attempt 2 fails
+    client.pushAudio(new Float32Array(1600), 16000);
+
+    FakeSocket.last.open();                              // attempt 3 succeeds
+    FakeSocket.last.message({ type: 'session.ready' });
+    const seqOf = (buf) => new DataView(buf).getUint32(0, false);
+    const seqs = FakeSocket.last.sent.filter((s) => typeof s !== 'string').map(seqOf);
+    assert.deepStrictEqual(seqs, [0, 1, 2], 'monotonic from zero, no duplicates, capture order kept');
+});

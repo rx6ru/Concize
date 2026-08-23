@@ -37,6 +37,7 @@
             this.socket = null;
             this.ready = false;
             this.stopped = false;
+            this.stopping = false;
             this.attempt = 0;
             this.pending = [];
             this.frames = new proto.FrameSequencer();
@@ -57,7 +58,14 @@
                 if (msg.type === 'session.ready') {
                     this.ready = true;
                     this.attempt = 0;
+                    // Every connection is a fresh gateway session that expects seq to start at 0
+                    // (backend/src/realtime/session.js derives t0Ms from startOffsetMs + seq*frameMs,
+                    // with startOffsetMs coming from the stored transcript's watermark, not from how
+                    // long the client was offline). Whatever is still queued from before this
+                    // connection existed goes first, renumbered to hold that place.
+                    this.#renumberPending();
                     this.#drain();
+                    if (this.stopping) this.#sendStop();
                 }
                 this.onEvent(msg);
             };
@@ -66,10 +74,6 @@
                 this.ready = false;
                 this.onStatus({ state: 'closed', code: evt && evt.code });
                 if (this.stopped) return;
-                // Every reconnect starts a fresh sequence: the gateway resumes a meeting by adding
-                // its own offset to a client that counts from zero again. Continuing the count
-                // would rewrite the timeline from the beginning.
-                this.frames = new proto.FrameSequencer();
                 const delay = BACKOFF_MS[Math.min(this.attempt, BACKOFF_MS.length - 1)];
                 this.attempt += 1;
                 this.setTimeoutImpl(() => this.start(), delay);
@@ -80,19 +84,39 @@
 
         /** Hand it captured samples at whatever rate the capture graph runs. */
         pushAudio(samples, inputRate) {
-            if (this.stopped) return;
+            if (this.stopped || this.stopping) return;
             this.frames.push(samples, inputRate, (frame) => this.#queue(frame));
         }
 
-        /** Ends the meeting: flush the tail, say stop, and stay closed. */
+        /** Ends the meeting: flush the tail, say stop, and stay closed.
+         * A meeting can end while the socket is down, and may never get another connection --
+         * that is exactly when the tail matters most, so this does not give up on delivering it.
+         * If a connection is live right now the stop goes out immediately; otherwise it waits,
+         * queued, for whatever `start()`/reconnect already has in flight to eventually succeed. */
         stop() {
-            if (this.stopped) return;
+            if (this.stopped || this.stopping) return;
+            this.stopping = true;
             this.frames.flush((frame) => this.#queue(frame));
-            this.#drain();
-            if (this.socket && this.socket.readyState === this.WebSocketImpl.OPEN) {
-                this.socket.send(JSON.stringify({ event: 'stop' }));
+            if (this.ready && this.socket && this.socket.readyState === this.WebSocketImpl.OPEN) {
+                this.#drain();
+                this.#sendStop();
             }
+        }
+
+        #sendStop() {
+            this.socket.send(JSON.stringify({ event: 'stop' }));
             this.stopped = true;
+        }
+
+        // Rewrites the queued frames' seq prefix to their position in line, then carries the
+        // count into the live sequencer so anything built after continues it without a gap.
+        // A no-op when nothing is queued, so it is safe to call on every session.ready, not just
+        // a reconnect.
+        #renumberPending() {
+            for (let i = 0; i < this.pending.length; i += 1) {
+                new DataView(this.pending[i]).setUint32(0, i, false);
+            }
+            this.frames.seq = this.pending.length;
         }
 
         #queue(frame) {
