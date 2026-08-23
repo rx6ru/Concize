@@ -3,6 +3,6 @@
 const router = require('express').Router();
 
 router.use('/meetings', require('./meeting.routes'));
-router.use('/health', require('./health.routes'));
+// /health is mounted in server.js ahead of authenticate; a health check carries no token.
 
 module.exports = router;

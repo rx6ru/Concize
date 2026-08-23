@@ -79,6 +79,11 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
+// Liveness, mounted BEFORE auth for the same reason /metrics is: a platform health checker holds
+// no token, and a health endpoint that answers 401 marks a working container as dead forever.
+// It reports only that the process is up, no configuration and no counts.
+app.use('/api/v1/health', require('./http/routes/v1/health.routes'));
+
 // Applies globally: every request must carry a valid Supabase JWT or (transitionally) a legacy x-auth-code, and sets req.user.
 // Authorization (ownership) is enforced per-resource by requireMeetingAccess on the meeting routes.
 app.use(authenticate);
