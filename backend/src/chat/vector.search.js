@@ -12,8 +12,11 @@ const client = new QdrantClient({
     checkCompatibility: false, // skip the version-check round-trip on construction
 });
 
-const TRANSCRIPTION_COLLECTION_NAME = config.TRANSCRIPTION_COLLECTION;
-const CHAT_COLLECTION_NAME = config.CHAT_COLLECTION;
+// Both live under config.database; reading them off the root gave undefined, so every query here
+// went to Qdrant with no collection name and failed. The failures are swallowed by the caller's
+// opportunistic fallback, so this has been silently dead rather than loudly broken.
+const TRANSCRIPTION_COLLECTION_NAME = config.database.TRANSCRIPTION_COLLECTION;
+const CHAT_COLLECTION_NAME = config.database.CHAT_COLLECTION;
 
 /**
  * Queries the 'transcriptions' Qdrant collection for chunks similar to the user's prompt within a specific meeting.

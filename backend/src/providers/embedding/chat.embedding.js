@@ -52,6 +52,11 @@ const createChatCollection = async () => {
 // Embeds the combined user+AI text so the vector captures the full conversational context. chatId cross-references the chat row; ownerId stamps tenant isolation.
 const upsertChatPair = async (jobId, userChat, aiChat, chatId, ownerId) => {
     try {
+        // Nothing else creates this collection, so without it every write and every history read
+        // failed with Not Found and the failure was swallowed as missing extra context.
+        // createChatCollection checks before creating, so calling it here stays cheap.
+        await createChatCollection();
+
         const combinedChatText = `User: ${userChat}\nAI response: ${aiChat}`;
         const vector = await getEmbedding(combinedChatText);
 

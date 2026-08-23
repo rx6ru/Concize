@@ -231,3 +231,36 @@ describe('createChatCollection', () => {
         await expect(createChatCollection()).rejects.toThrow('qdrant unreachable');
     });
 });
+
+describe('the chat collection is created before it is written to', () => {
+    // Nothing called createChatCollection, and upsertChatPair did not create it either, so every
+    // write hit a collection that did not exist and chat history never worked in either direction.
+    it('ensures the collection on the first upsert', async () => {
+        const { __mocks } = require('@qdrant/js-client-rest');
+        const { upsertChatPair } = require('../src/providers/embedding/chat.embedding');
+
+        __mocks.getCollections.mockResolvedValue({ collections: [] });
+        __mocks.createCollection.mockResolvedValue(true);
+        __mocks.createPayloadIndex.mockResolvedValue(true);
+        __mocks.upsert.mockResolvedValue({ status: 'completed' });
+
+        await upsertChatPair('m1', 'q', 'a', 'c1', 'owner-1');
+
+        expect(__mocks.createCollection).toHaveBeenCalled();
+        expect(__mocks.upsert).toHaveBeenCalled();
+    });
+
+    it('does not recreate a collection that already exists', async () => {
+        const { __mocks } = require('@qdrant/js-client-rest');
+        const { upsertChatPair } = require('../src/providers/embedding/chat.embedding');
+        jest.clearAllMocks();
+
+        __mocks.getCollections.mockResolvedValue({ collections: [{ name: 'chats' }] });
+        __mocks.upsert.mockResolvedValue({ status: 'completed' });
+
+        await upsertChatPair('m1', 'q', 'a', 'c2', 'owner-1');
+
+        expect(__mocks.createCollection).not.toHaveBeenCalled();
+        expect(__mocks.upsert).toHaveBeenCalled();
+    });
+});
