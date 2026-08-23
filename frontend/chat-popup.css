@@ -435,3 +435,18 @@ body {
     transform: translateY(10px);
     pointer-events: none;
 }
+
+/* The chat window is separate from the popup and follows whichever meeting is open there, so it
+   has to say which one it is answering about. */
+.chat-heading {
+    min-width: 0;
+}
+
+.chat-subject {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

@@ -16,6 +16,7 @@ class ChatInterface {
     }
 
     init() {
+        this.showSubject();
 
         this.sendButton.addEventListener('click', () => this.sendMessage());
         this.closeButton.addEventListener('click', () => window.close());
@@ -350,6 +351,23 @@ class ChatInterface {
             this.messageInput.placeholder = 'Type your message...';
             this.messageInput.style.opacity = '1';
             this.messageInput.focus();
+        }
+    }
+
+    /**
+     * Names the meeting this window is answering about. It is a separate window from the popup and
+     * follows whichever meeting is open there, so without this the answers have no stated subject.
+     */
+    async showSubject() {
+        const el = document.getElementById('chatSubject');
+        if (!el) return;
+        try {
+            const { meetingId, meetingTitle } = await chrome.storage.local.get(['meetingId', 'meetingTitle']);
+            if (!meetingId) { el.textContent = 'No meeting selected'; return; }
+            // textContent, never innerHTML: a title is model output over a transcript.
+            el.textContent = meetingTitle || 'Untitled meeting';
+        } catch (err) {
+            console.error('Could not read the current meeting:', err);
         }
     }
 

@@ -250,7 +250,9 @@ startButton.addEventListener("click", async () => {
         }
         const meetingId = startMeetingData.meetingId;
         console.log(`Meeting session started with meetingId: ${meetingId}`);
-        await chrome.storage.local.set({ meetingId });
+        // The title rides along so the chat window, which is a separate window with its own
+        // header, can say which meeting it is answering about.
+        await chrome.storage.local.set({ meetingId, meetingTitle: title || null });
         resetLiveTranscript();
 
         const [tab] = await chrome.tabs.query({
@@ -381,7 +383,7 @@ async function loadMeetings() {
                 row.append(status);
             }
 
-            row.addEventListener("click", () => openMeeting(m.meetingId));
+            row.addEventListener("click", () => openMeeting(m.meetingId, m.title));
             wrapper.append(row);
 
             // Shared with this account rather than owned by it: read and chat, nothing more, and
@@ -581,7 +583,7 @@ async function loadSummary(meetingId, generation) {
 }
 
 /** Shows one meeting's transcript, whether or not it is the one being recorded. */
-async function openMeeting(meetingId) {
+async function openMeeting(meetingId, title) {
     const generation = ++openGeneration;
     hideStatusMessage();
     showStatusMessage("Loading transcript...");
