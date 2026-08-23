@@ -8,12 +8,16 @@
 #                       speaker error        segmentation floor
 #     Hindi   fsmn      61.0%                53.8%
 #     Hindi   silero    63.6%                37.5%
-#     ES2004a fsmn      38.0%                27.0%
+#     ES2004a fsmn      39.2%                27.0%
 #     ES2004a silero    33.2%                18.6%
 #     IS1003b fsmn      28.7%                25.0%
 #     IS1003b silero    42.1%                16.9%
 #
-# The floor falls every time but actual error moves either way: ship this together with a multilingual embedding model (pyannote's wespeaker-voxceleb-resnet34-LM is the candidate), swap both, or neither.
+# The floor falls every time but actual error moves either way: ship this together with a multilingual embedding model, swap both, or neither.
+#
+# That candidate was measured on 2026-08-24 and did not clear its gate. Silero + wespeaker-voxceleb-resnet34-LM moves English a long way (ES2004a 39.2% -> 26.0%, IS1003b 28.7% -> 24.6%) and Hindi the wrong way (61.0% -> 62.2%), because wespeaker is trained on VoxCeleb and confuses Hindi speaker identities badly enough to eat the whole segmentation gain. See Concize-KB/10-decisions/speaker-models.md.
+#
+# The fsmn/ES2004a figure above was 38.0% until 2026-08-24. That number was computed on 2026-08-16 and this file and speaker.py both changed on the 19th; re-measuring the identical configuration gives 39.2%. The pipeline is deterministic here, so it was stale, not noisy.
 #
 # The interface is FunASR's; SpeakerSession does not know or care which VAD it got.
 
