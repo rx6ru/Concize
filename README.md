@@ -47,8 +47,11 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Speaker attribution service | working, wants a GPU to be useful |
 | Incremental summarisation | working |
 | Session audio retention | working, opt in via RECORDING_DIR |
+| Accounts, sign up and sign in | working, tokens issued locally or by Supabase |
+| Rate limits, session cap, daily cost breaker | working |
 | Post-meeting reconciliation | modules built, not scheduled |
 | Indic speaker models | not built, and this is the main gap |
+| Teams, sharing, billing | not built |
 | Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
 | Layer 2 narrative chunks | working |
@@ -87,6 +90,8 @@ info [chunkSearch] Chunk collection created {"collection":"concize_chunks"}
 
 Load `frontend/` as an unpacked extension from `chrome://extensions` to capture audio, or drive the WebSocket directly (see Protocol).
 
+With `AUTH_MODE=hs256` the backend issues its own tokens, so `POST /api/v1/auth/signup` is all that stands between a fresh checkout and a recorded meeting. `AUTH_MODE=jwks` delegates to Supabase instead and those routes are not mounted, because two sources of identity is worse than one.
+
 ### Speaker attribution
 
 Separate and optional, because it wants a GPU:
@@ -109,11 +114,15 @@ Provider and model are chosen per task, so transcription can run on Sarvam while
 | `QDRANT_URL`, `QDRANT_API_KEY` | - | required |
 | `CLOUDAMQP_URL` | - | required, summary worker queue |
 | `TRANSCRIPTION_PROVIDER` / `_MODEL` | `sarvam` / `saaras:v1` | `groq` also supported |
-| `CHAT_PROVIDER` / `CHAT_MODEL` | `cerebras` / `llama3.1-8b` | `groq`, `sarvam` also supported |
+| `CHAT_PROVIDER` / `CHAT_MODEL` | `cerebras` / `llama3.1-8b` | `groq`, `openrouter`, `sarvam` also supported |
+| `CHAT_CONTEXT_TOKENS` | derived from the model | pin it, or a million-token model hands retrieval a million-token budget |
 | `SUMMARY_PROVIDER`, `CLEAN_PROVIDER` | `cerebras` | same set |
 | `SPEAKER_SERVICE_URL` | unset | unset disables attribution |
-| `AUTH_MODE` | `jwks` | `hs256` for local development |
+| `HF_TOKEN` | unset | unset disables overlap detection |
+| `AUTH_MODE` | `jwks` | `hs256` issues tokens here and needs no identity provider |
+| `AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER` | - | required in `hs256` mode |
 | `SUPABASE_JWKS_URI`, `SUPABASE_JWT_ISSUER` | - | required in `jwks` mode |
+| `REDIS_URL` | unset | rate limits fail open without it |
 | `PGSSL` | on | set to `disable` for a local container |
 | `PORT` | `3000` | |
 | `LOG_LEVEL` | `info` | |
@@ -149,6 +158,8 @@ Send `{"event":"stop"}` to end the meeting cleanly and flush the trailing chunk.
 Everything is under `/api/v1` and needs a bearer token. Ownership is enforced per resource.
 
 ```
+POST /auth/signup                 create an account, returns a token   (hs256 mode only)
+POST /auth/login                  exchange credentials for a token     (hs256 mode only)
 POST /meetings                    create a meeting
 GET  /meetings/:id/transcript     current transcript
 POST /meetings/:id/chat           ask a question, answer streams back over SSE
@@ -156,6 +167,8 @@ GET  /meetings/:id/summary        running summary
 GET  /health
 GET  /metrics                     prometheus, mounted before auth
 ```
+
+Chat and meeting creation are rate limited per user, and a daily cost breaker refuses calls once the day's recorded provider spend crosses what `provider.limits.json` says the account has. Limits fail open if Redis is unreachable; the cost breaker refuses.
 
 ## Layout
 
@@ -204,13 +217,23 @@ Numbers come from AMI meeting audio with human transcripts, and from Indic DiarB
 | Live speaker attribution: 34.4% word-weighted error. Sarvam's batch diarization on the same audio: 55.0%. | The batch pass corrects wording but no longer overwrites speakers. It used to. |
 | 16 speakers across 91 minutes: 30.9% error, against 34.4% on four-speaker meetings. | Accuracy does not fall off with speaker count. Over-segmentation is cheap; confusing two people is not. |
 | Hindi speaker error is 61.0% against 34.4% on English. The floor imposed by segmentation alone is 53.8%. | The VAD and the embedding model are both Chinese (`fsmn-vad`, `campplus_sv_zh-cn`). On Hindi the VAD returns 5-11 speech regions where the reference has 18-66 turns. |
-| Swapping our transcript for the human one, same model and prompt, moves answer accuracy 21 to 36 points. | Transcription is the ceiling on answer quality. Work on retrieval does not move it. |
+| Two identical runs, nothing changed, differ by 11.1 points of claim coverage. | This is the noise floor. Any result smaller than it is resampling, and several earlier conclusions were. |
+| Changing the answering model is worth 15.1 points; a human transcript, corrected speaker attribution and supplied speaker roles are each inside the floor. | The model is the only lever measured to clear the floor so far. Work on the audio side has not reached the answer. |
 | Evidence coverage in retrieved context: 72.7% for wrong answers, 72.1% for right ones. | Retrieval is not the bottleneck. A reranker was planned and then dropped on this result. |
+| The grading judge agreed with itself on 29.2% of identical answers before it was rebuilt; claim-level grading with a per-claim majority now agrees 7/7. | Every number above is only as good as the instrument. An unvalidated judge produced two wrong conclusions here. |
 | Layer 2 summaries took 68% of the context budget on a 71-minute meeting. | Capped per layer. They rank well because they read like the question, and cost three times a verbatim chunk. |
+
+An earlier version of this table claimed a human transcript was worth 21 to 36 points of answer accuracy. Re-graded with the rebuilt judge it is worth -0.4, inside the noise floor. The original number came from comparing two gradings by an instrument that did not agree with itself.
 
 The Hindi row is the one that changed plans. Swapping only the VAD drops the segmentation floor by 8 to 16 points on every corpus tested and still makes speaker error worse, because shorter segments hand the Chinese embedding model less audio per segment and it starts inventing speakers. On ES2004a it goes from 10 hypothesis speakers to 18. Both models have to be replaced in one step. A Silero adapter is committed and deliberately left switched off for that reason, with the numbers in its header.
 
 ## Limitations
+
+- Answers cover 58.3% of the claims in a human reference, 7 of 23 fully. That is the number to
+judge this on, and it is not yet good enough to sell.
+- The extension has never been run in a browser. Its capture path is unit tested and the client it
+uses is proven against a live backend, but nobody has pressed record.
+- Summary quality has never been measured. A harness exists and is waiting on a complete summary.
 
 - About one turn in seventeen is still attributed to the wrong speaker at 40 speakers, and 6 of
 40 identities hold more than one person. That is why confidence travels with the data.
@@ -223,8 +246,9 @@ segments and stitched. A speaker silent through an overlap window appears as a n
 ## Tests
 
 ```sh
-cd backend && npm test                      # 763 tests, no network or GPU needed
-cd speaker-service && python test_speaker.py test_overlap.py   # 23 more
+cd backend && npm test                                # 865 tests, no network or GPU needed
+node --test 'frontend/tests/*.test.js'                # 53, the capture protocol and the sanitizer
+cd speaker-service && .venv/bin/python test_speaker.py && .venv/bin/python test_overlap.py   # 23
 ```
 
 Database tests run against `pg-mem`, and the live pipeline test drives a real WebSocket through the gateway, fusion, the transcript log and chunk derivation. Note that pg-mem applies a partial index without its predicate, which is why the schema uses composite indexes instead.
