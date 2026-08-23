@@ -7,6 +7,9 @@
 // operator override (COST_CEILING_TOKENS_PER_DAY). A model with no recorded vendor cap and no
 // override never trips: an unestablished limit means "not established", not "zero left" (same
 // rule provider.limits.js already uses for fitsInOneRequest).
+//
+// Also trips when the ledger itself is unreadable (permissions, disk error, corrupted file): today's spend is unknown in that case, not zero.
+// An unknown spend is treated as over budget rather than under it, on every provider/model, even one with no established cap.
 
 'use strict';
 
@@ -22,6 +25,9 @@ const { ledger: defaultLedger } = require('./usage.ledger');
  */
 function isOverBudget(provider, model, { ledger = defaultLedger, ceilingTokens = null } = {}) {
     const remaining = ledger.remainingToday(provider, model);
+
+    // Unreadable means unknown, and unknown is treated as exhausted, not as no cap.
+    if (remaining.unreadable) return true;
 
     if (remaining.tokens !== null && remaining.tokens <= 0) return true;
     if (remaining.requests !== null && remaining.requests <= 0) return true;

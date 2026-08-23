@@ -81,3 +81,21 @@ describe('operator override ceiling', () => {
         expect(isOverBudget('groq', 'openai/gpt-oss-120b', { ledger })).toBe(false);
     });
 });
+
+describe('unreadable ledger', () => {
+    // Real unreadable path (a directory where the ledger file should be), not a mocked fs error.
+    const buildUnreadableLedger = () => {
+        const file = path.join(dir, 'usage.jsonl');
+        fs.mkdirSync(file);
+        return buildLedger();
+    };
+
+    it('refuses even a model with no recorded vendor cap and no operator override', () => {
+        // qwen/qwen3.6-27b has neither, and would otherwise never trip (see the "allows" test above).
+        expect(isOverBudget('groq', 'qwen/qwen3.6-27b', { ledger: buildUnreadableLedger() })).toBe(true);
+    });
+
+    it('refuses a model with an established vendor cap too', () => {
+        expect(isOverBudget('groq', 'openai/gpt-oss-120b', { ledger: buildUnreadableLedger() })).toBe(true);
+    });
+});

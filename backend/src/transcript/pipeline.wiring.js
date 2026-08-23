@@ -24,6 +24,7 @@ const { getMeetingSummary } = require('../summary/summary.repository');
 const { publishToQueue } = require('../infra/queue');
 const config = require('../core/config');
 const { ledger } = require('../core/usage.ledger');
+const { isOverBudget } = require('../core/cost.breaker');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('transcriptPipeline');
@@ -63,8 +64,11 @@ function build() {
     const narrator = createNarrator({
         complete: async (args) => {
             const { client, model, taskConfig } = getSummaryInference();
+            // Narration is the largest LLM consumer in the system (a full corpus ingest costs about a day's token budget on its own), so it's the one call site that most needs the ceiling checked, not only counted. Checked before the call, or a trip here still pays for the call it was meant to stop.
+            if (isOverBudget(taskConfig.provider, model, { ceilingTokens: config.limits.costCeilingTokensPerDay })) {
+                throw new Error('Cost ceiling reached, refusing narration');
+            }
             const res = await client.chat.completions.create({ ...args, model });
-            // Narration is the largest LLM consumer in the system (a full corpus ingest costs about a day's token budget on its own), so it's the one that most needs counting.
             ledger.record(taskConfig.provider, model, res?.usage?.total_tokens || 0);
             return res;
         },

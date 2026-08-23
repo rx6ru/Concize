@@ -26,8 +26,13 @@ function createUsageLedger({ file = DEFAULT_FILE, today = isoDay } = {}) {
         let raw;
         try {
             raw = fs.readFileSync(file, 'utf8');
-        } catch {
-            return { tokens, requests };   // no ledger yet is not an error
+        } catch (err) {
+            // No ledger yet is not an error: nothing has been spent.
+            if (err.code === 'ENOENT') return { tokens, requests, unreadable: false };
+            // Any other read failure (permissions, disk error, the path replaced by a directory) means today's spend is unknown, not zero.
+            // Reporting zero here would let spend run uncapped during exactly the outage this ledger exists to catch.
+            logger.error('Usage ledger unreadable, spend for today cannot be established', { file, error: err.message });
+            return { tokens, requests, unreadable: true };
         }
 
         for (const line of raw.split('\n')) {
@@ -39,7 +44,7 @@ function createUsageLedger({ file = DEFAULT_FILE, today = isoDay } = {}) {
             tokens += row.tokens || 0;
             requests += row.requests || 1;
         }
-        return { tokens, requests };
+        return { tokens, requests, unreadable: false };
     }
 
     return {
@@ -63,15 +68,20 @@ function createUsageLedger({ file = DEFAULT_FILE, today = isoDay } = {}) {
             return totals(provider, model).requests;
         },
 
-        /** What is left of today's caps. A null means no cap is recorded for that model, not that nothing is left. */
+        /**
+         * What is left of today's caps. A null means no cap is recorded for that model, not that nothing is left.
+         * `unreadable: true` means the ledger could not be read at all, so `tokens`/`requests` are reported as
+         * 0 remaining (worst case) rather than left null (which a caller could mistake for "no cap set").
+         */
         remainingToday(provider, model) {
-            const { tokens, requests } = totals(provider, model);
+            const { tokens, requests, unreadable } = totals(provider, model);
             const limits = limitsFor(provider, model);
             const left = (cap, used) => (cap == null ? null : Math.max(0, cap - used));
             return {
-                tokens: left(limits.tokensPerDay, tokens),
-                requests: left(limits.requestsPerDay, requests),
+                tokens: unreadable ? 0 : left(limits.tokensPerDay, tokens),
+                requests: unreadable ? 0 : left(limits.requestsPerDay, requests),
                 spent: { tokens, requests },
+                unreadable,
             };
         },
     };

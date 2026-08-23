@@ -106,3 +106,29 @@ describe('what is left', () => {
         expect(ledger.remainingToday('groq', 'openai/gpt-oss-120b').tokens).toBe(0);
     });
 });
+
+describe('unreadable ledger', () => {
+    // A missing file is not the same failure as a file that exists but can't be read: only the
+    // first one means "nothing spent yet". Reproduced with a real unreadable path (a directory
+    // where the ledger file should be), not a mocked fs error, so the real error code is what
+    // trips the branch.
+    const buildUnreadable = () => {
+        const file = path.join(dir, 'usage.jsonl');
+        fs.mkdirSync(file);
+        return build();
+    };
+
+    it('does not confuse "unreadable" with "empty": spentToday still reads 0, not a thrown error', () => {
+        expect(buildUnreadable().spentToday('groq', 'm')).toBe(0);
+    });
+
+    it('flags remainingToday as unreadable rather than reporting the usual null/left numbers', () => {
+        const r = buildUnreadable().remainingToday('groq', 'openai/gpt-oss-120b');
+        expect(r.unreadable).toBe(true);
+    });
+
+    it('a genuinely missing file is not flagged unreadable', () => {
+        const r = build().remainingToday('groq', 'openai/gpt-oss-120b');
+        expect(r.unreadable).toBe(false);
+    });
+});

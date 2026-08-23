@@ -24,6 +24,10 @@ const chunked = (items, size) => {
     return out;
 };
 
+// batchEmbedContents' response carries no usageMetadata (unlike generateContent), so there is no real token count to read off it.
+// Same rough estimate chunk.boundary.js's estimateTokens uses for chunking (~1.3 tokens/word, not a real tokenizer call), rather than inventing a second heuristic.
+const estimateTokens = (text) => (text ? Math.ceil(text.trim().split(/\s+/).filter(Boolean).length * 1.3) : 0);
+
 async function embedBatch(texts, { model, outputDimensionality, apiKey }) {
     const res = await fetch(`${ENDPOINT}/${model}:batchEmbedContents?key=${apiKey}`, {
         method: 'POST',
@@ -69,8 +73,9 @@ async function getEmbeddings(texts, opts = {}) {
             { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
         );
         out.push(...vectors);
-        // Metered per request, not per token, so the count is what matters here.
-        ledger.record('gemini', model, 0);
+        // The free-tier quota is metered per request (provider.limits.json), but real billing on this model is per token, so an estimated token count is recorded alongside the request either way.
+        const tokens = batch.reduce((sum, text) => sum + estimateTokens(text), 0);
+        ledger.record('gemini', model, tokens);
     }
 
     logger.debug('Batch embedding complete', { texts: texts.length, requests: Math.ceil(texts.length / BATCH_SIZE) });

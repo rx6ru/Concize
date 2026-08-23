@@ -10,6 +10,7 @@ const { createChatEntry, updateChatEntry } = require('./chat.repository');
 const { upsertChatPair } = require('../providers/embedding/chat.embedding');
 const { getMeetingSummary } = require('../summary/summary.repository');
 const { isOverBudget } = require('../core/cost.breaker');
+const { ledger } = require('../core/usage.ledger');
 const config = require('../core/config');
 const { createLogger } = require('../core/logger');
 
@@ -308,6 +309,7 @@ ${userPrompt}`;
 
             let currentResponseChunk = '';
             let outputBlocked = false;
+            let attemptUsage = null;
             try {
 
 
@@ -320,6 +322,7 @@ ${userPrompt}`;
                 });
 
                 // Concurrency-limited via the per-provider Bottleneck limiter. maxRetries: 0 since this is a user-facing stream; the outer retry loop owns backoff, not this call.
+                // stream_options.include_usage asks the provider for a final usage-only chunk (empty choices), the only place a streamed completion's token count is observable.
                 const stream = await runResilient(taskConfig.provider, () =>
                     client.chat.completions.create({
                         messages: [
@@ -330,6 +333,7 @@ ${userPrompt}`;
                         temperature: taskConfig.temperature,
                         max_completion_tokens: taskConfig.maxTokens,
                         stream: true,
+                        stream_options: { include_usage: true },
                     }),
                     { maxRetries: 0 }
                 );
@@ -341,6 +345,9 @@ ${userPrompt}`;
 
                 for await (const chunk of stream) {
                     if (res.writableEnded || !res.writable) break;
+
+                    // The usage chunk carries no choices, so it has to be captured here rather than after the delta check below.
+                    if (chunk.usage) attemptUsage = chunk.usage;
 
                     const chunkText = chunk.choices[0]?.delta?.content || '';
                     if (!chunkText) continue;
@@ -358,6 +365,10 @@ ${userPrompt}`;
                     currentResponseChunk += chunkText;
                     res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
                 }
+
+                // Recorded per attempt, win or lose, so a retried empty response still counts against the ceiling it's checked against next request.
+                // No usage chunk (client disconnected mid-stream, or a provider that ignores stream_options) means nothing observed to record; recording 0 there would be a guess, not a measurement.
+                if (attemptUsage) ledger.record(taskConfig.provider, model, attemptUsage.total_tokens || 0);
 
                 if (outputBlocked) { clearHeartbeat(); fullResponseText = currentResponseChunk; responseValid = true; break; }
 

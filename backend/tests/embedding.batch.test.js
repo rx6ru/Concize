@@ -6,12 +6,15 @@ jest.mock('../src/core/config', () => ({
     inference: { geminiKeys: ['test-key'] },
 }));
 
+jest.mock('../src/core/usage.ledger', () => ({ ledger: { record: jest.fn() } }));
+
 // Pass-through by default; one test asserts the call actually goes through it.
 jest.mock('../src/providers/llm/resilient.inference', () => ({
     runResilient: jest.fn((provider, fn) => fn()),
 }));
 
 const { runResilient } = require('../src/providers/llm/resilient.inference');
+const { ledger } = require('../src/core/usage.ledger');
 
 const { getEmbeddings, BATCH_SIZE } = require('../src/providers/embedding/embedding.batch');
 
@@ -21,7 +24,7 @@ const okFetch = (n) => jest.fn(async () => ({
     ok: true, status: 200, json: async () => vectors(n),
 }));
 
-beforeEach(() => { global.fetch = okFetch(2); });
+beforeEach(() => { global.fetch = okFetch(2); ledger.record.mockClear(); });
 
 describe('batch embedding', () => {
     // One request per chunk is what put a 116-chunk meeting past the provider's 100-per-minute
@@ -89,5 +92,27 @@ describe('batch embedding', () => {
         }));
 
         await expect(getEmbeddings(['a', 'b'])).rejects.toThrow(/429/);
+    });
+
+    // batchEmbedContents returns no usageMetadata, so this is the one point where a real count
+    // (however estimated) can be attached to what actually got billed on the real, paid tier.
+    it('records an estimated token count for what it actually sent, not zero', async () => {
+        await getEmbeddings(['one two three', 'four five']);
+
+        expect(ledger.record).toHaveBeenCalledWith('gemini', 'gemini-embedding-001', expect.any(Number));
+        const [, , tokens] = ledger.record.mock.calls[0];
+        expect(tokens).toBeGreaterThan(0);
+    });
+
+    it('still records once per batch request, the unit the free-tier quota actually caps', async () => {
+        const texts = Array.from({ length: BATCH_SIZE + 5 }, (_, i) => `chunk ${i}`);
+        global.fetch = jest.fn(async (url, opts) => {
+            const n = JSON.parse(opts.body).requests.length;
+            return { ok: true, status: 200, json: async () => vectors(n) };
+        });
+
+        await getEmbeddings(texts);
+
+        expect(ledger.record).toHaveBeenCalledTimes(2);
     });
 });
