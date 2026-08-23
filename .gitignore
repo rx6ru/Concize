@@ -1,5 +1,8 @@
-.env
-.env.dev
+# Every local env file, including backups. A plain `.env` rule does not cover
+# `.env.bak`, `.env.old` or similar, which is how a copy holding live keys nearly
+# got committed.
+.env*
+!.env.example
 node_modules/
 dist/
 uploads/
@@ -23,6 +26,20 @@ KB/
 __pycache__/
 *.pyc
 .venv/
+
+# Local databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Recorded session audio. RECORDING_DIR is operator-chosen and may point inside
+# the tree; meeting audio is personal data and must never be committed.
+recordings/
+*.wav
+
+*.log
+coverage/
 
 experiments/
 backend/experiments/
