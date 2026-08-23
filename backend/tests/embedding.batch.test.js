@@ -142,6 +142,30 @@ describe('batch embedding', () => {
         expect(new Set(used).size).toBe(2);
     });
 
+    // withRetry re-invokes the same closure, so a key drawn outside it is retried against itself
+    // while the rest of the pool sits idle. One batch of <=50 chunks is the common case, and it
+    // never reaches the between-batch rotation above.
+    it('draws a fresh key on each retry, not the one that just failed', async () => {
+        // Stands in for withRetry: one retry, same closure, exactly how runResilient calls it.
+        runResilient.mockImplementationOnce(async (provider, fn) => {
+            try { return await fn(); } catch { return await fn(); }
+        });
+        const used = [];
+        global.fetch = jest.fn(async (url) => {
+            const key = new URL(url).searchParams.get('key');
+            used.push(key);
+            if (used.length === 1) {
+                return { ok: false, status: 429, json: async () => ({ error: { message: 'quota' } }) };
+            }
+            return { ok: true, status: 200, json: async () => vectors(2) };
+        });
+
+        await getEmbeddings(['a', 'b']);
+
+        expect(used).toHaveLength(2);
+        expect(used[1]).not.toBe(used[0]);
+    });
+
     // A key that answered 429 is spent, not broken: resting it keeps the next batch off it.
     it('rests a key the provider rate limited', async () => {
         const spent = [];

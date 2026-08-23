@@ -67,22 +67,24 @@ async function getEmbeddings(texts, opts = {}) {
     // Through the resilient wrapper, exactly as the single-text path was: per-model request spacing from provider.limits.json, jittered retry, breaker. Batching makes each failure more expensive, a 429 now costs a whole pass rather than one chunk, so this matters more here, not less.
     const out = [];
     for (const batch of chunked(texts, BATCH_SIZE)) {
-        // Per batch, not once for the whole call: pinning geminiKeys[0] spent one key's daily quota while the rest of the pool sat untouched, which is the same gap the LLM path closed with rotation long ago.
+        // Drawn inside the retried closure, not outside it: withRetry re-invokes this same function on a 429, so a key captured out here would be retried against itself three more times while the rest of the pool sat idle. The single-text path gets this right by calling getClient() inside its closure; pinning geminiKeys[0] was the same mistake one level up.
         const pooled = !opts.apiKey;
-        const apiKey = opts.apiKey || geminiService.getNextKey();
-        let vectors;
-        try {
-            vectors = await runResilient(
-                'gemini',
-                () => embedBatch(batch, { model, outputDimensionality, apiKey }),
-                { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
-            );
-            if (pooled) geminiService.reportSuccess(apiKey);
-        } catch (err) {
-            // Only a key this function drew from the pool is the pool's to rest.
-            if (pooled) geminiService.reportFailure(apiKey, err.status);
-            throw err;
-        }
+        const vectors = await runResilient(
+            'gemini',
+            async () => {
+                const apiKey = opts.apiKey || geminiService.getNextKey();
+                try {
+                    const got = await embedBatch(batch, { model, outputDimensionality, apiKey });
+                    if (pooled) geminiService.reportSuccess(apiKey);
+                    return got;
+                } catch (err) {
+                    // Rest it before the next attempt asks for a key, so getNextKey skips it. Only a key drawn from the pool is the pool's to rest.
+                    if (pooled) geminiService.reportFailure(apiKey, err.status);
+                    throw err;
+                }
+            },
+            { model, maxRetries: 3, baseDelayMs: 1000, capDelayMs: 20000 }
+        );
         out.push(...vectors);
         // The free-tier quota is metered per request (provider.limits.json), but real billing on this model is per token, so an estimated token count is recorded alongside the request either way.
         const tokens = batch.reduce((sum, text) => sum + estimateTokens(text), 0);
