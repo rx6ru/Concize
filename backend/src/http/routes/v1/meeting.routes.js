@@ -1,25 +1,31 @@
 // Canonical RESTful, ownership-rooted resource tree:
-//   GET    /api/v1/meetings                       the caller's meetings
+//   GET    /api/v1/meetings                       the caller's own meetings + those shared with them
 //   POST   /api/v1/meetings                       create a meeting (owner = caller)
-//   DELETE /api/v1/meetings/:meetingId            delete it, and its vectors
+//   DELETE /api/v1/meetings/:meetingId            delete it, and its vectors (owner only)
 //   GET    /api/v1/meetings/:meetingId/transcript flat legacy transcript
 //   GET    /api/v1/meetings/:meetingId/utterances speaker-attributed turns, paged
 //   POST   /api/v1/meetings/:meetingId/chat       RAG chat (SSE)
 //   GET    /api/v1/meetings/:meetingId/summary    fetch the running summary
 //   GET    /api/v1/meetings/:meetingId/speakers   who each S-label is
-//   PUT    /api/v1/meetings/:meetingId/speakers/:label  name one of them
+//   PUT    /api/v1/meetings/:meetingId/speakers/:label  name one of them (owner only)
+//   GET    /api/v1/meetings/:meetingId/shares     who this meeting is shared with (owner only)
+//   POST   /api/v1/meetings/:meetingId/shares     share with another account by email (owner only)
+//   DELETE /api/v1/meetings/:meetingId/shares/:shareId  revoke a share (owner only)
 //
 // Auth travels in Authorization: Bearer; the resource id travels in the path.
-// Every :meetingId route is gated by requireMeetingAccess (ownership → 404 on mismatch).
+// Every :meetingId route is gated by requireMeetingAccess (owner or shared reader → 404 on
+// mismatch for everyone else). Routes marked "owner only" additionally require requireMeetingOwner.
 
 const express = require('express');
 const router = express.Router();
 
-const { requireMeetingAccess } = require('../../middleware/auth.wiring');
+const { requireMeetingAccess, requireMeetingOwner } = require('../../middleware/auth.wiring');
 const { createRateLimiter } = require('../../middleware/rate.limit');
 const { startMeeting, fetchMeetingSummary } = require('../../../meetings/meeting.controller');
 const { getLLMStreamResponse } = require('../../../chat/chat.controller');
 const { getTranscription, listMeetings } = require('../../../meetings/meeting.repository');
+const { grantShare, revokeShare, listShares, listSharedMeetings } = require('../../../meetings/meeting.share.repository');
+const { findUserByEmail } = require('../../../auth/user.repository');
 const { purgeMeeting } = require('../../../meetings/meeting.purge.wiring');
 const { getTranscript } = require('../../../transcript/utterance.repository');
 const { namesFor, setName, displayFor } = require('../../../transcript/speaker.names');
@@ -29,6 +35,8 @@ const config = require('../../../core/config');
 
 const logger = createLogger('meetingsRoutes');
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Per-user request limits on the two routes that fan out to paid provider calls.
 // See core/config/limits.js for the numbers behind these.
 const meetingCreateRateLimit = createRateLimiter({ name: 'meeting-create', ...config.limits.meetingCreateRateLimit });
@@ -37,22 +45,32 @@ const chatRateLimit = createRateLimiter({ name: 'chat', ...config.limits.chatRat
 // Create a new meeting owned by the authenticated caller.
 router.post('/', meetingCreateRateLimit, startMeeting);
 
-// The caller's own meetings. A collection route, so there is no :meetingId to gate, the owner filter lives in the query itself.
+// The caller's own meetings plus those shared with them. A collection route, so there is no
+// :meetingId to gate, the owner/shared-with filter lives in the two queries themselves.
 router.get('/', async (req, res) => {
     if (!req.user?.id) {
         return res.status(401).json({ success: false, error: 'Authentication required.' });
     }
     try {
         const limit = Math.min(Number(req.query.limit) || 50, 100);
-        return res.status(200).json({ success: true, meetings: await listMeetings(req.user.id, { limit }) });
+        const [own, shared] = await Promise.all([
+            listMeetings(req.user.id, { limit }),
+            listSharedMeetings(req.user.id, { limit }),
+        ]);
+        const meetings = [
+            ...own.map((m) => ({ ...m, shared: false })),
+            ...shared.map((m) => ({ ...m, shared: true })),
+        ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return res.status(200).json({ success: true, meetings });
     } catch (error) {
         logger.error('Failed to list meetings', { ownerId: req.user.id, error: error.message });
         return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
     }
 });
 
-// Delete an owned meeting, its derived rows, and its vectors.
-router.delete('/:meetingId', requireMeetingAccess, async (req, res) => {
+// Delete a meeting, its derived rows, and its vectors. Owner only: a shared reader can see the
+// meeting but has no say over whether it continues to exist.
+router.delete('/:meetingId', requireMeetingAccess, requireMeetingOwner, async (req, res) => {
     const { meetingId } = req.meeting;
     try {
         const { deleted } = await purgeMeeting(meetingId);
@@ -144,8 +162,8 @@ router.get('/:meetingId/speakers', requireMeetingAccess, async (req, res) => {
     }
 });
 
-// Name a speaker, or clear the name with an empty string.
-router.put('/:meetingId/speakers/:label', requireMeetingAccess, async (req, res) => {
+// Name a speaker, or clear the name with an empty string. Owner only: not read, not chat.
+router.put('/:meetingId/speakers/:label', requireMeetingAccess, requireMeetingOwner, async (req, res) => {
     const { meetingId } = req.meeting;
     const { label } = req.params;
     try {
@@ -176,5 +194,56 @@ router.post('/:meetingId/chat', chatRateLimit, requireMeetingAccess, async (req,
 
 // Fetch the running summary for an owned meeting.
 router.get('/:meetingId/summary', requireMeetingAccess, fetchMeetingSummary);
+
+// Who this meeting is shared with. Owner only: sharing metadata is management, not meeting content.
+router.get('/:meetingId/shares', requireMeetingAccess, requireMeetingOwner, async (req, res) => {
+    const { meetingId } = req.meeting;
+    try {
+        return res.status(200).json({ success: true, shares: await listShares(meetingId) });
+    } catch (error) {
+        logger.error('Failed to list meeting shares', { meetingId, error: error.message });
+        return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
+    }
+});
+
+// Grant another account read + chat access by email. Owner only.
+// Same response whether or not an account matched that email, so probing this endpoint cannot
+// be used to discover which emails have accounts here (the same reasoning as /auth/login).
+router.post('/:meetingId/shares', requireMeetingAccess, requireMeetingOwner, async (req, res) => {
+    const { meetingId, ownerId } = req.meeting;
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    if (!EMAIL.test(email)) {
+        return res.status(400).json({ error: 'A valid email is required.' });
+    }
+    try {
+        const account = await findUserByEmail(email);
+        if (account && account.id !== ownerId) {
+            const share = await grantShare({ meetingId, sharedWith: account.id, grantedBy: ownerId });
+            if (!share) {
+                return res.status(500).json({ error: 'Failed to grant access.' });
+            }
+        }
+        return res.status(202).json({
+            success: true,
+            message: 'If that email has an account, it now has access to this meeting.',
+        });
+    } catch (error) {
+        logger.error('Failed to grant meeting share', { meetingId, error: error.message });
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
+
+// Revoke a share. Owner only.
+router.delete('/:meetingId/shares/:shareId', requireMeetingAccess, requireMeetingOwner, async (req, res) => {
+    const { meetingId } = req.meeting;
+    const { shareId } = req.params;
+    try {
+        const revoked = await revokeShare(meetingId, shareId);
+        return revoked ? res.status(204).end() : res.status(404).json({ error: 'Share not found.' });
+    } catch (error) {
+        logger.error('Failed to revoke meeting share', { meetingId, shareId, error: error.message });
+        return res.status(500).json({ error: 'An internal server error occurred.' });
+    }
+});
 
 module.exports = router;

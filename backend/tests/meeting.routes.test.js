@@ -15,6 +15,14 @@ jest.mock('../src/meetings/meeting.repository', () => ({
     listMeetings: jest.fn(),
     deleteMeeting: jest.fn(),
 }));
+jest.mock('../src/meetings/meeting.share.repository', () => ({
+    isSharedWith: jest.fn(),
+    grantShare: jest.fn(),
+    revokeShare: jest.fn(),
+    listShares: jest.fn(),
+    listSharedMeetings: jest.fn(),
+}));
+jest.mock('../src/auth/user.repository', () => ({ findUserByEmail: jest.fn() }));
 // Avoid pulling the chat/LLM stack into this test.
 jest.mock('../src/chat/chat.controller', () => ({ getLLMStreamResponse: jest.fn() }));
 // Vector purge reaches Qdrant; the composition is tested in meeting.purge.test.js.
@@ -43,6 +51,10 @@ jest.mock('../src/http/middleware/rate.limit', () => {
 });
 
 const { getMeetingOwner, getTranscription, listMeetings, createTranscription } = require('../src/meetings/meeting.repository');
+const {
+    isSharedWith, grantShare, revokeShare, listShares, listSharedMeetings,
+} = require('../src/meetings/meeting.share.repository');
+const { findUserByEmail } = require('../src/auth/user.repository');
 const { purgeMeeting } = require('../src/meetings/meeting.purge.wiring');
 const { getTranscript } = require('../src/transcript/utterance.repository');
 const { namesFor, setName } = require('../src/transcript/speaker.names');
@@ -56,6 +68,12 @@ const app = express();
 app.use(express.json());
 app.use((req, res, next) => { req.user = currentUser; next(); });
 app.use('/api/v1/meetings', meetingsRoutes);
+
+// jest.clearAllMocks() (used throughout this file) clears call history but not a mock's
+// configured implementation, so a mockResolvedValue set by an earlier test would otherwise
+// leak forward. Every test that cares about sharing sets this explicitly; this is just the
+// default for the tests that don't.
+beforeEach(() => { isSharedWith.mockResolvedValue(false); });
 
 describe('RESTful /meetings ownership (end-to-end)', () => {
     beforeEach(() => {
@@ -132,7 +150,11 @@ describe('utterances', () => {
 });
 
 describe('listing meetings', () => {
-    beforeEach(() => { jest.clearAllMocks(); currentUser = { id: 'user-A' }; });
+    beforeEach(() => {
+        jest.clearAllMocks();
+        currentUser = { id: 'user-A' };
+        listSharedMeetings.mockResolvedValue([]);
+    });
 
     it('returns only the caller\'s own meetings', async () => {
         listMeetings.mockResolvedValue([
@@ -143,6 +165,7 @@ describe('listing meetings', () => {
 
         expect(res.status).toBe(200);
         expect(res.body.meetings).toHaveLength(1);
+        expect(res.body.meetings[0]).toMatchObject({ meetingId: 'm1', shared: false });
         // scoped in the query, not filtered afterwards
         expect(listMeetings).toHaveBeenCalledWith('user-A', expect.anything());
     });
@@ -152,6 +175,23 @@ describe('listing meetings', () => {
         const res = await request(app).get('/api/v1/meetings');
         expect(res.status).toBe(401);
         expect(listMeetings).not.toHaveBeenCalled();
+    });
+
+    it('includes meetings shared with the caller, marked distinct from their own', async () => {
+        listMeetings.mockResolvedValue([
+            { meetingId: 'own-1', status: 'completed', createdAt: '2026-08-09T10:00:00Z', title: 'Mine' },
+        ]);
+        listSharedMeetings.mockResolvedValue([
+            { meetingId: 'shared-1', status: 'completed', createdAt: '2026-08-10T10:00:00Z', title: 'Theirs' },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings');
+
+        expect(res.status).toBe(200);
+        expect(listSharedMeetings).toHaveBeenCalledWith('user-A', expect.anything());
+        const byId = Object.fromEntries(res.body.meetings.map((m) => [m.meetingId, m]));
+        expect(byId['own-1'].shared).toBe(false);
+        expect(byId['shared-1'].shared).toBe(true);
     });
 });
 
@@ -185,6 +225,17 @@ describe('deleting a meeting', () => {
         const res = await request(app).delete('/api/v1/meetings/m1');
 
         expect(res.status).toBe(500);
+    });
+
+    it('ANCHOR: a shared reader cannot delete the meeting', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        isSharedWith.mockResolvedValue(true);
+        currentUser = { id: 'reader-B' };
+
+        const res = await request(app).delete('/api/v1/meetings/m1');
+
+        expect(res.status).toBe(403);
+        expect(purgeMeeting).not.toHaveBeenCalled();
     });
 });
 
@@ -305,5 +356,162 @@ describe('rate limiting wiring', () => {
 
         expect(res.status).toBe(429);
         expect(getMeetingOwner).not.toHaveBeenCalled();
+    });
+});
+
+describe('sharing: what a shared reader can and cannot do', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        currentUser = { id: 'reader-B' };
+        getMeetingOwner.mockResolvedValue('owner-A');
+        rateLimitState.blocked = {};
+    });
+
+    it('ANCHOR: a reader the meeting was shared with can read it', async () => {
+        isSharedWith.mockResolvedValue(true);
+        getTranscription.mockResolvedValue({ transcriptionChunks: ['hello'] });
+
+        const res = await request(app).get('/api/v1/meetings/m1/transcript');
+
+        expect(res.status).toBe(200);
+        expect(res.body.transcriptionChunks).toEqual(['hello']);
+    });
+
+    it('ANCHOR: a reader the meeting was NOT shared with gets 404, same as a stranger', async () => {
+        isSharedWith.mockResolvedValue(false);
+
+        const res = await request(app).get('/api/v1/meetings/m1/transcript');
+
+        expect(res.status).toBe(404);
+        expect(getTranscription).not.toHaveBeenCalled();
+    });
+
+    it('a shared reader can chat about the meeting', async () => {
+        isSharedWith.mockResolvedValue(true);
+        const { getLLMStreamResponse } = require('../src/chat/chat.controller');
+        getLLMStreamResponse.mockImplementation(async (res) => { res.status(200).end(); });
+
+        const res = await request(app)
+            .post('/api/v1/meetings/m1/chat')
+            .send({ userPrompt: 'what did we decide?' });
+
+        expect(res.status).toBe(200);
+        // ownerId passed through is the true owner, not the reader: retrieval is keyed on it.
+        expect(getLLMStreamResponse).toHaveBeenCalledWith(
+            expect.anything(), 'what did we decide?', 'm1', 'owner-A');
+    });
+
+    it('a shared reader cannot rename a speaker', async () => {
+        isSharedWith.mockResolvedValue(true);
+
+        const res = await request(app)
+            .put('/api/v1/meetings/m1/speakers/S1')
+            .send({ name: 'Priya' });
+
+        expect(res.status).toBe(403);
+    });
+
+    it('ANCHOR: a shared reader cannot re-share the meeting', async () => {
+        isSharedWith.mockResolvedValue(true);
+
+        const res = await request(app)
+            .post('/api/v1/meetings/m1/shares')
+            .send({ email: 'someone@example.com' });
+
+        expect(res.status).toBe(403);
+        expect(grantShare).not.toHaveBeenCalled();
+    });
+
+    it('ANCHOR: a shared reader cannot grant themselves (or anyone) anything, cannot revoke, cannot list', async () => {
+        isSharedWith.mockResolvedValue(true);
+
+        const grant = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'reader-B@example.com' });
+        const revoke = await request(app).delete('/api/v1/meetings/m1/shares/some-share-id');
+        const list = await request(app).get('/api/v1/meetings/m1/shares');
+
+        expect(grant.status).toBe(403);
+        expect(revoke.status).toBe(403);
+        expect(list.status).toBe(403);
+        expect(grantShare).not.toHaveBeenCalled();
+        expect(revokeShare).not.toHaveBeenCalled();
+        expect(listShares).not.toHaveBeenCalled();
+    });
+});
+
+describe('sharing: owner-only management routes', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        currentUser = { id: 'owner-A' };
+        getMeetingOwner.mockResolvedValue('owner-A');
+    });
+
+    it('grants access to an email that has an account', async () => {
+        findUserByEmail.mockResolvedValue({ id: 'reader-B', email: 'reader@example.com' });
+        grantShare.mockResolvedValue({ id: 'share-1', meetingId: 'm1', sharedWith: 'reader-B', grantedBy: 'owner-A' });
+
+        const res = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'reader@example.com' });
+
+        expect(res.status).toBe(202);
+        expect(grantShare).toHaveBeenCalledWith({ meetingId: 'm1', sharedWith: 'reader-B', grantedBy: 'owner-A' });
+    });
+
+    it('does not reveal whether an unknown email has an account: same response, no share created', async () => {
+        findUserByEmail.mockResolvedValue(null);
+
+        const res = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'unknown@example.com' });
+
+        expect(res.status).toBe(202);
+        expect(grantShare).not.toHaveBeenCalled();
+    });
+
+    it('the response body is identical whether or not the email matched an account', async () => {
+        findUserByEmail.mockResolvedValueOnce({ id: 'reader-B', email: 'reader@example.com' });
+        grantShare.mockResolvedValue({ id: 'share-1' });
+        const foundRes = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'reader@example.com' });
+
+        findUserByEmail.mockResolvedValueOnce(null);
+        const notFoundRes = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'ghost@example.com' });
+
+        expect(foundRes.status).toBe(notFoundRes.status);
+        expect(foundRes.body).toEqual(notFoundRes.body);
+    });
+
+    it('rejects a malformed email before touching the lookup', async () => {
+        const res = await request(app).post('/api/v1/meetings/m1/shares').send({ email: 'not-an-email' });
+
+        expect(res.status).toBe(400);
+        expect(findUserByEmail).not.toHaveBeenCalled();
+    });
+
+    it('ANCHOR: revoking removes access — a subsequent request from that reader is denied', async () => {
+        revokeShare.mockResolvedValue(true);
+        const revokeRes = await request(app).delete('/api/v1/meetings/m1/shares/share-1');
+        expect(revokeRes.status).toBe(204);
+        expect(revokeShare).toHaveBeenCalledWith('m1', 'share-1');
+
+        // The revoked reader's next request is checked fresh against the share table; simulate
+        // the post-revocation state and confirm the gate now denies them.
+        currentUser = { id: 'reader-B' };
+        isSharedWith.mockResolvedValue(false);
+        const readRes = await request(app).get('/api/v1/meetings/m1/transcript');
+        expect(readRes.status).toBe(404);
+    });
+
+    it('reports 404 when revoking a share id that does not exist', async () => {
+        revokeShare.mockResolvedValue(false);
+        const res = await request(app).delete('/api/v1/meetings/m1/shares/no-such-share');
+        expect(res.status).toBe(404);
+    });
+
+    it('lists who the meeting is shared with', async () => {
+        listShares.mockResolvedValue([
+            { id: 'share-1', userId: 'reader-B', email: 'reader@example.com', createdAt: '2026-08-20T00:00:00Z' },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/shares');
+
+        expect(res.status).toBe(200);
+        expect(res.body.shares).toHaveLength(1);
+        expect(listShares).toHaveBeenCalledWith('m1');
     });
 });

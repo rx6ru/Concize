@@ -152,3 +152,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (lower(email));
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
+-- One meeting shared with one other account. The owner grants and revokes; a shared account
+-- gets read + chat access, nothing else (see requireMeetingOwner).
+CREATE TABLE IF NOT EXISTS meeting_shares (
+    id          text NOT NULL PRIMARY KEY,   -- app-generated uuid (crypto.randomUUID), like chats.id
+    meeting_id  text NOT NULL REFERENCES meetings (job_id) ON DELETE CASCADE,
+    shared_with text NOT NULL,               -- account granted access
+    granted_by  text NOT NULL,               -- account that granted it
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS meeting_shares_meeting_shared_with_key ON meeting_shares (meeting_id, shared_with);
+CREATE INDEX IF NOT EXISTS meeting_shares_shared_with_idx ON meeting_shares (shared_with);
+
+ALTER TABLE meeting_shares ENABLE ROW LEVEL SECURITY;
+

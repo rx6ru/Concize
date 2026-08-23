@@ -166,4 +166,51 @@ describeIfPg('lexical chunk search', () => {
 
         expect(await searchChunkText('fts-1', { text: 'karenge' })).toHaveLength(1);
     });
+
+    // Sharing (meeting_shares) grants a reader access at the HTTP layer; it never changes how
+    // retrieval is scoped. requireMeetingAccess always resolves req.meeting.ownerId to the
+    // meeting's true owner (see meeting.access.js), so this is the ownerId every retrieval
+    // lane, including this one, actually queries with — a shared reader's own id never
+    // reaches here. Nested in the same describe so it shares the live pool's lifecycle.
+    describe('sharing does not loosen retrieval scoping', () => {
+        beforeEach(async () => {
+            await query('INSERT INTO meetings (job_id, owner_id) VALUES ($1, $2)', ['fts-3', 'user-C']);
+        });
+
+        afterEach(async () => {
+            await query('DELETE FROM meetings WHERE job_id = $1', ['fts-3']);
+        });
+
+        it("a shared reader's query, scoped to the meeting's true owner, returns that meeting's chunks", async () => {
+            await insertChunk('fts-1', chunk(0, 'the roadmap review happens on Thursday'));
+
+            // A shared reader's request still carries the meeting's true owner as ownerId
+            // (requireMeetingAccess never substitutes the caller's own id), so this is what
+            // retrieval actually runs with.
+            const hits = await searchChunkText('fts-1', { text: 'roadmap', ownerId: 'user-A' });
+
+            expect(hits).toHaveLength(1);
+        });
+
+        it("never returns another meeting's chunks, even one owned by the same reader", async () => {
+            await insertChunk('fts-1', chunk(0, 'quarterly numbers are strong'));
+            await insertChunk('fts-3', chunk(0, 'quarterly numbers are strong'));
+
+            // fts-1 (owned by user-A) and fts-3 (owned by user-C) could both be shared with the
+            // same reader; each query is still scoped to one meeting's true owner at a time.
+            expect(await searchChunkText('fts-1', { text: 'quarterly', ownerId: 'user-A' })).toHaveLength(1);
+            expect(await searchChunkText('fts-1', { text: 'quarterly', ownerId: 'user-C' })).toHaveLength(0);
+            expect(await searchChunkText('fts-3', { text: 'quarterly', ownerId: 'user-A' })).toHaveLength(0);
+        });
+
+        it("a wrong implementation that scoped by the reader's own id instead of the owner's would find nothing", async () => {
+            await insertChunk('fts-1', chunk(0, 'the migration plan ships next sprint'));
+
+            // 'reader-B' is not fts-1's owner; if requireMeetingAccess ever passed the
+            // caller's id through as ownerId instead of the meeting's true owner, this is the
+            // failure mode: an authorized shared reader would retrieve nothing from their own
+            // shared meeting.
+            expect(await searchChunkText('fts-1', { text: 'migration', ownerId: 'reader-B' })).toHaveLength(0);
+        });
+    });
 });

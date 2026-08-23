@@ -5,8 +5,9 @@
 const config = require('../../core/config');
 const { createTokenVerifier } = require('./token.verifier');
 const { createAuthenticate } = require('./authenticate');
-const { createRequireMeetingAccess } = require('./meeting.access');
+const { createRequireMeetingAccess, requireMeetingOwner } = require('./meeting.access');
 const { getMeetingOwner } = require('../../meetings/meeting.repository');
+const { isSharedWith } = require('../../meetings/meeting.share.repository');
 
 // Verifier is lazy: with no JWKS URI it only throws once a Bearer token actually arrives.
 const verifyAccessToken = createTokenVerifier(config.auth.supabase);
@@ -15,6 +16,6 @@ const authenticate = createAuthenticate({
     verifyAccessToken,
 });
 
-const requireMeetingAccess = createRequireMeetingAccess({ getMeetingOwner });
+const requireMeetingAccess = createRequireMeetingAccess({ getMeetingOwner, hasSharedAccess: isSharedWith });
 
-module.exports = { authenticate, requireMeetingAccess };
+module.exports = { authenticate, requireMeetingAccess, requireMeetingOwner };
