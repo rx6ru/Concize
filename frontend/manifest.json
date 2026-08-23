@@ -35,7 +35,8 @@
       "resources": [
         "permission.html",
         "offscreen.html",
-        "chat-popup.html"
+        "chat-popup.html",
+        "audio-capture.worklet.js"
       ],
       "matches": [
         "<all_urls>"

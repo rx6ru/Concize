@@ -1,21 +1,15 @@
-const CHUNK_DURATION_MS = 10 * 60 * 1000; // 10 minutes
-const OVERLAP_MS = 30 * 1000; // 30 seconds
-
-let recorderA, recorderB;
-let dataA = [], dataB = [];
+let liveClient = null;
+let captureSource = null;
+let captureNode = null;
+let captureSink = null;
 let activeStreams = [];
 let currentMeetingId;
-let stopTimeouts = [];
-let userStopped = false;
 let audioContext = null;
-let lastChunkSent = false;
-let globalStartTimeMs = 0;
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "offscreen") {
     switch (message.type) {
       case "start-recording":
-        userStopped = false;
         currentMeetingId = message.data.meetingId;
         await startRecording(message.data.streamId);
         break;
@@ -31,8 +25,8 @@ chrome.runtime.onMessage.addListener(async (message) => {
 
 async function startRecording(streamId) {
   console.log("Starting recording process...");
-  if (recorderA || recorderB) {
-    console.warn("startRecording called while a recorder is already active.");
+  if (liveClient) {
+    console.warn("startRecording called while a client is already active.");
     return;
   }
 
@@ -41,10 +35,53 @@ async function startRecording(streamId) {
     return; // Error already handled in getMediaStream
   }
 
-  // Anchor the global meeting start time
-  globalStartTimeMs = Date.now();
+  const session = await ConcizeAuth.getSession();
+  if (!session) {
+    chrome.runtime.sendMessage({
+      type: "recording-error",
+      target: "popup",
+      error: "Not signed in.",
+    });
+    await stopAllStreams();
+    return;
+  }
 
-  runRecorderCycle('A', mediaStream);
+  liveClient = new ConcizeLiveClient.LiveClient({
+    backendUrl: CONCIZE_CONFIG.BACKEND_URL,
+    meetingId: currentMeetingId,
+    token: session.access_token,
+    onEvent: handleServerEvent,
+    onStatus: (status) => console.log("LiveClient status:", status.state, status.code ?? ""),
+  });
+  liveClient.start();
+
+  try {
+    await audioContext.audioWorklet.addModule(chrome.runtime.getURL("audio-capture.worklet.js"));
+  } catch (error) {
+    console.error("Error loading capture worklet:", error);
+    chrome.runtime.sendMessage({
+      type: "recording-error",
+      target: "popup",
+      error: `Capture setup failed: ${error.message}`,
+    });
+    liveClient.stop();
+    liveClient = null;
+    await stopAllStreams();
+    return;
+  }
+
+  captureSource = audioContext.createMediaStreamSource(mediaStream);
+  captureNode = new AudioWorkletNode(audioContext, "capture-processor");
+  captureNode.port.onmessage = (event) => {
+    liveClient.pushAudio(event.data, audioContext.sampleRate);
+  };
+  captureSource.connect(captureNode);
+
+  // Chrome only pulls a node's process() callback if it's reachable from the destination.
+  // Silent, so this doesn't add anything to what the user hears on top of getMediaStream's own tabGain->destination path.
+  captureSink = audioContext.createGain();
+  captureSink.gain.value = 0;
+  captureNode.connect(captureSink).connect(audioContext.destination);
 
   window.location.hash = "recording";
   chrome.runtime.sendMessage({
@@ -56,18 +93,21 @@ async function startRecording(streamId) {
 
 async function stopRecording() {
   console.log("Stopping recording process...");
-  userStopped = true;
 
-  if (recorderA?.state === 'recording') {
-    recorderA.stop();
-  }
-  if (recorderB?.state === 'recording') {
-    recorderB.stop();
+  if (captureNode) {
+    captureSource.disconnect();
+    captureNode.disconnect();
+    captureSink.disconnect();
+    captureNode.port.onmessage = null;
+    captureSource = null;
+    captureNode = null;
+    captureSink = null;
   }
 
-  // Clear any pending timeouts to prevent new recorders from starting
-  stopTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
-  stopTimeouts = [];
+  if (liveClient) {
+    liveClient.stop();
+    liveClient = null;
+  }
 
   await stopAllStreams();
   window.location.hash = "";
@@ -84,94 +124,42 @@ async function stopRecording() {
   console.log("Recording process stopped.");
 }
 
-function runRecorderCycle(recorderName, stream) {
-  console.log(`Starting cycle for recorder ${recorderName}`);
-  const isRecorderA = recorderName === 'A';
-
-  // 1. Create and start the recorder
-  const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-  let dataBuffer = isRecorderA ? dataA : dataB;
-  dataBuffer.length = 0; // Clear previous data
-
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) {
-      dataBuffer.push(event.data);
-    }
-  };
-
-  // Capture the moment this specific chunk begins recording
-  const chunkStartTimeMs = Date.now() - globalStartTimeMs;
-
-  recorder.onstop = () => {
-    const isLast = userStopped && !lastChunkSent;
-    if (isLast) lastChunkSent = true;
-    console.log(`Recorder ${recorderName} stopped. isLast: ${isLast}, offsetMs: ${chunkStartTimeMs}`);
-    sendAudioChunk(new Blob(dataBuffer, { type: 'audio/webm' }), isLast, chunkStartTimeMs);
-    dataBuffer.length = 0; // Clear buffer after sending
-    if (isRecorderA) recorderA = null;
-    else recorderB = null;
-  };
-
-  if (isRecorderA) recorderA = recorder;
-  else recorderB = recorder;
-
-  recorder.start();
-  console.log(`Recorder ${recorderName} started. Offset: ${chunkStartTimeMs}ms`);
-
-  // 2. Schedule the *other* recorder to start with an overlap
-  const nextRecorderName = isRecorderA ? 'B' : 'A';
-  const startNextTimeout = setTimeout(() => {
-    runRecorderCycle(nextRecorderName, stream);
-  }, CHUNK_DURATION_MS - OVERLAP_MS);
-  stopTimeouts.push(startNextTimeout);
-
-  // 3. Schedule this recorder to stop
-  const stopThisTimeout = setTimeout(() => {
-    if (recorder.state === 'recording') {
-      recorder.stop();
-    }
-  }, CHUNK_DURATION_MS);
-  stopTimeouts.push(stopThisTimeout);
-}
-
-async function sendAudioChunk(audioBlob, isLastChunk = false, chunkStartTimeMs = 0) {
-  if (audioBlob.size === 0) {
-    console.log("Skipping empty audio chunk.");
-    return;
-  }
-
-  const offsetSeconds = (chunkStartTimeMs / 1000).toFixed(3);
-  console.log(`Preparing to send audio chunk of size ${audioBlob.size}, isLast: ${isLastChunk}, offset: M${offsetSeconds}s`);
-
-  const formData = new FormData();
-  formData.append('audio', audioBlob, `recording-${new Date().toISOString()}.webm`);
-
-  try {
-    if (!currentMeetingId) {
-      throw new Error("No meeting ID found for sending chunk.");
-    }
-
-    const response = await ConcizeAuth.authedFetch(`/api/v1/meetings/${currentMeetingId}/audio`, {
-      method: 'POST',
-      headers: {
-        'x-last-chunk': isLastChunk.toString(),
-        'x-audio-offset': offsetSeconds.toString()
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to upload audio: ${response.status} ${errorText}`);
-    }
-    console.log("Audio chunk uploaded successfully.");
-  } catch (error) {
-    console.error("Error uploading audio chunk:", error);
-    chrome.runtime.sendMessage({
-      type: "recording-error",
-      target: "popup",
-      error: `Upload failed: ${error.message}`,
-    });
+/** Forwards the events worth showing live in the popup; the rest (session.ready, watermark, partials) stay internal. */
+function handleServerEvent(msg) {
+  switch (msg.type) {
+    case "final":
+    case "revision":
+      chrome.runtime.sendMessage({
+        type: "live-turn",
+        target: "popup",
+        turn: {
+          turnId: msg.turnId,
+          text: msg.text,
+          t0: msg.t0,
+          t1: msg.t1,
+          speaker: msg.speaker,
+          overlap: msg.overlap,
+        },
+      });
+      break;
+    case "lane.status":
+      chrome.runtime.sendMessage({
+        type: "lane-status",
+        target: "popup",
+        lane: msg.lane,
+        status: msg.status,
+        reason: msg.reason,
+      });
+      break;
+    case "error":
+      if (msg.fatal) {
+        chrome.runtime.sendMessage({
+          type: "recording-error",
+          target: "popup",
+          error: `Realtime session error: ${msg.code}`,
+        });
+      }
+      break;
   }
 }
 

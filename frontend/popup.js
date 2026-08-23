@@ -29,6 +29,9 @@ const authMessageDiv = document.getElementById("authMessage");
 
 let fullTranscriptionText = '';
 
+// Live turns arrive by turnId; keeping the element per id lets a revision correct one in place.
+const liveTurnElements = new Map();
+
 /**
  * Toggles the popup between the login form and the app based on auth state.
  * When signed in, also kicks off the recording-state check.
@@ -221,6 +224,7 @@ startButton.addEventListener("click", async () => {
         const meetingId = startMeetingData.meetingId;
         console.log(`Meeting session started with meetingId: ${meetingId}`);
         await chrome.storage.local.set({ meetingId });
+        resetLiveTranscript();
 
         const [tab] = await chrome.tabs.query({
             active: true,
@@ -373,10 +377,56 @@ function clock(ms) {
 }
 
 /**
+ * Renders or updates one turn as it comes off the live socket. A revision reuses the element
+ * already on screen for its turnId instead of duplicating it.
+ */
+function showLiveTurn(turn) {
+    transcriptionDisplayArea.classList.remove("hidden");
+
+    let el = liveTurnElements.get(turn.turnId);
+    if (!el) {
+        el = document.createElement("div");
+
+        const speaker = document.createElement("span");
+        speaker.className = "turn-speaker unnamed";
+
+        const body = document.createElement("div");
+        const time = document.createElement("span");
+        time.className = "turn-time";
+        const text = document.createElement("span");
+        text.className = "turn-text";
+        body.append(time, text);
+
+        el.append(speaker, body);
+        transcriptTurns.append(el);
+        liveTurnElements.set(turn.turnId, el);
+    }
+
+    el.className = turn.overlap ? "turn contested" : "turn";
+    el.querySelector(".turn-speaker").textContent = turn.speaker || "unattributed";
+    el.querySelector(".turn-time").textContent = `${clock(turn.t0)}  `;
+    el.querySelector(".turn-text").textContent = turn.text;
+}
+
+/** Clears the live view for a fresh recording. A previously loaded meeting's turns are not this one's. */
+function resetLiveTranscript() {
+    liveTurnElements.clear();
+    transcriptTurns.textContent = "";
+    transcriptionDisplayArea.classList.add("hidden");
+    downloadButtonWrapper.classList.add("hidden");
+}
+
+/** Surfaces a lane going up or down as a status message; 'down' reads as an error. */
+function showLaneStatus({ lane, status, reason }) {
+    showStatusMessage(reason ? `${lane} lane ${status}: ${reason}` : `${lane} lane ${status}`, status === "down");
+}
+
+/**
  * Renders speaker-attributed turns. Clicking a speaker names them, which is the only way a
  * name can ever be known: diarization can tell two voices apart but not whose they are.
  */
 function renderTurns(utterances, meetingId) {
+    liveTurnElements.clear();
     transcriptTurns.textContent = "";
 
     for (const u of utterances) {
@@ -537,6 +587,12 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "recording-stopped":
                 updateUIForRecording(false);
+                break;
+            case "live-turn":
+                showLiveTurn(message.turn);
+                break;
+            case "lane-status":
+                showLaneStatus(message);
                 break;
         }
     }
