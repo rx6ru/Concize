@@ -30,7 +30,40 @@
         return { apikey: SB_KEY, 'Content-Type': 'application/json' };
     }
 
+    // Two possible issuers, decided by whichever the backend is actually running.
+    //
+    // A deployment with AUTH_MODE=hs256 issues its own tokens and has no Supabase project at all;
+    // one with AUTH_MODE=jwks delegates. The extension cannot know which without asking, and it
+    // used to always ask Supabase, so on an hs256 backend signing in failed with a DNS error
+    // against a project that does not exist.
+    //
+    // The backend's own endpoint is tried first because it is the one that can answer for itself.
+    // Its absence is a 404, which is a clean signal to fall back rather than an error worth
+    // showing anyone.
+    async function postJson(url, body) {
+        const res = await fetch(url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        return { res, data: await res.json().catch(() => ({})) };
+    }
+
+    /** Local tokens carry no refresh token, so the session records only what it really has. */
+    async function setLocalSession(data) {
+        await setSession({ access_token: data.token, refresh_token: null, expires_at: null });
+    }
+
+    // Callers should not have to know which issuer answered, so the local reply is returned in the
+    // shape the Supabase one already had.
+    const asSession = (data) => ({ ...data, access_token: data.token });
+
     async function signUp(email, password) {
+        const local = await postJson(`${CONCIZE_CONFIG.BACKEND_URL}/api/v1/auth/signup`, { email, password });
+        if (local.res.status !== 404) {
+            if (!local.res.ok) throw new Error(local.data.error || 'Sign-up failed');
+            await setLocalSession(local.data);
+            return asSession(local.data);
+        }
+
         const res = await fetch(`${SB_URL}/auth/v1/signup`, {
             method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password }),
         });
@@ -42,6 +75,13 @@
     }
 
     async function signIn(email, password) {
+        const local = await postJson(`${CONCIZE_CONFIG.BACKEND_URL}/api/v1/auth/login`, { email, password });
+        if (local.res.status !== 404) {
+            if (!local.res.ok) throw new Error(local.data.error || 'Sign-in failed');
+            await setLocalSession(local.data);
+            return asSession(local.data);
+        }
+
         const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, {
             method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password }),
         });

@@ -81,6 +81,9 @@ async function handleSignUp() {
         signUpButton.disabled = true;
         const data = await ConcizeAuth.signUp(email, password);
         if (data.access_token) {
+            if (!await ConcizeAuth.hasBackendAccess() && !await ConcizeAuth.requestBackendAccess()) {
+                return showAuthMessage("Concize needs access to your backend to work.");
+            }
             await applyAuthState();
         } else {
             // Email confirmation required.
