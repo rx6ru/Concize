@@ -25,6 +25,11 @@ const MIN_LENGTH = 8;
 // scrypt cost is paid on the server, so an attacker must not choose how much of it we spend.
 const MAX_LENGTH = 1024;
 
+// A structurally valid stored hash that verifies against no real password.
+// Lets a failed lookup (unknown email) pay the same scrypt cost as a failed password check, so
+// the two are not distinguishable by response time. See auth.routes.js login.
+const DUMMY_HASH = `${SCHEME}$${'00'.repeat(SALT_BYTES)}$${'00'.repeat(KEY_BYTES)}`;
+
 async function derive(password, salt) {
     return scrypt(password, salt, KEY_BYTES, { N: COST, r: BLOCK_SIZE, p: PARALLELISM, maxmem: 128 * COST * BLOCK_SIZE * 2 });
 }
@@ -65,4 +70,4 @@ async function verifyPassword(password, stored) {
     return crypto.timingSafeEqual(actual, expected);
 }
 
-module.exports = { hashPassword, verifyPassword, MIN_LENGTH, MAX_LENGTH };
+module.exports = { hashPassword, verifyPassword, MIN_LENGTH, MAX_LENGTH, DUMMY_HASH };

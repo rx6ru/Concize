@@ -4,6 +4,7 @@
 // proving it is gone.
 
 const { createAuthenticate } = require('../src/http/middleware/authenticate');
+const { runWithContext, getContext } = require('../src/core/request.context');
 
 // Minimal Express req/res/next doubles.
 function mockRes() {
@@ -96,5 +97,26 @@ describe('createAuthenticate', () => {
         const { nexted } = await run(make(), req);
         expect(nexted).toBe(true);
         expect(req.user.id).toBe('user-1');
+    });
+
+    it('stamps the authenticated user id onto the per-request context', async () => {
+        verifyAccessToken.mockResolvedValue({ sub: 'user-42' });
+        const req = { method: 'POST', headers: { authorization: 'Bearer good' } };
+
+        let userIdInContext;
+        await runWithContext({}, async () => {
+            await run(make(), req);
+            userIdInContext = getContext().userId;
+        });
+
+        expect(userIdInContext).toBe('user-42');
+    });
+
+    it('leaves the context untouched when there is none to stamp', async () => {
+        verifyAccessToken.mockResolvedValue({ sub: 'user-43' });
+        const req = { method: 'POST', headers: { authorization: 'Bearer good' } };
+        const { nexted } = await run(make(), req);
+        expect(nexted).toBe(true);
+        expect(getContext()).toBeUndefined();
     });
 });

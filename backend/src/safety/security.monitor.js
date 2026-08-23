@@ -4,10 +4,27 @@
  * Security Monitor - Tracks violations and provides operational visibility
  */
 
+const { getContext } = require('../core/request.context');
+
 // In-memory violation tracking (could be replaced with Redis for production)
 const violationStore = new Map();
 
 const VIOLATION_THRESHOLD = 10; // Block after this many violations
+
+// Callers (chat.controller.js) pass a meeting id as `identifier`. Keying on that alone means a
+// meeting's owner and any shared reader of it share one counter, so one of them tripping it
+// blocks the other from that meeting too.
+// Keyed on the authenticated caller instead, read from the per-request context that
+// authenticate.js stamps with the caller's user id. Global per user rather than per
+// (user, meeting) pair: a user who racks up violations in one meeting is blocked everywhere for
+// them, not just in that one meeting, and can't reset the count by moving to another meeting they
+// can reach.
+// Falls back to the raw identifier when there is no request context, e.g. a direct call with no
+// authenticated caller.
+function keyFor(identifier) {
+    const userId = getContext()?.userId;
+    return userId ? `violations:user:${userId}` : `violations:${identifier}`;
+}
 
 /**
  * Records a security violation for a given context
@@ -16,7 +33,7 @@ const VIOLATION_THRESHOLD = 10; // Block after this many violations
  * @param {Object} details - Additional details for logging
  */
 function recordViolation(identifier, type, details = {}) {
-    const key = `violations:${identifier}`;
+    const key = keyFor(identifier);
     const now = Date.now();
 
     if (!violationStore.has(key)) {
@@ -50,7 +67,7 @@ function recordViolation(identifier, type, details = {}) {
  * @returns {Object} { blocked: boolean, violationCount: number }
  */
 function checkBlocked(identifier) {
-    const key = `violations:${identifier}`;
+    const key = keyFor(identifier);
     const violations = violationStore.get(key) || [];
 
     const now = Date.now();
@@ -67,7 +84,7 @@ function checkBlocked(identifier) {
  * Clears violations for an identifier (for testing or admin actions)
  */
 function clearViolations(identifier) {
-    const key = `violations:${identifier}`;
+    const key = keyFor(identifier);
     violationStore.delete(key);
 }
 

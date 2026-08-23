@@ -5,6 +5,7 @@
 // requireMeetingAccess; this middleware only answers "who is the caller?".
 
 const { createLogger } = require('../../core/logger');
+const { getContext } = require('../../core/request.context');
 
 const logger = createLogger('authenticate');
 
@@ -29,6 +30,10 @@ function createAuthenticate({ verifyAccessToken }) {
         try {
             const claims = await verifyAccessToken(bearer);
             req.user = { id: claims.sub, email: claims.email, claims };
+            // Stamps the caller onto the per-request context too, so downstream modules (e.g.
+            // safety/security.monitor.js) can key per-user state without req threaded through them.
+            const ctx = getContext();
+            if (ctx) ctx.userId = claims.sub;
             return next();
         } catch (err) {
             logger.warn('JWT verification failed', { error: err.message });
