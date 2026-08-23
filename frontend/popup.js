@@ -324,6 +324,11 @@ async function loadMeetings() {
 
         meetingList.textContent = "";
         for (const m of meetings) {
+            // A row is a wrapper, not a button, because the delete control sits inside it and a
+            // button nested in a button is invalid and does not reliably receive its own clicks.
+            const wrapper = document.createElement("div");
+            wrapper.className = "meeting-row";
+
             const row = document.createElement("button");
             row.type = "button";
             row.className = "meeting";
@@ -346,12 +351,70 @@ async function loadMeetings() {
             }
 
             row.addEventListener("click", () => openMeeting(m.meetingId));
-            meetingList.append(row);
+            wrapper.append(row);
+
+            // Nothing to delete safely while the meeting is still being written to.
+            if (m.status === "completed" || m.status === "completed_with_errors") {
+                wrapper.append(deleteControl(m));
+            }
+
+            meetingList.append(wrapper);
         }
         meetingListArea.classList.remove("hidden");
     } catch (err) {
         console.error("Could not list meetings:", err);
     }
+}
+
+/**
+ * The delete control for one meeting row. Deleting removes the transcript and its vectors and
+ * cannot be undone, so the first click only arms the button; the second one does it. An inline
+ * confirm rather than window.confirm, which in an extension popup can dismiss the popup itself.
+ */
+function deleteControl(meeting) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "meeting-delete";
+    button.textContent = "Delete";
+    button.title = "Delete this meeting";
+
+    let armed = false;
+    let disarm = null;
+
+    button.addEventListener("click", async () => {
+        if (!armed) {
+            armed = true;
+            button.textContent = "Sure?";
+            button.classList.add("armed");
+            // Re-arming is deliberate friction, so a stray click cannot delete on the way past.
+            disarm = setTimeout(() => {
+                armed = false;
+                button.textContent = "Delete";
+                button.classList.remove("armed");
+            }, 4000);
+            return;
+        }
+
+        clearTimeout(disarm);
+        button.disabled = true;
+        button.textContent = "Deleting";
+        try {
+            const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meeting.meetingId}`, {
+                method: "DELETE",
+            });
+            // 404 means it is already gone, which is the outcome the user asked for.
+            if (!res.ok && res.status !== 404) throw new Error(`server returned ${res.status}`);
+            await loadMeetings();
+        } catch (err) {
+            console.error("Could not delete meeting:", err);
+            showStatusMessage("Could not delete that meeting. Nothing was removed.", true);
+            button.disabled = false;
+            button.textContent = "Delete";
+            button.classList.remove("armed");
+        }
+    });
+
+    return button;
 }
 
 /** Shows one meeting's transcript, whether or not it is the one being recorded. */

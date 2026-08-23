@@ -386,23 +386,56 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+/* The row owns the divider now, because the delete control sits beside the meeting button and
+   both have to fall inside the same separated band. */
+.meeting-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border-top: 1px solid var(--hairline);
+}
+
+.meeting-row:first-child {
+    border-top: none;
+}
+
 .meeting {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 7px 0;
     background: none;
     border: none;
-    border-top: 1px solid var(--hairline);
     text-align: left;
     cursor: pointer;
     color: var(--body);
     font-size: 13px;
 }
 
-.meeting:first-child {
-    border-top: none;
+/* Quiet until hovered: destructive, and not what anyone opened this list to do. */
+.meeting-delete {
+    flex: none;
+    padding: 7px 0 7px 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted-soft);
+    font-size: 11px;
+}
+
+.meeting-row:hover .meeting-delete {
+    color: var(--body);
+}
+
+.meeting-delete.armed {
+    color: var(--error);
+}
+
+.meeting-delete:disabled {
+    color: var(--muted-soft);
+    cursor: default;
 }
 
 .meeting:hover .meeting-title {
