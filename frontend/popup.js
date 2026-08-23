@@ -790,6 +790,11 @@ async function loadTranscript(meetingId, generation) {
     let after = null;
 
     for (let page = 0; page < TRANSCRIPT_MAX_PAGES; page += 1) {
+        // Checked per page, not only at the end: a user who switches meetings mid-fetch would
+        // otherwise leave this loop firing up to forty more authenticated requests for a meeting
+        // nobody is looking at, against per-user rate limits it shares with everything else.
+        if (generation !== undefined && generation !== openGeneration) return false;
+
         const url = `/api/v1/meetings/${meetingId}/utterances?limit=${TRANSCRIPT_PAGE}`
             + (after === null ? "" : `&after=${after}`);
         const res = await ConcizeAuth.authedFetch(url, {

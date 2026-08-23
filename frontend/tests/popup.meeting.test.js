@@ -153,6 +153,33 @@ test('the chat window is left pointing at the meeting actually on screen', async
     assert.strictEqual(stored.meetingTitle, 'Meeting B');
 });
 
+test('abandons a long fetch when the user opens another meeting', async () => {
+    const popup = install();
+
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let longRequests = 0;
+    fetchImpl = async (path) => {
+        if (path.includes('/LONG/utterances')) {
+            longRequests += 1;
+            await wait(15);
+            // Always another page, so only the generation guard can stop this.
+            const rows = Array.from({ length: 500 }, (_, i) => ({ turnId: String(i), seq: i, text: 'x' }));
+            return { ok: true, status: 200, json: async () => ({ utterances: rows, nextCursor: longRequests * 500 }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ summary: null, shares: [], utterances: [], nextCursor: null }) };
+    };
+
+    const long = popup.openMeeting('LONG');
+    await wait(20);
+    await popup.openMeeting('OTHER');
+    const seenWhenSwitched = longRequests;
+    await long;
+    await wait(60);
+
+    assert.ok(longRequests <= seenWhenSwitched + 1,
+        `kept paging after the user left: ${seenWhenSwitched} -> ${longRequests}`);
+});
+
 test('a failed delete still needs two clicks the next time', async () => {
     const popup = install();
     fetchImpl = async () => { throw new Error('network down'); };
