@@ -1,5 +1,6 @@
 # Torch is intentionally not pinned here. Install the build that matches your CUDA version
-# first (see pytorch.org), then this file.
+# first (see pytorch.org), then this file. torchaudio must come from the same index/build as
+# torch (funasr.utils.load_utils imports it unconditionally).
 funasr==1.4.1
 websockets>=15.0
 numpy>=1.24
