@@ -7,6 +7,7 @@
 //   429    : the key is fine, its quota is not. Rest it and try again later.
 
 const { createLogger } = require('../../core/logger');
+const { getRetryAfterMs } = require('./resilient.call');
 const logger = createLogger('keyRotation');
 
 const DEFAULT_COOLDOWN_MS = 60 * 1000;
@@ -83,6 +84,33 @@ class BaseKeyRotationService {
     /** A key that works again should not stay rested. */
     reportSuccess(key) {
         this.restingUntil.delete(key);
+    }
+
+    /**
+     * Patches a client's `chat.completions.create` so a call through it reports back on its own.
+     * getClient() hands back a bare SDK client with no way for a caller to say which key it used,
+     * so the client has to say it for them.
+     * A no-op on a client that isn't shaped this way, so it's safe to call unconditionally.
+     * @param {object} client an SDK client, e.g. `new Groq(...)` or `new OpenAI(...)`
+     * @param {string} key the key `client` was built with
+     * @returns {object} the same client, patched in place
+     */
+    wrapClient(client, key) {
+        const create = client && client.chat && client.chat.completions && client.chat.completions.create;
+        if (typeof create !== 'function') return client;
+
+        const bound = create.bind(client.chat.completions);
+        client.chat.completions.create = (...args) => {
+            const result = bound(...args);
+            if (result && typeof result.then === 'function') {
+                result.then(
+                    () => this.reportSuccess(key),
+                    (err) => this.reportFailure(key, err && (err.status ?? err.code), { retryAfterMs: getRetryAfterMs(err) }),
+                );
+            }
+            return result;
+        };
+        return client;
     }
 
     health() {

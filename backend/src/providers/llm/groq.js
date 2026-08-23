@@ -17,7 +17,7 @@ class GroqService extends BaseKeyRotationService {
             throw new Error('No valid Groq API key available');
         }
         try {
-            return new Groq({ apiKey: key });
+            return this.wrapClient(new Groq({ apiKey: key }), key);
         } catch (error) {
             throw new Error(`Failed to create Groq client: ${error.message}`);
         }

@@ -22,6 +22,7 @@ KB/
 
 __pycache__/
 *.pyc
+.venv/
 
 experiments/
 backend/experiments/

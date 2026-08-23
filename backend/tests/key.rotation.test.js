@@ -105,3 +105,73 @@ describe('recovery', () => {
         expect(r.health()).toMatchObject({ total: 3, dead: 1, resting: 1, usable: 1 });
     });
 });
+
+// getClient() hands back a bare SDK client; a caller that gets a 401/429 has no way to say
+// which key it came from. wrapClient() patches the client so it reports back on its own.
+describe('wrapClient', () => {
+    // wrapClient() overwrites chat.completions.create with its own reporting wrapper, so the
+    // mock used to control what the call resolves/rejects with has to be grabbed beforehand.
+    const fakeClient = () => {
+        const create = jest.fn();
+        return { raw: { chat: { completions: { create } } }, create };
+    };
+
+    it('reports a 401 from the wrapped call as a permanent failure', async () => {
+        const r = make(['a', 'b']);
+        const { raw, create } = fakeClient();
+        const client = r.wrapClient(raw, 'a');
+        create.mockRejectedValueOnce(Object.assign(new Error('nope'), { status: 401 }));
+
+        await expect(client.chat.completions.create()).rejects.toThrow();
+        await Promise.resolve(); // let the wrapper's .then() run
+
+        expect([r.getNextKey(), r.getNextKey()]).toEqual(['b', 'b']);
+    });
+
+    it('rests the key on a 429 from the wrapped call, honouring Retry-After', async () => {
+        let t = 1000;
+        const r = make(['a', 'b'], () => t);
+        const { raw, create } = fakeClient();
+        const client = r.wrapClient(raw, 'a');
+        create.mockRejectedValueOnce(
+            Object.assign(new Error('slow down'), { status: 429, headers: { 'retry-after': '120' } })
+        );
+
+        await expect(client.chat.completions.create()).rejects.toThrow();
+        await Promise.resolve();
+
+        t += 61 * 1000; // past the default cooldown, not the 120s the header asked for
+        expect([r.getNextKey(), r.getNextKey()]).toEqual(['b', 'b']);
+    });
+
+    it('clears the cooldown on a success from the wrapped call', async () => {
+        const r = make(['a', 'b']);
+        const { raw, create } = fakeClient();
+        const client = r.wrapClient(raw, 'a');
+        r.reportFailure('a', 429);
+
+        create.mockResolvedValueOnce({ ok: true });
+        await client.chat.completions.create();
+        await Promise.resolve();
+
+        expect([r.getNextKey(), r.getNextKey()]).toEqual(['a', 'b']);
+    });
+
+    it('leaves a client without a chat.completions.create untouched', () => {
+        const r = make(['a']);
+        const plain = { foo: 'bar' };
+        expect(r.wrapClient(plain, 'a')).toBe(plain);
+    });
+
+    it('ignores a rejection with no 401/403/429 status', async () => {
+        const r = make(['a', 'b']);
+        const { raw, create } = fakeClient();
+        const client = r.wrapClient(raw, 'a');
+        create.mockRejectedValueOnce(Object.assign(new Error('down'), { status: 500 }));
+
+        await expect(client.chat.completions.create()).rejects.toThrow();
+        await Promise.resolve();
+
+        expect([r.getNextKey(), r.getNextKey()]).toEqual(['a', 'b']);
+    });
+});

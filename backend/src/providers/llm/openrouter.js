@@ -22,10 +22,10 @@ class OpenRouterService extends BaseKeyRotationService {
             throw new Error('No valid OpenRouter API key available');
         }
         try {
-            return new OpenAI({
+            return this.wrapClient(new OpenAI({
                 apiKey: key,
                 baseURL: 'https://openrouter.ai/api/v1',
-            });
+            }), key);
         } catch (error) {
             throw new Error(`Failed to create OpenRouter client: ${error.message}`);
         }

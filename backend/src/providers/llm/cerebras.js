@@ -19,10 +19,10 @@ class CerebrasService extends BaseKeyRotationService {
             throw new Error('No valid Cerebras API key available');
         }
         try {
-            return new Groq({
+            return this.wrapClient(new Groq({
                 apiKey: key,
                 baseURL: 'https://api.cerebras.ai/v1',
-            });
+            }), key);
         } catch (error) {
             throw new Error(`Failed to create Cerebras client: ${error.message}`);
         }
