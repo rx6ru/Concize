@@ -7,6 +7,9 @@
     <!-- Using marked.js library for proper Markdown rendering -->
     <!-- Reference the local file instead of the CDN to avoid CSP errors -->
     <script src="marked.min.js"></script>
+    <!-- Configures marked's renderer to escape raw HTML and reject unsafe link/image URLs before any output reaches innerHTML -->
+    <script src="markdown.sanitize.js"></script>
+    <script src="chat.errors.js"></script>
     <link rel="stylesheet" href="chat-popup.css">
 </head>
 <body>

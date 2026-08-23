@@ -101,7 +101,7 @@ class ChatInterface {
 
         if (type === 'bot') {
             const contentDiv = document.createElement('div');
-            contentDiv.innerHTML = marked.parse(content);
+            contentDiv.innerHTML = ConcizeMarkdown.renderSafe(content);
             bubbleDiv.appendChild(contentDiv);
 
             if (!content.includes('Sorry, I encountered an error.')) {
@@ -197,12 +197,14 @@ class ChatInterface {
             // Pre-stream HTTP errors (429, 503, 500).
             if (!response.ok) {
                 let errorMessage = `Server Error (${response.status})`;
+                let errorCode = null;
                 try {
                     const errorData = await response.json();
                     if (typeof errorData.error === 'string') {
                         errorMessage = errorData.error;
                     } else if (errorData.error && errorData.error.message) {
                         errorMessage = errorData.error.message;
+                        errorCode = errorData.error.code || null;
                     }
                 } catch (parseErr) {
                     console.warn("Failed to parse error JSON:", parseErr);
@@ -210,8 +212,9 @@ class ChatInterface {
 
                 indicator.remove();
 
+                const errorLabel = ConcizeChatErrors.labelForCode(errorCode);
                 bubbleDiv.classList.add('error-bubble');
-                bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p>${this.escapeHtml(errorMessage)}</p></div>`;
+                bubbleDiv.innerHTML = `${errorIconSvg}<div class="message-content"><p><b>${errorLabel}:</b> ${this.escapeHtml(errorMessage)}</p></div>`;
 
                 // Throwing here stops further execution and is caught by the outer catch block
                 throw new Error(errorMessage);
@@ -253,14 +256,15 @@ class ChatInterface {
                                 // Handle Error Data (Subsequent line to event: error)
                                 if (isErrorEvent) {
                                     const errMsg = jsonData.message || "Stream interrupted.";
+                                    const errLabel = ConcizeChatErrors.labelForCode(jsonData.code, 'Connection Lost');
                                     if (!indicatorRemoved) { indicator.remove(); indicatorRemoved = true; }
 
                                     const errorHtml = `<div class="mid-stream-error">
                                         ${errorIconSvg}
-                                        <div class="message-content"><b>Connection Lost:</b> ${this.escapeHtml(errMsg)}</div>
+                                        <div class="message-content"><b>${errLabel}:</b> ${this.escapeHtml(errMsg)}</div>
                                     </div>`;
 
-                                    bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
+                                    bubbleDiv.innerHTML = ConcizeMarkdown.renderSafe(accumulatedText) + errorHtml;
                                     isErrorEvent = false;
                                     return;
                                 }
@@ -275,7 +279,7 @@ class ChatInterface {
                                         indicatorRemoved = true;
                                     }
                                     accumulatedText = jsonData.replace || accumulatedText;
-                                    bubbleDiv.innerHTML = marked.parse(accumulatedText);
+                                    bubbleDiv.innerHTML = ConcizeMarkdown.renderSafe(accumulatedText);
                                     this.scrollToBottom();
                                 } else if (jsonData.text) {
                                     if (!indicatorRemoved) {
@@ -283,7 +287,7 @@ class ChatInterface {
                                         indicatorRemoved = true;
                                     }
                                     accumulatedText += jsonData.text;
-                                    bubbleDiv.innerHTML = marked.parse(accumulatedText);
+                                    bubbleDiv.innerHTML = ConcizeMarkdown.renderSafe(accumulatedText);
                                     this.scrollToBottom();
                                 }
                             } catch (e) {
@@ -299,7 +303,7 @@ class ChatInterface {
                     ${errorIconSvg}
                     <div class="message-content"><b>Network Interrupted</b></div>
                 </div>`;
-                bubbleDiv.innerHTML = marked.parse(accumulatedText) + errorHtml;
+                bubbleDiv.innerHTML = ConcizeMarkdown.renderSafe(accumulatedText) + errorHtml;
                 throw streamError;
             }
 
