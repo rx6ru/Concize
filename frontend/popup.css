@@ -385,3 +385,54 @@ body {
     color: var(--muted-soft);
     font-variant-numeric: tabular-nums;
 }
+
+.meeting {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 0;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--hairline);
+    text-align: left;
+    cursor: pointer;
+    color: var(--body);
+    font-size: 13px;
+}
+
+.meeting:first-child {
+    border-top: none;
+}
+
+.meeting:hover .meeting-title {
+    text-decoration: underline;
+}
+
+.meeting-title {
+    flex: 1;
+    color: var(--ink);
+}
+
+/* A meeting with no summary yet has no title, so it is named by when it happened. */
+.meeting-title.untitled {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.meeting-date {
+    font-size: 11px;
+    color: var(--muted-soft);
+    white-space: nowrap;
+}
+
+.meeting-status {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted-soft);
+}
+
+.meeting-status.recording {
+    color: var(--error);
+}

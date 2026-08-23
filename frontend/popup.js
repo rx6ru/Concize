@@ -12,6 +12,8 @@ const transcriptTurns = document.getElementById("transcriptTurns");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
 const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
 const openChatButton = document.getElementById("openChat");
+const meetingListArea = document.getElementById("meetingListArea");
+const meetingList = document.getElementById("meetingList");
 
 // --- Auth elements ---
 const authSection = document.getElementById("authSection");
@@ -38,6 +40,7 @@ async function applyAuthState() {
     accountBar.classList.toggle("hidden", !signedIn);
     if (signedIn) {
         await checkRecordingState();
+        await loadMeetings();
     }
 }
 
@@ -281,6 +284,87 @@ stopButton.addEventListener("click", () => {
     });
 });
 
+
+
+/** A date a person can place: today and yesterday by name, older ones by date. */
+function meetingDate(iso) {
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return "";
+    const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+    const time = then.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (days === 0) return time;
+    if (days === 1) return `Yesterday ${time}`;
+    return then.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/**
+ * Lists the caller's meetings, most recent first. Without this the extension can only ever show
+ * the recording in progress, and every meeting becomes unreachable the moment the next one starts.
+ */
+async function loadMeetings() {
+    try {
+        const res = await ConcizeAuth.authedFetch("/api/v1/meetings?limit=50", {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) return;
+
+        const { meetings = [] } = await res.json();
+        if (!meetings.length) {
+            meetingListArea.classList.add("hidden");
+            return;
+        }
+
+        meetingList.textContent = "";
+        for (const m of meetings) {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "meeting";
+
+            const title = document.createElement("span");
+            title.className = m.title ? "meeting-title" : "meeting-title untitled";
+            title.textContent = m.title || "Untitled meeting";
+
+            const date = document.createElement("span");
+            date.className = "meeting-date";
+            date.textContent = meetingDate(m.createdAt);
+
+            row.append(title, date);
+
+            if (m.status && m.status !== "completed") {
+                const status = document.createElement("span");
+                status.className = m.status === "recording" ? "meeting-status recording" : "meeting-status";
+                status.textContent = m.status;
+                row.append(status);
+            }
+
+            row.addEventListener("click", () => openMeeting(m.meetingId));
+            meetingList.append(row);
+        }
+        meetingListArea.classList.remove("hidden");
+    } catch (err) {
+        console.error("Could not list meetings:", err);
+    }
+}
+
+/** Shows one meeting's transcript, whether or not it is the one being recorded. */
+async function openMeeting(meetingId) {
+    hideStatusMessage();
+    showStatusMessage("Loading transcript...");
+    try {
+        if (await loadTranscript(meetingId)) {
+            transcriptionDisplayArea.classList.remove("hidden");
+            downloadButtonWrapper.classList.remove("hidden");
+            hideStatusMessage();
+        } else {
+            transcriptTurns.textContent = "Nothing transcribed for this meeting yet.";
+            transcriptionDisplayArea.classList.remove("hidden");
+            downloadButtonWrapper.classList.add("hidden");
+        }
+    } catch (err) {
+        showStatusMessage(`Could not load that meeting: ${err.message}`, true);
+    }
+}
 
 /** mm:ss for a millisecond offset into the meeting. */
 function clock(ms) {
