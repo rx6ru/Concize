@@ -228,7 +228,12 @@
         "tokensPerDay": null,
         "maxRequestTokens": null
       },
-      "models": {}
+      "models": {
+        "stealth/ox-alpha": {
+          "_note": "Free tier, cost 0 confirmed in a response body. context_length from GET /api/v1/models.",
+          "maxRequestTokens": 1048576
+        }
+      }
     }
   }
 }
