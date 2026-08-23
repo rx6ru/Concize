@@ -1,0 +1,108 @@
+# Production stack: api, summary-worker, speaker-service, postgres, qdrant, rabbitmq.
+#
+# api and summary-worker are the SAME image (backend/Dockerfile: "one image, two entrypoints"),
+# built once via the x-backend anchor and run with different `command:`.
+#
+# Copy .env.example to .env and fill it in before `docker compose -f docker-compose.prod.yml up -d`.
+# Postgres/RabbitMQ credentials appear twice by necessity: once as the bootstrap vars their own
+# container images read (POSTGRES_PASSWORD, RABBITMQ_USER/PASSWORD), once embedded in the DSN
+# the backend reads (POSTGRES_URL, CLOUDAMQP_URL) — keep both sides of each pair in sync in .env.
+#
+# Schema is not applied automatically: run `psql "$POSTGRES_URL" -f backend/src/infra/schema.sql`
+# once postgres is up (see the runbook). Qdrant collections ARE created automatically, by the api
+# container on its own startup (transcript/pipeline.wiring.js ensureReady()).
+
+x-backend: &backend
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  image: concize-backend:prod
+  env_file: .env
+  depends_on:
+    postgres:
+      condition: service_healthy
+    qdrant:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-concize}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    # Same overlayfs cookie-permission fix as docker-compose.dev.yml: the image writes
+    # .erlang.cookie with permissions Erlang then refuses to read on some overlayfs setups.
+    entrypoint: >
+      sh -c "umask 077;
+             echo localcookie > /var/lib/rabbitmq/.erlang.cookie;
+             chmod 400 /var/lib/rabbitmq/.erlang.cookie;
+             chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie;
+             exec docker-entrypoint.sh rabbitmq-server"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  speaker-service:
+    build:
+      context: ./speaker-service
+      dockerfile: Dockerfile
+    image: concize-speaker:prod
+    ports:
+      - "${SPEAKER_PORT:-8765}:8765"
+    restart: unless-stopped
+
+  api:
+    <<: *backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      speaker-service:
+        condition: service_started
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+
+  summary-worker:
+    <<: *backend
+    command: ["npm", "run", "worker:summary"]
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  rabbitmq-data:
