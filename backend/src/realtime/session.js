@@ -19,6 +19,9 @@ function createSession({
     onEvent,
     onFrame = null,          // every audio frame, used to spool the recording
     onLaneStatus = () => {},
+    // How long close() keeps accepting lane events after asking the lanes to flush. Injectable so
+    // tests do not wait out a real one.
+    flushGraceMs = 1500,
 }) {
     if (!meetingId) throw new Error('meetingId is required');
     if (!ownerId) throw new Error('ownerId is required');
@@ -125,10 +128,22 @@ function createSession({
 
         async close() {
             if (state.closed) return;
-            state.closed = true;
+
+            // flush asks each lane to finalise what it is still holding, and the finalised events
+            // come back over the socket a moment later. Closing the gate first discarded them, so
+            // every meeting that ended mid-phrase lost its last utterance.
             for (const [name, entry] of lanes) {
                 try {
                     entry.lane.flush?.();
+                } catch (err) {
+                    logger.warn('Lane flush failed', { meetingId, lane: name, error: err.message });
+                }
+            }
+            if (flushGraceMs > 0) await new Promise((resolve) => setTimeout(resolve, flushGraceMs));
+
+            state.closed = true;
+            for (const [name, entry] of lanes) {
+                try {
                     entry.lane.close?.();
                 } catch (err) {
                     logger.warn('Lane close failed', { meetingId, lane: name, error: err.message });

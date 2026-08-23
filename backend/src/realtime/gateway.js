@@ -11,6 +11,7 @@ const { createFusion } = require('./fusion');
 const logger = createLogger('gateway');
 
 const CLOSE = {
+    NORMAL: 1000,
     UNAUTHORIZED: 4401,
     NOT_FOUND: 4404,
     BAD_REQUEST: 4400,
@@ -51,6 +52,8 @@ function attachGateway({
     onFrame = null,
     // How far the stored transcript already reaches. A reconnecting client restarts its sequence at 0, so without this a resumed meeting rewrites its own timeline from the beginning.
     getWatermarkMs = async () => 0,
+    // Handed to the session: how long it keeps accepting lane events after asking them to flush.
+    flushGraceMs = undefined,
 }) {
     const wss = new WebSocketServer({ noServer: true });
     const sessions = new Map();
@@ -124,6 +127,7 @@ function attachGateway({
             meetingId,
             ownerId,
             startOffsetMs,
+            ...(flushGraceMs === undefined ? {} : { flushGraceMs }),
             onFrame: onFrame ? (frame) => onFrame(meetingId, frame) : null,
             onEvent: (rawEvent) => {
                 // Lane timestamps are relative to the lane's own stream, which restarts on reconnect. Shifting here, before fusion, keeps every downstream consumer, fusion, the emitted payload, the stored utterance, on one timeline.
@@ -195,6 +199,9 @@ function attachGateway({
             } catch (err) {
                 logger.error('Session end hook failed', { meetingId, error: err.message });
             }
+            // Nothing closed the socket after a stop, so a client that ended its meeting politely
+            // was left holding an open connection until it gave up on its own.
+            if (ws.readyState === ws.OPEN) ws.close(CLOSE.NORMAL, 'session ended');
         };
 
         sessions.set(ws, endSession);

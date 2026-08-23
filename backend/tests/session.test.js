@@ -183,6 +183,37 @@ describe('lifecycle', () => {
         expect(words.close).toHaveBeenCalled();
     });
 
+    it('keeps the final that flush asks for, instead of closing the gate on it', async () => {
+        // flush() is fire and forget: it tells the lane to finalise, and the finalised event
+        // arrives a moment later over the socket. Marking the session closed first discarded it,
+        // which cost every meeting its last utterance whenever stop landed mid-phrase.
+        const { session, onEvent } = makeSession({ flushGraceMs: 40 });
+        const words = fakeLane({
+            flush() {
+                setTimeout(() => session.handleLaneEvent('words', {
+                    lane: 'words', kind: 'final', t0Ms: 0, t1Ms: 900, text: 'the last thing said',
+                }), 5);
+            },
+        });
+        session.registerLane('words', words);
+
+        await session.close();
+
+        expect(onEvent).toHaveBeenCalledWith(
+            expect.objectContaining({ kind: 'final', text: 'the last thing said' })
+        );
+    });
+
+    it('still refuses events that arrive after the grace window', async () => {
+        const { session, onEvent } = makeSession({ flushGraceMs: 0 });
+        const words = fakeLane();
+        session.registerLane('words', words);
+        await session.close();
+
+        session.handleLaneEvent('words', { lane: 'words', kind: 'final', t0Ms: 0, t1Ms: 1, text: 'too late' });
+        expect(onEvent).not.toHaveBeenCalled();
+    });
+
     it('ignores audio and events after close', async () => {
         const { session, onEvent } = makeSession();
         const words = fakeLane();

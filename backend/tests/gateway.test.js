@@ -28,6 +28,7 @@ async function startGateway(over = {}) {
     const server = http.createServer();
 
     const gw = attachGateway({
+        flushGraceMs: 0,
         server,
         verifyAccessToken: async (t) => {
             if (t !== 'good-token') throw new Error('bad token');
@@ -315,6 +316,7 @@ describe('fusion integration', () => {
         const onRevision = jest.fn();
         const server = http.createServer();
         const gw = attachGateway({
+        flushGraceMs: 0,
             server,
             verifyAccessToken: async () => ({ sub: 'user-A' }),
             getMeetingOwner: async () => 'user-A',

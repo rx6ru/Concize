@@ -82,6 +82,7 @@ beforeEach(async () => {
 
     const server = http.createServer();
     const gw = attachGateway({
+        flushGraceMs: 0,
         server,
         verifyAccessToken: async () => ({ sub: 'user-A' }),
         getMeetingOwner: async (id) => (id === 'm1' ? 'user-A' : null),
