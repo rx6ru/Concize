@@ -233,8 +233,10 @@ The Hindi row is the one that changed plans. Swapping only the VAD drops the seg
 
 - Answers cover 58.3% of the claims in a human reference, 7 of 23 fully. That is the number to
 judge this on, and it is not yet good enough to sell.
-- The extension has never been run in a browser. Its capture path is unit tested and the client it
-uses is proven against a live backend, but nobody has pressed record.
+- The extension records end to end in a real browser: Chrome, the offscreen AudioWorklet, the
+WebSocket, and utterances persisted, with live text in the popup. What is still unproven is real
+*tab* audio, since chrome.tabCapture cannot open a device in a headless environment; that run
+proves the microphone half of the same mixing graph.
 - Summary quality has never been measured. A harness exists and is waiting on a complete summary.
 
 - About one turn in seventeen is still attributed to the wrong speaker at 40 speakers, and 6 of
