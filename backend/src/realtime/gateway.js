@@ -244,6 +244,12 @@ function attachGateway({
             } catch {
                 return send({ type: 'error', code: 'bad_message', fatal: false });
             }
+            // JSON.parse succeeds on the text "null" and hands back null, and reading a property
+            // off it throws inside this handler. Nothing catches that, so one frame from one
+            // client would end the process for every meeting on the box.
+            if (!msg || typeof msg !== 'object') {
+                return send({ type: 'error', code: 'bad_message', fatal: false });
+            }
             if (msg.event === 'stop') endSession();
         });
 

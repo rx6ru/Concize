@@ -220,3 +220,19 @@ const gracefulShutdown = async () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+// A throw inside an event handler, a websocket message or a queue callback has nowhere to go and
+// ends the process by default, taking every live meeting with it. Log it and shut down the same
+// way a signal does, so the sessions close and the supervisor restarts a clean process rather
+// than one whose state nobody can reason about.
+process.on('uncaughtException', (err) => {
+    logger.error('Uncaught exception, shutting down', { error: err.message, stack: err.stack });
+    gracefulShutdown();
+});
+process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled rejection, shutting down', {
+        error: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+    });
+    gracefulShutdown();
+});

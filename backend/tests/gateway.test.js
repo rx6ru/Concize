@@ -243,6 +243,25 @@ describe('lifecycle', () => {
         ws.close();
     });
 
+    // JSON.parse succeeds on these and returns a non-object, so reading .event off the result
+    // throws inside the message handler. Nothing catches that: there is no uncaughtException
+    // handler anywhere in src, so one frame from one authenticated client ends the process for
+    // every other meeting on the box.
+    it.each(['null', 'true', '42', '"a string"'])('survives the text frame %s', async (frame) => {
+        const ws = connect(ctx.port, 'token=good-token&meetingId=m1');
+        await collect(ws, (m) => m.some((x) => x.type === 'session.ready'));
+
+        ws.send(frame);
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Still serving: the session is open and a real stop still works.
+        expect(ctx.gw.sessionCount()).toBe(1);
+        ws.send(JSON.stringify({ event: 'stop' }));
+        await new Promise((r) => setTimeout(r, 100));
+        expect(ctx.lane.close).toHaveBeenCalled();
+        ws.close();
+    });
+
     it('signals the end of the meeting once, however it ends', async () => {
         await ctx.gw.closeAll();
         await new Promise((r) => ctx.server.close(r));
