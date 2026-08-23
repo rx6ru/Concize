@@ -9,6 +9,8 @@ const { buildContext, checkQuery } = require('./retrieval.wiring');
 const { createChatEntry, updateChatEntry } = require('./chat.repository');
 const { upsertChatPair } = require('../providers/embedding/chat.embedding');
 const { getMeetingSummary } = require('../summary/summary.repository');
+const { isOverBudget } = require('../core/cost.breaker');
+const config = require('../core/config');
 const { createLogger } = require('../core/logger');
 
 const logger = createLogger('chatLLM');
@@ -47,6 +49,18 @@ const mapErrorToResponse = (error) => {
     const msg = error.message || '';
 
     // 1. Check structured HTTP status first
+    // Search being down is not an internal error, and the difference matters to the person asking:
+    // retrieval.wiring throws this precisely so an outage is never answered with a confident
+    // "the transcript does not mention that". Without a branch here that distinction is lost on
+    // the way out and the client shows a generic failure.
+    if (errorCode === 'RETRIEVAL_UNAVAILABLE') {
+        return {
+            status: 503,
+            code: 'RETRIEVAL_UNAVAILABLE',
+            message: "Search is temporarily unavailable, so this cannot be answered from the transcript yet. Try again in a moment."
+        };
+    }
+
     if (httpStatus === 429 || errorCode === 'rate_limit_exceeded') {
         return {
             status: 429,
@@ -112,6 +126,21 @@ const getLLMStreamResponse = async (res, userPrompt, jobId, ownerId) => {
     let chatId = null;
     let fullResponseText = '';
     let heartbeatInterval = null;
+
+    // --- Phase -1: Cost circuit breaker ---
+    // Checked first, ahead of the injection guard, so a breached ceiling costs nothing further:
+    // no guard call, no embedding call, no completion call.
+    const { provider: chatProvider, model: chatModel } = config.inference.chat;
+    if (isOverBudget(chatProvider, chatModel, { ceilingTokens: config.limits.costCeilingTokensPerDay })) {
+        logger.warn('Cost ceiling reached, refusing chat request', { jobId, provider: chatProvider, model: chatModel });
+        return res.status(503).json({
+            error: {
+                type: 'cost_ceiling_reached',
+                code: 'DAILY_COST_CEILING_REACHED',
+                message: "We've reached today's usage limit for this service. Please try again tomorrow."
+            }
+        });
+    }
 
     // --- Phase 0: Security Validation ---
 
@@ -426,5 +455,4 @@ ${userPrompt}`;
 };
 
 module.exports = {
-    getLLMStreamResponse,
-};
+    getLLMStreamResponse, mapErrorToResponse };

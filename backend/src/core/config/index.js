@@ -14,6 +14,7 @@ const inference = require('./inference');
 const queues = require('./queues');
 const { promptBudget, maxRequestTokens } = require('../provider.limits');
 const chunking = require('./chunking');
+const limits = require('./limits');
 
 // --- Startup Validation ---
 const warnings = [];
@@ -118,6 +119,7 @@ const config = Object.freeze({
     inference,
     queues,
     chunking,
+    limits,
 });
 
 module.exports = config;

@@ -143,6 +143,7 @@ const startServer = async () => {
       getWatermarkMs,
       createSpeakerLane: speakerLane,
       createLane: createSarvamRealtimeLane,
+      maxConcurrentPerUser: appConfig.limits.wsMaxConcurrentPerUser,
       onUtterance: transcriptPipeline.onUtterance,
       onRevision: transcriptPipeline.onRevision,
       onSessionEnd: transcriptPipeline.onSessionEnd,

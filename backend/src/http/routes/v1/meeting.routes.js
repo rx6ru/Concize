@@ -16,6 +16,7 @@ const express = require('express');
 const router = express.Router();
 
 const { requireMeetingAccess } = require('../../middleware/auth.wiring');
+const { createRateLimiter } = require('../../middleware/rate.limit');
 const { startMeeting, fetchMeetingSummary } = require('../../../meetings/meeting.controller');
 const { getLLMStreamResponse } = require('../../../chat/chat.controller');
 const { getTranscription, listMeetings } = require('../../../meetings/meeting.repository');
@@ -24,11 +25,17 @@ const { getTranscript } = require('../../../transcript/utterance.repository');
 const { namesFor, setName, displayFor } = require('../../../transcript/speaker.names');
 const { query } = require('../../../infra/postgres');
 const { createLogger } = require('../../../core/logger');
+const config = require('../../../core/config');
 
 const logger = createLogger('meetingsRoutes');
 
+// Per-user request limits on the two routes that fan out to paid provider calls.
+// See core/config/limits.js for the numbers behind these.
+const meetingCreateRateLimit = createRateLimiter({ name: 'meeting-create', ...config.limits.meetingCreateRateLimit });
+const chatRateLimit = createRateLimiter({ name: 'chat', ...config.limits.chatRateLimit });
+
 // Create a new meeting owned by the authenticated caller.
-router.post('/', startMeeting);
+router.post('/', meetingCreateRateLimit, startMeeting);
 
 // The caller's own meetings. A collection route, so there is no :meetingId to gate, the owner filter lives in the query itself.
 router.get('/', async (req, res) => {
@@ -151,7 +158,8 @@ router.put('/:meetingId/speakers/:label', requireMeetingAccess, async (req, res)
 });
 
 // RAG chat over an owned meeting, streamed via SSE.
-router.post('/:meetingId/chat', requireMeetingAccess, async (req, res) => {
+// Rate-limited ahead of requireMeetingAccess, so a looping caller doesn't even cost an ownership lookup.
+router.post('/:meetingId/chat', chatRateLimit, requireMeetingAccess, async (req, res) => {
     try {
         const { userPrompt } = req.body;
         if (!userPrompt) {

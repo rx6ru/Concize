@@ -16,6 +16,7 @@ const CLOSE = {
     NOT_FOUND: 4404,
     BAD_REQUEST: 4400,
     SERVER_ERROR: 4500,
+    TOO_MANY_SESSIONS: 4429,
 };
 
 function parseUpgrade(req) {
@@ -54,9 +55,16 @@ function attachGateway({
     getWatermarkMs = async () => 0,
     // Handed to the session: how long it keeps accepting lane events after asking them to flush.
     flushGraceMs = undefined,
+    // A live meeting runs a real STT session for as long as the socket stays open, so unlike the
+    // HTTP rate limits this is a concurrency cap, not a per-window count. In-process, not Redis:
+    // this gateway already tracks every live session in `sessions` on this one Node instance, so
+    // there is no shared state to keep consistent across processes, and no Redis outage can ever
+    // make a legitimate meeting fail to start because of this cap.
+    maxConcurrentPerUser = Infinity,
 }) {
     const wss = new WebSocketServer({ noServer: true });
     const sessions = new Map();
+    const sessionsByUser = new Map(); // userId -> live session count
 
     server.on('upgrade', async (req, socket, head) => {
         const params = parseUpgrade(req);
@@ -78,6 +86,14 @@ function attachGateway({
             return reject(socket, 404, 'Not Found');
         }
 
+        if ((sessionsByUser.get(userId) || 0) >= maxConcurrentPerUser) {
+            logger.warn('WS upgrade rejected: too many concurrent sessions',
+                { meetingId: params.meetingId, userId, max: maxConcurrentPerUser });
+            // 429, mirroring CLOSE.TOO_MANY_SESSIONS (4429): no WebSocket exists yet to send that
+            // close code over, same as the other upgrade-time rejections above.
+            return reject(socket, 429, 'Too Many Requests');
+        }
+
         // Best effort: a meeting that cannot read its watermark still runs, it just resumes from zero. Losing the timeline is better than refusing the connection.
         let startOffsetMs = 0;
         try {
@@ -93,6 +109,8 @@ function attachGateway({
     });
 
     function attachSession(ws, meetingId, ownerId, startOffsetMs = 0) {
+        sessionsByUser.set(ownerId, (sessionsByUser.get(ownerId) || 0) + 1);
+
         const send = (payload) => {
             if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
         };
@@ -193,6 +211,10 @@ function attachGateway({
         const endSession = async () => {
             if (ended) return;
             ended = true;
+            // Freed immediately, not after the flush-grace close below, so a reconnect isn't
+            // blocked by the cap for the ~1.5s a departing session takes to finish flushing.
+            const remaining = (sessionsByUser.get(ownerId) || 1) - 1;
+            if (remaining <= 0) sessionsByUser.delete(ownerId); else sessionsByUser.set(ownerId, remaining);
             await session.close();
             try {
                 await onSessionEnd(meetingId);

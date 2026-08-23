@@ -26,12 +26,28 @@ jest.mock('../src/transcript/speaker.names', () => ({
     setName: jest.fn(),
     displayFor: (names, label) => (names && names.get(label)) || label,
 }));
+// Real rate limiting (Redis) is exercised in tests/rate.limit.test.js. Here the limiter is a
+// controllable pass-through, so this file can prove it is actually mounted on the real router,
+// in the real order, without hitting Redis.
+jest.mock('../src/http/middleware/rate.limit', () => {
+    const state = { blocked: {} };
+    return {
+        __state: state,
+        createRateLimiter: jest.fn(({ name }) => (req, res, next) => {
+            if (state.blocked[name]) {
+                return res.status(429).json({ error: { code: 'TOO_MANY_REQUESTS' } });
+            }
+            return next();
+        }),
+    };
+});
 
-const { getMeetingOwner, getTranscription, listMeetings } = require('../src/meetings/meeting.repository');
+const { getMeetingOwner, getTranscription, listMeetings, createTranscription } = require('../src/meetings/meeting.repository');
 const { purgeMeeting } = require('../src/meetings/meeting.purge.wiring');
 const { getTranscript } = require('../src/transcript/utterance.repository');
 const { namesFor, setName } = require('../src/transcript/speaker.names');
 const { query } = require('../src/infra/postgres');
+const { __state: rateLimitState } = require('../src/http/middleware/rate.limit');
 const meetingsRoutes = require('../src/http/routes/v1/meeting.routes');
 
 // Build an app with a controllable stub user.
@@ -251,5 +267,43 @@ describe('speaker names', () => {
 
         expect(res.status).toBe(404);
         expect(setName).not.toHaveBeenCalled();
+    });
+});
+
+describe('rate limiting wiring', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        currentUser = { id: 'user-A' };
+        rateLimitState.blocked = {};
+    });
+
+    it('a tripped meeting-creation limiter stops the request before the handler runs', async () => {
+        rateLimitState.blocked['meeting-create'] = true;
+        createTranscription.mockResolvedValue({ meetingId: 'm1' });
+
+        const res = await request(app).post('/api/v1/meetings');
+
+        expect(res.status).toBe(429);
+        expect(createTranscription).not.toHaveBeenCalled();
+    });
+
+    it('an untripped limiter lets meeting creation through as normal', async () => {
+        createTranscription.mockResolvedValue({ meetingId: 'm1' });
+
+        const res = await request(app).post('/api/v1/meetings');
+
+        expect(res.status).toBe(201);
+        expect(createTranscription).toHaveBeenCalled();
+    });
+
+    it('a tripped chat limiter stops the request before ownership is even checked', async () => {
+        rateLimitState.blocked.chat = true;
+
+        const res = await request(app)
+            .post('/api/v1/meetings/m1/chat')
+            .send({ userPrompt: 'what did we decide?' });
+
+        expect(res.status).toBe(429);
+        expect(getMeetingOwner).not.toHaveBeenCalled();
     });
 });
