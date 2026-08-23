@@ -564,6 +564,10 @@ async function openMeeting(meetingId) {
     hideStatusMessage();
     showStatusMessage("Loading transcript...");
     try {
+        // The chat window reads the meeting out of storage, and only starting a recording used to
+        // write it. Opening an older meeting and asking a question answered it about whichever
+        // meeting was recorded last, with nothing to indicate the mismatch.
+        await chrome.storage.local.set({ meetingId });
         await loadSummary(meetingId);
         await loadShares(meetingId);
         if (await loadTranscript(meetingId)) {
