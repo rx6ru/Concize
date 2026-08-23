@@ -80,6 +80,11 @@ services:
       context: ./speaker-service
       dockerfile: Dockerfile
     image: concize-speaker:prod
+    environment:
+      # Without this the overlap detector loads nothing and the service runs speaker-only,
+      # logging one warning and carrying on. Measured: it costs throughput (14.7x real time
+      # down to about 6x) and is worth it, 63.3% F1 against 23.6% for the naive derivation.
+      HF_TOKEN: ${HF_TOKEN:-}
     ports:
       - "${SPEAKER_PORT:-8765}:8765"
     restart: unless-stopped

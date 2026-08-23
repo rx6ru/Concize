@@ -21,8 +21,12 @@
 #
 # Overlap detection (overlap.py) needs pyannote.audio + HF_TOKEN and is optional by design
 # (overlap.py: no HF_TOKEN -> load_model() returns None, logged, the session runs without it).
-# No HF_TOKEN exists in this deployment's secret pool, so pyannote.audio is not installed here;
-# add it to requirements.txt and set HF_TOKEN if overlap detection is needed.
+# pyannote.audio is now in requirements.txt (installed below), but the model itself is NOT
+# baked into this image the way CAM++/fsmn-vad are, and no HF_TOKEN exists in this deployment's
+# secret pool. Without both, overlap detection stays off in production: set HF_TOKEN in the
+# container's environment (docker-compose.prod.yml's speaker-service service passes none today)
+# and, if first-boot access to huggingface.co is not guaranteed here either, add a build step
+# for pyannote/segmentation-3.0 matching the two RUN steps below.
 
 FROM python:3.11-slim
 

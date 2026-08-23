@@ -4,3 +4,6 @@
 funasr==1.4.1
 websockets>=15.0
 numpy>=1.24
+# Overlap detection (overlap.py). Optional at runtime: without HF_TOKEN, load_model() returns
+# None and the service runs without it.
+pyannote.audio>=4.0.7
