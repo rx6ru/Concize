@@ -368,8 +368,15 @@ async function loadMeetings() {
             row.addEventListener("click", () => openMeeting(m.meetingId));
             wrapper.append(row);
 
-            // Nothing to delete safely while the meeting is still being written to.
-            if (m.status === "completed" || m.status === "completed_with_errors") {
+            // Shared with this account rather than owned by it: read and chat, nothing more, and
+            // the server would answer a delete with a 403.
+            if (m.shared) {
+                const badge = document.createElement("span");
+                badge.className = "meeting-status";
+                badge.textContent = "shared";
+                row.append(badge);
+            } else if (m.status === "completed" || m.status === "completed_with_errors") {
+                // Nothing to delete safely while the meeting is still being written to.
                 wrapper.append(deleteControl(m));
             }
 
