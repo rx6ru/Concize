@@ -223,7 +223,9 @@ Numbers come from AMI meeting audio with human transcripts, and from Indic DiarB
 | The grading judge agreed with itself on 29.2% of identical answers before it was rebuilt; claim-level grading with a per-claim majority now agrees 7/7. | Every number above is only as good as the instrument. An unvalidated judge produced two wrong conclusions here. |
 | Layer 2 summaries took 68% of the context budget on a 71-minute meeting. | Capped per layer. They rank well because they read like the question, and cost three times a verbatim chunk. |
 
-An earlier version of this table claimed a human transcript was worth 21 to 36 points of answer accuracy. Re-graded with the rebuilt judge it is worth -0.4, inside the noise floor. The original number came from comparing two gradings by an instrument that did not agree with itself.
+An earlier version of this table claimed a human transcript was worth 21 to 36 points of answer accuracy. That came from comparing two gradings by an instrument that did not agree with itself. Re-graded it fell to -0.4, and that figure is not trustworthy either: the arm it was measured on could not run, because a whole transcript plus an answer allowance exceeds an 8k model's request ceiling and 27 of 48 requests returned 413.
+
+On a model large enough to hold the transcript, pasting it whole scores 66.6% claim coverage against retrieval's 58.3%, a gap that sits under the noise floor. **The honest position is that the transcript question is open**, and that pasting a whole meeting does not scale past a short one on any normal-context model regardless.
 
 The Hindi row is the one that changed plans. Swapping only the VAD drops the segmentation floor by 8 to 16 points on every corpus tested and still makes speaker error worse, because shorter segments hand the Chinese embedding model less audio per segment and it starts inventing speakers. On ES2004a it goes from 10 hypothesis speakers to 18. Both models have to be replaced in one step. A Silero adapter is committed and deliberately left switched off for that reason, with the numbers in its header.
 
