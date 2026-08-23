@@ -1,6 +1,9 @@
-// OpenRouter inference client using Groq SDK with base URL override
+// OpenRouter inference client.
+//
+// Not the Groq SDK the other providers reuse: it posts to a hardcoded /openai/v1/chat/completions,
+// which is Groq's own path and 404s on OpenRouter's /api/v1. The OpenAI SDK is the compatible one.
 
-const Groq = require('groq-sdk');
+const OpenAI = require('openai');
 const config = require('../../core/config');
 const BaseKeyRotationService = require('./key.rotation');
 
@@ -10,7 +13,7 @@ class OpenRouterService extends BaseKeyRotationService {
     }
 
     /**
-     * Returns a Groq-compatible client instance pointed at the OpenRouter API.
+     * Returns an OpenAI-compatible client instance pointed at the OpenRouter API.
      * @throws {Error} If no valid key is available or client instantiation fails.
      */
     getClient() {
@@ -19,7 +22,7 @@ class OpenRouterService extends BaseKeyRotationService {
             throw new Error('No valid OpenRouter API key available');
         }
         try {
-            return new Groq({
+            return new OpenAI({
                 apiKey: key,
                 baseURL: 'https://openrouter.ai/api/v1',
             });
