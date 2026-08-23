@@ -137,3 +137,18 @@ CREATE TABLE IF NOT EXISTS speaker_names (
 );
 
 ALTER TABLE speaker_names        ENABLE ROW LEVEL SECURITY;
+
+-- Accounts, when this deployment issues its own tokens rather than delegating to Supabase.
+-- A deployment using Supabase auth never writes here; ownership keys on the JWT subject either
+-- way, so both paths produce the same owner_id shape.
+CREATE TABLE IF NOT EXISTS users (
+    id            text PRIMARY KEY,               -- app-generated uuid (crypto.randomUUID)
+    email         text NOT NULL,
+    password_hash text NOT NULL,
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+-- Case-insensitive: nobody expects Alice@ and alice@ to be two accounts.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (lower(email));
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+

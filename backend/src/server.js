@@ -84,6 +84,13 @@ app.get('/metrics', async (req, res) => {
 // It reports only that the process is up, no configuration and no counts.
 app.use('/api/v1/health', require('./http/routes/v1/health.routes'));
 
+// Sign up and sign in, also ahead of auth: a caller asking for a token cannot already hold one.
+// Only mounted when this deployment issues its own tokens; with AUTH_MODE=jwks an external issuer
+// owns accounts and these routes would be a second, contradictory source of identity.
+if (appConfig.auth.supabase.mode === 'hs256') {
+    app.use('/api/v1/auth', require('./http/routes/v1/auth.routes'));
+}
+
 // Applies globally: every request must carry a valid Supabase JWT, and sets req.user.
 // Authorization (ownership) is enforced per-resource by requireMeetingAccess on the meeting routes.
 app.use(authenticate);
