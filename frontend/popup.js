@@ -624,6 +624,13 @@ chrome.runtime.onMessage.addListener((message) => {
                 showStatusMessage(message.error, true);
                 updateUIForRecording(false);
                 break;
+            case "recording-degraded":
+                // Recording continues on one source. Not an error, but the user has to know the
+                // transcript will not cover what the missing half would have heard.
+                showStatusMessage(message.source === "tab-only"
+                    ? "No microphone. Recording meeting audio only."
+                    : "No meeting audio. Recording your microphone only.");
+                break;
             case "recording-stopped":
                 updateUIForRecording(false);
                 break;

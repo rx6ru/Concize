@@ -6,6 +6,8 @@ let activeStreams = [];
 let currentMeetingId;
 let audioContext = null;
 
+// Guarded so the file can be required by a test, where there is no extension runtime to listen on.
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === "offscreen") {
     switch (message.type) {
@@ -22,6 +24,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
     }
   }
 });
+}
 
 async function startRecording(streamId) {
   console.log("Starting recording process...");
@@ -168,47 +171,76 @@ function handleServerEvent(msg) {
   }
 }
 
+// Tab audio and microphone are acquired independently, because losing one is not a reason to lose
+// the other. A machine with no microphone, or a denied mic prompt, used to take the tab down with
+// it and record nothing at all -- which is the worse half to lose, since the tab carries everyone
+// else in the meeting.
 async function getMediaStream(streamId) {
   await stopAllStreams();
+
+  let tabStream = null;
   try {
-    const tabStream = await navigator.mediaDevices.getUserMedia({
+    tabStream = await navigator.mediaDevices.getUserMedia({
       audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
       video: false,
     });
+  } catch (error) {
+    console.warn("Tab audio unavailable:", error.message);
+  }
 
-    const micStream = await navigator.mediaDevices.getUserMedia({
+  let micStream = null;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     });
+  } catch (error) {
+    console.warn("Microphone unavailable:", error.message);
+  }
 
-    activeStreams.push(tabStream, micStream);
+  if (!tabStream && !micStream) {
+    console.error("Error getting media stream: no audio source available");
+    chrome.runtime.sendMessage({
+      type: "recording-error",
+      target: "popup",
+      error: "Stream setup failed: neither tab audio nor microphone is available.",
+    });
+    return null;
+  }
 
-    audioContext = new AudioContext();
-    const destination = audioContext.createMediaStreamDestination();
+  if (tabStream) activeStreams.push(tabStream);
+  if (micStream) activeStreams.push(micStream);
 
+  audioContext = new AudioContext();
+  const destination = audioContext.createMediaStreamDestination();
+
+  if (tabStream) {
     const tabSource = audioContext.createMediaStreamSource(tabStream);
     const tabGain = audioContext.createGain();
     tabGain.gain.value = 1.0;
     tabSource.connect(tabGain).connect(destination);
+    // The mixed stream goes to the recorder; this second hop is what keeps the tab audible to the user.
+    tabGain.connect(audioContext.destination);
+  }
 
+  if (micStream) {
     const micSource = audioContext.createMediaStreamSource(micStream);
     const micGain = audioContext.createGain();
     micGain.gain.value = 1.5;
     micSource.connect(micGain).connect(destination);
-
-    // This is a mixed stream, but we also need to connect tab audio to speakers
-    tabGain.connect(audioContext.destination);
-
-    return destination.stream;
-  } catch (error) {
-    console.error("Error getting media stream:", error);
-    chrome.runtime.sendMessage({
-      type: "recording-error",
-      target: "popup",
-      error: `Stream setup failed: ${error.message}`,
-    });
-    return null;
   }
+
+  // Recording on one source is worth doing and worth saying out loud, so the user is not left
+  // believing the transcript covers a room it never heard.
+  if (!tabStream || !micStream) {
+    chrome.runtime.sendMessage({
+      type: "recording-degraded",
+      target: "popup",
+      source: tabStream ? "tab-only" : "microphone-only",
+    });
+  }
+
+  return destination.stream;
 }
 
 async function stopAllStreams() {
@@ -221,4 +253,9 @@ async function stopAllStreams() {
     audioContext = null;
   }
   await new Promise(resolve => setTimeout(resolve, 100)); // Short delay to ensure tracks are released
+}
+
+// Exported for tests; the extension loads this file as a plain script and uses neither.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { getMediaStream, stopAllStreams };
 }
