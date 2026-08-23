@@ -200,3 +200,98 @@ test('a failed delete still needs two clicks the next time', async () => {
         'one click deleted the meeting: the confirmation was still armed from the failed attempt');
     assert.strictEqual(button.textContent, 'Sure?');
 });
+
+test('a search hit names the meeting it came from and opens it on click', async () => {
+    const popup = install();
+    fetchImpl = async (path) => {
+        if (path.includes('/meetings/search')) {
+            return {
+                ok: true, status: 200,
+                json: async () => ({
+                    results: [{ meetingId: 'M9', title: 'Pricing sync', text: 'revisit the pricing model', t0: 12000, t1: 15000 }],
+                    nextCursor: null,
+                }),
+            };
+        }
+        return { ok: true, status: 200, json: async () => ({ summary: null, shares: [], utterances: [], nextCursor: null }) };
+    };
+
+    await popup.search('pricing');
+
+    const results = global.document.getElementById('searchResults');
+    assert.strictEqual(results.children.length, 1);
+
+    await results.children[0].click();
+
+    assert.strictEqual(popup.storedMeeting().meetingId, 'M9',
+        'clicking a search hit should have opened the meeting it came from');
+});
+
+test('a search with no hits says so instead of leaving the panel blank', async () => {
+    const popup = install();
+    fetchImpl = async (path) => {
+        if (path.includes('/meetings/search')) {
+            return { ok: true, status: 200, json: async () => ({ results: [], nextCursor: null }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    await popup.search('nonexistent');
+
+    const results = global.document.getElementById('searchResults');
+    assert.strictEqual(results.children.length, 1);
+    assert.strictEqual(results.children[0].textContent, 'No matches.');
+});
+
+test('a slow search cannot overwrite the results of a query typed after it', async () => {
+    const popup = install();
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    fetchImpl = async (path) => {
+        if (path.includes('q=slow')) {
+            await wait(40);
+            return { ok: true, status: 200, json: async () => ({ results: [{ meetingId: 'OLD', title: null, text: 'old hit', t0: 0, t1: 900 }], nextCursor: null }) };
+        }
+        if (path.includes('q=fast')) {
+            return { ok: true, status: 200, json: async () => ({ results: [{ meetingId: 'NEW', title: null, text: 'new hit', t0: 0, t1: 900 }], nextCursor: null }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    const slow = popup.search('slow');
+    await wait(5);
+    await popup.search('fast');
+    await slow;
+    await wait(60);
+
+    const results = global.document.getElementById('searchResults');
+    assert.strictEqual(results.children.length, 1,
+        'the stale response should not have appended alongside the fresh one');
+
+    await results.children[0].click();
+    assert.strictEqual(popup.storedMeeting().meetingId, 'NEW',
+        'the slow, superseded search overwrote the results of the one typed after it');
+});
+
+test('clearing the search box hides results without firing another request', async () => {
+    const popup = install();
+    let calls = 0;
+    fetchImpl = async (path) => {
+        if (path.includes('/meetings/search')) {
+            calls += 1;
+            return { ok: true, status: 200, json: async () => ({ results: [{ meetingId: 'M1', title: null, text: 'hit', t0: 0, t1: 0 }], nextCursor: null }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    await popup.search('pricing');
+    assert.strictEqual(calls, 1);
+
+    const input = global.document.getElementById('searchInput');
+    const resultsArea = global.document.getElementById('searchResultsArea');
+    input.value = '';
+    input.listeners.input.forEach((fn) => fn());
+
+    assert.ok(resultsArea.classList.contains('hidden'), 'results should be hidden once the query is cleared');
+    assert.strictEqual(calls, 1, 'clearing the box should not have triggered another search request');
+});

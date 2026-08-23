@@ -111,6 +111,46 @@ async function searchChunkText(meetingId, { text, ownerId = null, layer = null, 
 }
 
 /**
+ * Lexical search across every meeting the caller owns, not just one, the "what did we decide
+ * about pricing" query a single-meeting search can't answer.
+ * Same fail-closed shape as searchChunkText, except the scope IS the owner: there is no
+ * meetingId to also check, so getting ownerId right here is the entire security boundary.
+ */
+async function searchChunkTextForOwner(ownerId, { text, limit = 20, offset = 0 } = {}) {
+    if (!ownerId) throw new Error('searchChunkTextForOwner: ownerId is required; refusing to search unscoped');
+
+    const tsquery = toOrQuery(text || '');
+    if (!tsquery) return [];
+
+    const { rows } = await query(
+        `SELECT * FROM (
+             SELECT DISTINCT ON (c.meeting_id, c.layer, c.ordinal)
+                    c.meeting_id, c.t0_ms, c.t1_ms, c.text, s.title,
+                    ts_rank_cd(to_tsvector('simple', c.context_prefix || ' ' || c.text), q.tsq) AS rank
+               FROM chunks c
+               JOIN meetings m ON m.job_id = c.meeting_id
+               LEFT JOIN meeting_summaries s ON s.job_id = m.job_id
+               CROSS JOIN to_tsquery('simple', $2) AS q(tsq)
+              WHERE m.owner_id = $1
+                AND to_tsvector('simple', c.context_prefix || ' ' || c.text) @@ q.tsq
+              ORDER BY c.meeting_id, c.layer, c.ordinal, c.rev DESC
+         ) hit
+         ORDER BY hit.rank DESC, hit.meeting_id, hit.t0_ms
+         LIMIT $3 OFFSET $4`,
+        [ownerId, tsquery, limit, offset]
+    );
+
+    return rows.map((row) => ({
+        meetingId: row.meeting_id,
+        title: row.title || null,
+        text: row.text,
+        t0Ms: row.t0_ms,
+        t1Ms: row.t1_ms,
+        score: Number(row.rank),
+    }));
+}
+
+/**
  * Next free ordinal for a layer; a meeting resumed after a restart keeps numbering from here, or the insert collides with a pre-restart chunk on the primary key.
  */
 async function nextOrdinal(meetingId, layer = 1) {
@@ -198,6 +238,7 @@ module.exports = {
     insertChunk,
     nextOrdinal,
     searchChunkText,
+    searchChunkTextForOwner,
     getChunks,
     markDirtyForRange,
     getDirtyChunks,

@@ -12,7 +12,7 @@ jest.mock('../src/core/logger', () => ({
 const fs = require('fs');
 const path = require('path');
 const { _setPoolForTesting, closePool, query } = require('../src/infra/postgres');
-const { insertChunk, searchChunkText } = require('../src/transcript/chunk.repository');
+const { insertChunk, searchChunkText, searchChunkTextForOwner } = require('../src/transcript/chunk.repository');
 
 const URL = process.env.TEST_POSTGRES_URL;
 const describeIfPg = URL ? describe : describe.skip;
@@ -219,6 +219,89 @@ describeIfPg('lexical chunk search', () => {
             // failure mode: an authorized shared reader would retrieve nothing from their own
             // shared meeting.
             expect(await searchChunkText('fts-1', { text: 'migration', ownerId: 'reader-B' })).toHaveLength(0);
+        });
+    });
+
+    // The cross-meeting search behind "what did we decide about pricing?" — scoped by owner
+    // instead of by one meeting, so getting that scope right is the entire security boundary.
+    describe('cross-meeting search', () => {
+        beforeEach(async () => {
+            await query('INSERT INTO meetings (job_id, owner_id) VALUES ($1, $2)', ['fts-4', 'user-A']);
+        });
+
+        afterEach(async () => {
+            await query('DELETE FROM meetings WHERE job_id = $1', ['fts-4']);
+        });
+
+        it('finds a chunk in any meeting the caller owns, not just one', async () => {
+            await insertChunk('fts-1', chunk(0, 'the roadmap review happens on Thursday'));
+            await insertChunk('fts-4', chunk(0, 'pricing for the roadmap is still open'));
+
+            const hits = await searchChunkTextForOwner('user-A', { text: 'roadmap' });
+
+            expect(hits.map((h) => h.meetingId).sort()).toEqual(['fts-1', 'fts-4']);
+        });
+
+        it('carries the meeting title when there is one, and null when there is not', async () => {
+            await query(
+                'INSERT INTO meeting_summaries (job_id, title) VALUES ($1, $2)',
+                ['fts-4', 'Q3 Roadmap Planning']
+            );
+            await insertChunk('fts-1', chunk(0, 'widgets came up again'));
+            await insertChunk('fts-4', chunk(0, 'widgets came up here too'));
+
+            const hits = await searchChunkTextForOwner('user-A', { text: 'widgets' });
+            const byMeeting = Object.fromEntries(hits.map((h) => [h.meetingId, h.title]));
+
+            expect(byMeeting['fts-4']).toBe('Q3 Roadmap Planning');
+            expect(byMeeting['fts-1']).toBeNull();
+        });
+
+        it('returns only the latest revision of a chunk', async () => {
+            await insertChunk('fts-1', chunk(0, 'original wording mentions widgets'));
+            await insertChunk('fts-1', chunk(0, 'corrected wording mentions widgets', { rev: 1 }));
+
+            const hits = await searchChunkTextForOwner('user-A', { text: 'widgets' });
+
+            expect(hits).toHaveLength(1);
+            expect(hits[0].text).toBe('corrected wording mentions widgets');
+        });
+
+        it('respects the limit', async () => {
+            for (let i = 0; i < 5; i++) await insertChunk('fts-1', chunk(i, `mentions budget ${i}`));
+
+            expect(await searchChunkTextForOwner('user-A', { text: 'budget', limit: 2 })).toHaveLength(2);
+        });
+
+        it('pages past the limit with offset, without repeating a hit', async () => {
+            for (let i = 0; i < 5; i++) await insertChunk('fts-1', chunk(i, `mentions budget ${i}`));
+
+            const page1 = await searchChunkTextForOwner('user-A', { text: 'budget', limit: 2, offset: 0 });
+            const page2 = await searchChunkTextForOwner('user-A', { text: 'budget', limit: 2, offset: 2 });
+
+            const seen = new Set([...page1, ...page2].map((h) => h.text));
+            expect(seen.size).toBe(4);
+        });
+
+        it('refuses to search at all without an owner, rather than pooling every meeting', async () => {
+            await insertChunk('fts-1', chunk(0, 'confidential keyword'));
+
+            await expect(searchChunkTextForOwner(null, { text: 'keyword' })).rejects.toThrow(/ownerId is required/);
+        });
+
+        // The whole point of this endpoint: one owner's search must never surface another
+        // owner's chunk. If the WHERE clause's owner_id check were ever dropped, both searches
+        // below would return both chunks instead of only their own.
+        it("a wrong implementation that searched every meeting instead of scoping by owner would leak another owner's chunk", async () => {
+            await query('INSERT INTO meetings (job_id, owner_id) VALUES ($1, $2)', ['fts-2', 'user-B']);
+            await insertChunk('fts-1', chunk(0, 'the acquisition price is confidential'));
+            await insertChunk('fts-2', chunk(0, 'the acquisition price is confidential'));
+
+            const asOwnerA = await searchChunkTextForOwner('user-A', { text: 'acquisition' });
+            const asOwnerB = await searchChunkTextForOwner('user-B', { text: 'acquisition' });
+
+            expect(asOwnerA).toEqual([expect.objectContaining({ meetingId: 'fts-1' })]);
+            expect(asOwnerB).toEqual([expect.objectContaining({ meetingId: 'fts-2' })]);
         });
     });
 });

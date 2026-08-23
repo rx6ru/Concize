@@ -28,6 +28,7 @@ jest.mock('../src/chat/chat.controller', () => ({ getLLMStreamResponse: jest.fn(
 // Vector purge reaches Qdrant; the composition is tested in meeting.purge.test.js.
 jest.mock('../src/meetings/meeting.purge.wiring', () => ({ purgeMeeting: jest.fn() }));
 jest.mock('../src/transcript/utterance.repository', () => ({ getTranscript: jest.fn() }));
+jest.mock('../src/transcript/chunk.repository', () => ({ searchChunkTextForOwner: jest.fn() }));
 jest.mock('../src/infra/postgres', () => ({ query: jest.fn() }));
 jest.mock('../src/transcript/speaker.names', () => ({
     namesFor: jest.fn().mockResolvedValue(new Map()),
@@ -57,6 +58,7 @@ const {
 const { findUserByEmail } = require('../src/auth/user.repository');
 const { purgeMeeting } = require('../src/meetings/meeting.purge.wiring');
 const { getTranscript } = require('../src/transcript/utterance.repository');
+const { searchChunkTextForOwner } = require('../src/transcript/chunk.repository');
 const { namesFor, setName } = require('../src/transcript/speaker.names');
 const { query } = require('../src/infra/postgres');
 const { __state: rateLimitState } = require('../src/http/middleware/rate.limit');
@@ -192,6 +194,67 @@ describe('listing meetings', () => {
         const byId = Object.fromEntries(res.body.meetings.map((m) => [m.meetingId, m]));
         expect(byId['own-1'].shared).toBe(false);
         expect(byId['shared-1'].shared).toBe(true);
+    });
+});
+
+describe('cross-meeting search', () => {
+    beforeEach(() => { jest.clearAllMocks(); currentUser = { id: 'user-A' }; });
+
+    it('searches with the query text and reports which meeting each hit came from', async () => {
+        searchChunkTextForOwner.mockResolvedValue([
+            { meetingId: 'm1', title: 'Q3 planning', text: 'pricing came up again', t0Ms: 1000, t1Ms: 1900 },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/search?q=pricing');
+
+        expect(res.status).toBe(200);
+        expect(res.body.results).toEqual([
+            { meetingId: 'm1', title: 'Q3 planning', text: 'pricing came up again', t0: 1000, t1: 1900 },
+        ]);
+    });
+
+    it('scopes the search to the caller, never to a value the caller supplies', async () => {
+        searchChunkTextForOwner.mockResolvedValue([]);
+
+        // A request that tries to search as someone else has no way to do so: the handler
+        // reads only req.user.id, never a query parameter, for the owner it searches by.
+        await request(app).get('/api/v1/meetings/search?q=pricing&ownerId=someone-else');
+
+        expect(searchChunkTextForOwner).toHaveBeenCalledWith('user-A', expect.anything());
+    });
+
+    it('rejects an unauthenticated caller before running any query', async () => {
+        currentUser = undefined;
+
+        const res = await request(app).get('/api/v1/meetings/search?q=pricing');
+
+        expect(res.status).toBe(401);
+        expect(searchChunkTextForOwner).not.toHaveBeenCalled();
+    });
+
+    it('requires a search term', async () => {
+        const res = await request(app).get('/api/v1/meetings/search');
+
+        expect(res.status).toBe(400);
+        expect(searchChunkTextForOwner).not.toHaveBeenCalled();
+    });
+
+    it('reports no further pages at the end', async () => {
+        searchChunkTextForOwner.mockResolvedValue([]);
+
+        const res = await request(app).get('/api/v1/meetings/search?q=pricing');
+
+        expect(res.body.nextCursor).toBeNull();
+    });
+
+    it('offers a cursor when a full page comes back', async () => {
+        searchChunkTextForOwner.mockResolvedValue(
+            Array.from({ length: 20 }, (_, i) => ({ meetingId: `m${i}`, title: null, text: 'hit', t0Ms: 0, t1Ms: 900 }))
+        );
+
+        const res = await request(app).get('/api/v1/meetings/search?q=pricing');
+
+        expect(res.body.nextCursor).toBe(20);
     });
 });
 

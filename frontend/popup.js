@@ -28,6 +28,9 @@ const downloadTranscriptionButton = document.getElementById("downloadTranscripti
 const openChatButton = document.getElementById("openChat");
 const meetingListArea = document.getElementById("meetingListArea");
 const meetingList = document.getElementById("meetingList");
+const searchInput = document.getElementById("searchInput");
+const searchResultsArea = document.getElementById("searchResultsArea");
+const searchResults = document.getElementById("searchResults");
 
 // --- Auth elements ---
 const authSection = document.getElementById("authSection");
@@ -459,6 +462,82 @@ function deleteControl(meeting) {
 
     return button;
 }
+
+// A search superseded by a newer one (the user kept typing) must not have its answer land after
+// the newer one's, the same ordering problem openMeeting's generation counter solves.
+let searchGeneration = 0;
+let searchDebounce = null;
+
+/**
+ * Lexical search across every meeting the caller owns, not just the one on screen. Each row
+ * names the meeting a hit came from, since a cross-meeting result is meaningless without that.
+ */
+async function runSearch(text) {
+    const generation = ++searchGeneration;
+    try {
+        const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/search?q=${encodeURIComponent(text)}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok || generation !== searchGeneration) return;
+
+        const { results = [] } = await res.json();
+        if (generation !== searchGeneration) return;
+        renderSearchResults(results);
+    } catch (err) {
+        console.error("Search failed:", err);
+    }
+}
+
+function renderSearchResults(results) {
+    searchResults.textContent = "";
+
+    if (!results.length) {
+        const empty = document.createElement("span");
+        empty.className = "share-empty";
+        empty.textContent = "No matches.";
+        searchResults.append(empty);
+        searchResultsArea.classList.remove("hidden");
+        return;
+    }
+
+    for (const r of results) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "search-result";
+
+        const title = document.createElement("span");
+        title.className = r.title ? "meeting-title" : "meeting-title untitled";
+        title.textContent = r.title || "Untitled meeting";
+
+        const meta = document.createElement("div");
+        const time = document.createElement("span");
+        time.className = "turn-time";
+        time.textContent = `${clock(r.t0)}  `;
+        const text = document.createElement("span");
+        text.className = "turn-text";
+        text.textContent = r.text;
+        meta.append(time, text);
+
+        row.append(title, meta);
+        row.addEventListener("click", () => openMeeting(r.meetingId, r.title));
+        searchResults.append(row);
+    }
+
+    searchResultsArea.classList.remove("hidden");
+}
+
+searchInput.addEventListener("input", () => {
+    clearTimeout(searchDebounce);
+    const text = searchInput.value.trim();
+    if (!text) {
+        searchGeneration += 1; // invalidate any search still in flight
+        searchResultsArea.classList.add("hidden");
+        searchResults.textContent = "";
+        return;
+    }
+    searchDebounce = setTimeout(() => runSearch(text), 250);
+});
 
 /**
  * Who the meeting is shared with. Owner-only on the server, which is what decides whether this
@@ -945,6 +1024,7 @@ if (typeof module !== "undefined" && module.exports) {
         openMeeting,
         loadShares,
         deleteControl,
+        search: runSearch,
         currentShare: () => currentShareMeetingId,
         storedMeeting: () => chrome.storage.local._v || {},
         transcriptText: () => fullTranscriptionText,

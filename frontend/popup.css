@@ -470,6 +470,27 @@ body {
     color: var(--error);
 }
 
+/* A search hit: title on its own line, the matching text below it, unlike a meeting-list row
+   which fits title and date side by side because neither one wraps. */
+.search-result {
+    display: block;
+    width: 100%;
+    padding: 7px 0;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--hairline);
+    text-align: left;
+    cursor: pointer;
+}
+
+.search-result:first-child {
+    border-top: none;
+}
+
+.search-result:hover .meeting-title {
+    text-decoration: underline;
+}
+
 /* Provisional text: the words are still arriving and attribution is not settled. */
 .turn.partial .turn-text {
     color: var(--muted);

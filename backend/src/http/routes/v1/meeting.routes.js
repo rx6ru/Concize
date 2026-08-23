@@ -1,5 +1,6 @@
 // Canonical RESTful, ownership-rooted resource tree:
 //   GET    /api/v1/meetings                       the caller's own meetings + those shared with them
+//   GET    /api/v1/meetings/search                lexical search across every meeting the caller owns
 //   POST   /api/v1/meetings                       create a meeting (owner = caller)
 //   DELETE /api/v1/meetings/:meetingId            delete it, and its vectors (owner only)
 //   GET    /api/v1/meetings/:meetingId/transcript flat legacy transcript
@@ -24,6 +25,7 @@ const { createRateLimiter } = require('../../middleware/rate.limit');
 const { startMeeting, fetchMeetingSummary } = require('../../../meetings/meeting.controller');
 const { getLLMStreamResponse } = require('../../../chat/chat.controller');
 const { getTranscription, listMeetings } = require('../../../meetings/meeting.repository');
+const { searchChunkTextForOwner } = require('../../../transcript/chunk.repository');
 const { grantShare, revokeShare, listShares, listSharedMeetings } = require('../../../meetings/meeting.share.repository');
 const { findUserByEmail } = require('../../../auth/user.repository');
 const { purgeMeeting } = require('../../../meetings/meeting.purge.wiring');
@@ -64,6 +66,38 @@ router.get('/', async (req, res) => {
         return res.status(200).json({ success: true, meetings });
     } catch (error) {
         logger.error('Failed to list meetings', { ownerId: req.user.id, error: error.message });
+        return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
+    }
+});
+
+// Lexical search across every meeting the caller owns. A collection route like GET / above, not
+// a :meetingId one: the scope is the caller's own id, never a meeting, so there is nothing here
+// for requireMeetingAccess to check.
+router.get('/search', async (req, res) => {
+    if (!req.user?.id) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+    }
+    const text = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!text) {
+        return res.status(400).json({ success: false, error: 'q is required.' });
+    }
+    try {
+        const limit = Math.min(Number(req.query.limit) || 20, 50);
+        const cursor = Math.max(Number(req.query.cursor) || 0, 0);
+        const hits = await searchChunkTextForOwner(req.user.id, { text, limit, offset: cursor });
+        return res.status(200).json({
+            success: true,
+            results: hits.map((h) => ({
+                meetingId: h.meetingId,
+                title: h.title,
+                text: h.text,
+                t0: h.t0Ms,
+                t1: h.t1Ms,
+            })),
+            nextCursor: hits.length === limit ? cursor + limit : null,
+        });
+    } catch (error) {
+        logger.error('Cross-meeting search failed', { ownerId: req.user.id, error: error.message });
         return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
     }
 });
