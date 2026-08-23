@@ -51,7 +51,9 @@ A working system, not a deployed product. There are no users and no uptime to re
 | Rate limits, session cap, daily cost breaker | working |
 | Post-meeting reconciliation | modules built, not scheduled |
 | Indic speaker models | not built, and this is the main gap |
-| Teams, sharing, billing | not built |
+| One-to-one sharing, grant and revoke | working |
+| Teams, billing, per-user quotas | not built |
+| Extension UI: summary, transcript, chat, share, delete | working |
 | Hybrid retrieval (dense + lexical, RRF fused) | working |
 | Cross-encoder reranking | not built |
 | Layer 2 narrative chunks | working |
