@@ -6,6 +6,8 @@
 //   GET    /api/v1/meetings/:meetingId/utterances speaker-attributed turns, paged
 //   POST   /api/v1/meetings/:meetingId/chat       RAG chat (SSE)
 //   GET    /api/v1/meetings/:meetingId/summary    fetch the running summary
+//   GET    /api/v1/meetings/:meetingId/speakers   who each S-label is
+//   PUT    /api/v1/meetings/:meetingId/speakers/:label  name one of them
 //
 // Auth travels in Authorization: Bearer; the resource id travels in the path.
 // Every :meetingId route is gated by requireMeetingAccess (ownership → 404 on mismatch).
@@ -19,6 +21,8 @@ const { getLLMStreamResponse } = require('../../../chat/chat.controller');
 const { getTranscription, listMeetings } = require('../../../meetings/meeting.repository');
 const { purgeMeeting } = require('../../../meetings/meeting.purge.wiring');
 const { getTranscript } = require('../../../transcript/utterance.repository');
+const { namesFor, setName, displayFor } = require('../../../transcript/speaker.names');
+const { query } = require('../../../infra/postgres');
 const { createLogger } = require('../../../core/logger');
 
 const logger = createLogger('meetingsRoutes');
@@ -75,6 +79,12 @@ router.get('/:meetingId/utterances', requireMeetingAccess, async (req, res) => {
         const limit = Math.min(Number(req.query.limit) || 200, 500);
         const afterSeq = req.query.after === undefined ? null : Number(req.query.after);
         const rows = await getTranscript(meetingId, { limit, afterSeq });
+        // Names are decoration on top of the log. Losing them costs the reader nothing they cannot
+        // work around; losing the transcript because of them would be absurd.
+        const names = await namesFor(meetingId).catch((error) => {
+            logger.warn('Speaker names unavailable', { meetingId, error: error.message });
+            return new Map();
+        });
 
         return res.status(200).json({
             success: true,
@@ -85,6 +95,8 @@ router.get('/:meetingId/utterances', requireMeetingAccess, async (req, res) => {
                 t1: u.t1Ms,
                 text: u.text,
                 speaker: u.speakerLabel ?? null,
+                // The label stays, so a client can still group by speaker after a rename.
+                speakerName: displayFor(names, u.speakerLabel ?? null),
                 confidence: u.speakerConfidence ?? 'unknown',
                 overlap: u.overlap ?? false,
                 overlapRatio: u.overlapRatio ?? 0,
@@ -94,6 +106,46 @@ router.get('/:meetingId/utterances', requireMeetingAccess, async (req, res) => {
         });
     } catch (error) {
         logger.error('Failed to fetch utterances', { meetingId, error: error.message });
+        return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
+    }
+});
+
+// Who each S-label is. Labels present in the transcript but never named come back unnamed rather
+// than omitted, so a client can offer every speaker for naming without a second query.
+router.get('/:meetingId/speakers', requireMeetingAccess, async (req, res) => {
+    const { meetingId } = req.meeting;
+    try {
+        const [names, { rows }] = await Promise.all([
+            namesFor(meetingId),
+            query(
+                `SELECT DISTINCT speaker_label FROM utterances
+                 WHERE meeting_id = $1 AND speaker_label IS NOT NULL AND superseded_by IS NULL
+                 ORDER BY speaker_label`,
+                [meetingId]
+            ),
+        ]);
+        return res.status(200).json({
+            success: true,
+            speakers: rows.map((r) => ({
+                label: r.speaker_label,
+                name: names.get(r.speaker_label) ?? null,
+            })),
+        });
+    } catch (error) {
+        logger.error('Failed to fetch speakers', { meetingId, error: error.message });
+        return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
+    }
+});
+
+// Name a speaker, or clear the name with an empty string.
+router.put('/:meetingId/speakers/:label', requireMeetingAccess, async (req, res) => {
+    const { meetingId } = req.meeting;
+    const { label } = req.params;
+    try {
+        const name = await setName(meetingId, label, req.body?.name);
+        return res.status(200).json({ success: true, label, name });
+    } catch (error) {
+        logger.error('Failed to name speaker', { meetingId, label, error: error.message });
         return res.status(500).json({ success: false, error: 'An internal server error occurred.' });
     }
 });

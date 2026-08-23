@@ -9,6 +9,7 @@ const { getEmbeddingWithRetry } = require('../providers/embedding/embedding.serv
 const { createChunkSearch } = require('./chunk.search');
 const { createRetrieval } = require('./retrieval.pipeline');
 const { assemble } = require('./context.assembly');
+const { namesFor } = require('../transcript/speaker.names');
 const { createInjectionGuard } = require('../safety/injection.guard');
 const { runResilient } = require('../providers/llm/resilient.inference');
 const { getChatInference } = require('../providers/llm/inference.provider');
@@ -103,8 +104,14 @@ async function buildContext({ query, meetingId, ownerId, nowMs = null, maxContex
     const screened = await guard.filterContext(result.context);
     const stats = { ...result.stats, injectionFlagged: screened.flagged };
 
+    // A missing naming is not worth failing an answer over; the S-labels still read fine.
+    const names = await namesFor(meetingId).catch((err) => {
+        logger.warn('Speaker names unavailable', { meetingId, error: err.message });
+        return null;
+    });
+
     return {
-        ...assemble({ ...result, context: screened.items, stats }, { nowMs }),
+        ...assemble({ ...result, context: screened.items, stats }, { nowMs, names }),
         stats,
     };
 }

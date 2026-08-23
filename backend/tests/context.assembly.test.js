@@ -142,3 +142,39 @@ describe('assembly', () => {
         expect(() => assemble({ context: [item()] })).not.toThrow();
     });
 });
+
+describe('speaker names', () => {
+    const names = new Map([['S1', 'Priya'], ['S3', 'Arjun']]);
+
+    it('renders the name a speaker was given', () => {
+        expect(speakerOf(item({ speakerLabel: 'S1' }), names)).toBe('Priya');
+    });
+
+    it('keeps the label when nobody named that speaker', () => {
+        expect(speakerOf(item({ speakerLabel: 'S9' }), names)).toBe('S9');
+    });
+
+    it('keeps labels when there are no names at all', () => {
+        expect(speakerOf(item({ speakerLabel: 'S1' }))).toBe('S1');
+    });
+
+    it('still refuses to pick one name for contested speech', () => {
+        const contested = item({ hasOverlap: true, speakers: ['S1', 'S3'] });
+        expect(speakerOf(contested, names)).toBe('Priya or Arjun (unclear which)');
+    });
+
+    it('hedges a single name under overlap rather than asserting it', () => {
+        expect(speakerOf(item({ hasOverlap: true, speakerLabel: 'S1' }), names)).toBe('possibly Priya');
+    });
+
+    it('carries names into the rendered line', () => {
+        expect(formatItem(item({ speakerLabel: 'S1' }), names))
+            .toBe('#t1 1:05 Priya: we should revisit pricing');
+    });
+
+    it('names every line assemble renders', () => {
+        const out = assemble({ context: [item({ speakerLabel: 'S1' })], stats: {} }, { names });
+        expect(out.contextBlock).toContain('Priya');
+        expect(out.contextBlock).not.toContain('S1:');
+    });
+});

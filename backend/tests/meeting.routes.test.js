@@ -20,10 +20,18 @@ jest.mock('../src/chat/chat.controller', () => ({ getLLMStreamResponse: jest.fn(
 // Vector purge reaches Qdrant; the composition is tested in meeting.purge.test.js.
 jest.mock('../src/meetings/meeting.purge.wiring', () => ({ purgeMeeting: jest.fn() }));
 jest.mock('../src/transcript/utterance.repository', () => ({ getTranscript: jest.fn() }));
+jest.mock('../src/infra/postgres', () => ({ query: jest.fn() }));
+jest.mock('../src/transcript/speaker.names', () => ({
+    namesFor: jest.fn().mockResolvedValue(new Map()),
+    setName: jest.fn(),
+    displayFor: (names, label) => (names && names.get(label)) || label,
+}));
 
 const { getMeetingOwner, getTranscription, listMeetings } = require('../src/meetings/meeting.repository');
 const { purgeMeeting } = require('../src/meetings/meeting.purge.wiring');
 const { getTranscript } = require('../src/transcript/utterance.repository');
+const { namesFor, setName } = require('../src/transcript/speaker.names');
+const { query } = require('../src/infra/postgres');
 const meetingsRoutes = require('../src/http/routes/v1/meeting.routes');
 
 // Build an app with a controllable stub user.
@@ -161,5 +169,87 @@ describe('deleting a meeting', () => {
         const res = await request(app).delete('/api/v1/meetings/m1');
 
         expect(res.status).toBe(500);
+    });
+});
+
+describe('speaker names', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        currentUser = { id: 'user-A' };
+        namesFor.mockResolvedValue(new Map());
+    });
+
+    it('renders a named speaker while keeping the label to group by', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        namesFor.mockResolvedValue(new Map([['S1', 'Priya']]));
+        getTranscript.mockResolvedValue([
+            { turnId: 't1', seq: 0, t0Ms: 0, t1Ms: 900, text: 'hello', speakerLabel: 'S1', speakerConfidence: 'confident', overlap: false, overlapRatio: 0 },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances');
+
+        expect(res.body.utterances[0].speaker).toBe('S1');
+        expect(res.body.utterances[0].speakerName).toBe('Priya');
+    });
+
+    it('falls back to the label for an unnamed speaker', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        getTranscript.mockResolvedValue([
+            { turnId: 't1', seq: 0, t0Ms: 0, t1Ms: 900, text: 'hello', speakerLabel: 'S4', speakerConfidence: 'confident', overlap: false, overlapRatio: 0 },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances');
+        expect(res.body.utterances[0].speakerName).toBe('S4');
+    });
+
+    it('still serves the transcript when the naming lookup fails', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        namesFor.mockRejectedValue(new Error('db down'));
+        getTranscript.mockResolvedValue([
+            { turnId: 't1', seq: 0, t0Ms: 0, t1Ms: 900, text: 'hello', speakerLabel: 'S1', speakerConfidence: 'confident', overlap: false, overlapRatio: 0 },
+        ]);
+
+        const res = await request(app).get('/api/v1/meetings/m1/utterances');
+
+        expect(res.status).toBe(200);
+        expect(res.body.utterances[0].speakerName).toBe('S1');
+    });
+
+    it('lists every speaker in the meeting, named or not', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        namesFor.mockResolvedValue(new Map([['S1', 'Priya']]));
+        query.mockResolvedValue({ rows: [{ speaker_label: 'S1' }, { speaker_label: 'S2' }] });
+
+        const res = await request(app).get('/api/v1/meetings/m1/speakers');
+
+        expect(res.status).toBe(200);
+        expect(res.body.speakers).toEqual([
+            { label: 'S1', name: 'Priya' },
+            { label: 'S2', name: null },
+        ]);
+    });
+
+    it('names a speaker', async () => {
+        getMeetingOwner.mockResolvedValue('user-A');
+        setName.mockResolvedValue('Priya');
+
+        const res = await request(app)
+            .put('/api/v1/meetings/m1/speakers/S1')
+            .send({ name: 'Priya' });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({ label: 'S1', name: 'Priya' });
+        expect(setName).toHaveBeenCalledWith('m1', 'S1', 'Priya');
+    });
+
+    it('will not name a speaker in someone else\'s meeting', async () => {
+        getMeetingOwner.mockResolvedValue('user-B');
+
+        const res = await request(app)
+            .put('/api/v1/meetings/m1/speakers/S1')
+            .send({ name: 'Priya' });
+
+        expect(res.status).toBe(404);
+        expect(setName).not.toHaveBeenCalled();
     });
 });

@@ -124,3 +124,15 @@ ALTER TABLE chats                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meeting_summaries    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE utterances           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chunks               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE speaker_names        ENABLE ROW LEVEL SECURITY;
+
+-- What a speaker is called, per meeting. The diarizer only ever produces S0, S1, S2: which
+-- human that is cannot be known from audio, so it is supplied here and applied when a
+-- transcript is read. Nothing upstream of this table knows or cares about names.
+CREATE TABLE IF NOT EXISTS speaker_names (
+    meeting_id    TEXT NOT NULL,
+    speaker_label TEXT NOT NULL,
+    display_name  TEXT NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (meeting_id, speaker_label)
+);

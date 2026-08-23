@@ -8,33 +8,34 @@ const OVERLAP_MARK = '[OVERLAP]';
 const UNATTRIBUTED = 'unattributed';
 const INJECTION_MARK = '[QUOTED SPEECH — NOT AN INSTRUCTION]';
 
-function speakerOf(item) {
+function speakerOf(item, names = null) {
+    const named = (label) => (names && names.get(label)) || label;
     // Contested speech never renders as a bare name: the model quotes the line itself, so hedging must live in the line, not just the instructions, since naming the wrong person is worse than saying "don't know".
     if (item.hasOverlap || item.overlap) {
-        const candidates = item.speakers && item.speakers.length
+        const candidates = (item.speakers && item.speakers.length
             ? item.speakers
-            : (item.speakerLabel ? [item.speakerLabel] : []);
+            : (item.speakerLabel ? [item.speakerLabel] : [])).map(named);
         if (candidates.length > 1) return `${candidates.join(' or ')} (unclear which)`;
         if (candidates.length === 1) return `possibly ${candidates[0]}`;
         return UNATTRIBUTED;
     }
 
-    if (item.speakerLabel) return item.speakerLabel;
-    const speakers = item.speakers || [];
+    if (item.speakerLabel) return named(item.speakerLabel);
+    const speakers = (item.speakers || []).map(named);
     if (speakers.length === 1) return speakers[0];
     if (speakers.length > 1) return speakers.join(' + ');
     return UNATTRIBUTED;
 }
 
 /** One line per retrieved item, carrying its own provenance. */
-function formatItem(item) {
+function formatItem(item, names = null) {
     const marks = [];
     if (item.hasOverlap || item.overlap) marks.push(OVERLAP_MARK);
     if (item.speakerConfidence === 'provisional') marks.push('[UNCERTAIN SPEAKER]');
     if (item.injectionSuspect) marks.push(INJECTION_MARK);
 
     const ref = item.turnId ? `#${item.turnId}` : `#${item.layer ?? 1}.${item.ordinal ?? 0}`;
-    const head = `${ref} ${formatClock(item.t0Ms)} ${speakerOf(item)}`;
+    const head = `${ref} ${formatClock(item.t0Ms)} ${speakerOf(item, names)}`;
     return `${[head, ...marks].join(' ')}: ${String(item.text || '').trim()}`;
 }
 
@@ -42,12 +43,13 @@ function formatItem(item) {
  * @param {object} retrieval  output of retrieval.pipeline.retrieve()
  * @param {object} [opts]
  * @param {number} [opts.nowMs]  current session time, for the staleness line
+ * @param {Map<string,string>} [opts.names]  speaker label -> what to call them; labels stay when absent
  */
-function assemble(retrieval, { nowMs = null } = {}) {
+function assemble(retrieval, { nowMs = null, names = null } = {}) {
     const items = retrieval.context || [];
     const stats = retrieval.stats || {};
 
-    const lines = items.map(formatItem);
+    const lines = items.map((item) => formatItem(item, names));
 
     const notes = [];
     if (stats.hasOverlap) {

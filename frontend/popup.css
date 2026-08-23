@@ -329,3 +329,59 @@ body {
 .hidden {
     display: none !important;
 }
+
+.turn {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--hairline);
+}
+
+.turn:first-child {
+    border-top: none;
+}
+
+.turn-speaker {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-active);
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.turn-speaker:hover {
+    text-decoration: underline;
+}
+
+/* An unnamed speaker is still an S-label, so it reads as a placeholder rather than a person. */
+.turn-speaker.unnamed {
+    color: var(--muted-soft);
+    font-weight: 500;
+}
+
+.turn-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--body);
+}
+
+/* Two people at once: attribution here is a guess, and the line says so rather than hiding it. */
+.turn.contested .turn-speaker::after {
+    content: '?';
+    color: var(--muted-soft);
+}
+
+.turn.contested .turn-text {
+    color: var(--muted);
+}
+
+.turn-time {
+    font-size: 11px;
+    color: var(--muted-soft);
+    font-variant-numeric: tabular-nums;
+}

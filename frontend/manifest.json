@@ -15,6 +15,9 @@
     "http://localhost:3000/*",
     "https://*.supabase.co/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -29,8 +32,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["permission.html", "offscreen.html", "chat-popup.html"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "permission.html",
+        "offscreen.html",
+        "chat-popup.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "content_security_policy": {

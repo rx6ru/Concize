@@ -78,9 +78,32 @@
      * - `path` may be a backend-relative path ("/api/v1/...") or an absolute URL.
      * - Proactively refreshes if the token expires within 60s; reactively refreshes once on 401.
      */
+    // The manifest only grants localhost outright. Any other BACKEND_URL has to be granted by the
+    // user at runtime, so ask before the fetch rather than letting it fail as a bare network error.
+    function backendOrigin() {
+        try { return new URL(CONCIZE_CONFIG.BACKEND_URL).origin + '/*'; } catch (_) { return null; }
+    }
+
+    async function hasBackendAccess() {
+        const origin = backendOrigin();
+        if (!origin) return false;
+        return chrome.permissions.contains({ origins: [origin] });
+    }
+
+    /** Prompts for access to the configured backend. Chrome requires a user gesture, so call this from a click. */
+    async function requestBackendAccess() {
+        const origin = backendOrigin();
+        if (!origin) throw new Error(`BACKEND_URL is not a valid URL: ${CONCIZE_CONFIG.BACKEND_URL}`);
+        return chrome.permissions.request({ origins: [origin] });
+    }
+
     async function authedFetch(path, options = {}) {
         let session = await getSession();
         if (!session) throw new Error('Not signed in');
+
+        if (!await hasBackendAccess()) {
+            throw new Error(`No permission to reach ${CONCIZE_CONFIG.BACKEND_URL}. Open the extension and sign in again to grant it.`);
+        }
 
         const nowSec = Math.floor(Date.now() / 1000);
         if (session.expires_at && session.expires_at - nowSec < 60) {
@@ -112,6 +135,6 @@
         }
     }
 
-    const ConcizeAuth = { signUp, signIn, signOut, isAuthenticated, getSession, authedFetch, maybeRefresh };
+    const ConcizeAuth = { signUp, signIn, signOut, isAuthenticated, getSession, authedFetch, maybeRefresh, hasBackendAccess, requestBackendAccess };
     if (typeof self !== 'undefined') self.ConcizeAuth = ConcizeAuth;
 })();

@@ -8,7 +8,7 @@ const recordingGlyphDiv = document.getElementById("recordingGlyph");
 const toggleButtonWrapper = document.getElementById("toggleButtonWrapper");
 const getTranscriptionButton = document.getElementById("getTranscriptionButton");
 const transcriptionDisplayArea = document.getElementById("transcriptionDisplayArea");
-const transcriptionTextContent = document.getElementById("transcriptionTextContent");
+const transcriptTurns = document.getElementById("transcriptTurns");
 const downloadButtonWrapper = document.getElementById("downloadButtonWrapper");
 const downloadTranscriptionButton = document.getElementById("downloadTranscriptionButton");
 const openChatButton = document.getElementById("openChat");
@@ -54,6 +54,10 @@ async function handleSignIn() {
     try {
         signInButton.disabled = true;
         await ConcizeAuth.signIn(email, password);
+        // Signing in is a user gesture, which is the only context Chrome grants host access from.
+        if (!await ConcizeAuth.hasBackendAccess() && !await ConcizeAuth.requestBackendAccess()) {
+            return showAuthMessage("Concize needs access to your backend to work.");
+        }
         authMessageDiv.style.display = "none";
         await applyAuthState();
     } catch (err) {
@@ -277,6 +281,93 @@ stopButton.addEventListener("click", () => {
     });
 });
 
+
+/** mm:ss for a millisecond offset into the meeting. */
+function clock(ms) {
+    const total = Math.floor((ms || 0) / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Renders speaker-attributed turns. Clicking a speaker names them, which is the only way a
+ * name can ever be known: diarization can tell two voices apart but not whose they are.
+ */
+function renderTurns(utterances, meetingId) {
+    transcriptTurns.textContent = "";
+
+    for (const u of utterances) {
+        const turn = document.createElement("div");
+        turn.className = u.overlap ? "turn contested" : "turn";
+
+        const speaker = document.createElement("button");
+        speaker.type = "button";
+        speaker.className = u.speakerName && u.speakerName !== u.speaker
+            ? "turn-speaker"
+            : "turn-speaker unnamed";
+        speaker.textContent = u.speakerName || u.speaker || "unattributed";
+        speaker.title = u.speaker ? `Click to name ${u.speaker}` : "No speaker detected for this turn";
+        if (u.speaker) {
+            speaker.addEventListener("click", () => renameSpeaker(meetingId, u.speaker, u.speakerName));
+        } else {
+            speaker.disabled = true;
+        }
+
+        const body = document.createElement("div");
+        const time = document.createElement("span");
+        time.className = "turn-time";
+        time.textContent = `${clock(u.t0)}  `;
+        const text = document.createElement("span");
+        text.className = "turn-text";
+        text.textContent = u.text;
+        body.append(time, text);
+
+        turn.append(speaker, body);
+        transcriptTurns.append(turn);
+    }
+}
+
+/** Names one speaker, then re-renders so every turn of theirs updates at once. */
+async function renameSpeaker(meetingId, label, current) {
+    const name = prompt(`What is ${label} called?`, current && current !== label ? current : "");
+    if (name === null) return;
+    try {
+        const res = await ConcizeAuth.authedFetch(
+            `/api/v1/meetings/${meetingId}/speakers/${encodeURIComponent(label)}`,
+            {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await loadTranscript(meetingId);
+    } catch (err) {
+        showStatusMessage(`Could not rename ${label}: ${err.message}`, true);
+    }
+}
+
+/** Fetches the speaker-attributed log and renders it. */
+async function loadTranscript(meetingId) {
+    const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/utterances?limit=500`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP error! status: ${res.status}`);
+    }
+
+    const { utterances = [] } = await res.json();
+    if (!utterances.length) return false;
+
+    renderTurns(utterances, meetingId);
+    // The download still writes plain text, which is what someone pasting it elsewhere wants.
+    fullTranscriptionText = utterances
+        .map((u) => `${u.speakerName || u.speaker || "unattributed"}: ${u.text}`)
+        .join("\n");
+    return true;
+}
+
 getTranscriptionButton.addEventListener("click", async () => {
     hideStatusMessage();
     hidePermissionMessage();
@@ -293,30 +384,13 @@ getTranscriptionButton.addEventListener("click", async () => {
 
         showStatusMessage("Fetching transcription...");
 
-        const response = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/transcript`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-
-        const transcriptionData = await response.json();
-        console.log('Received transcription data:', transcriptionData);
-
-        if (transcriptionData.transcriptionChunks && transcriptionData.transcriptionChunks.length > 0) {
-            fullTranscriptionText = transcriptionData.transcriptionChunks.join(' ');
-            console.log('Full Transcription:', fullTranscriptionText);
-
-            transcriptionTextContent.textContent = fullTranscriptionText;
+        if (await loadTranscript(meetingId)) {
             transcriptionDisplayArea.classList.remove('hidden');
             downloadButtonWrapper.classList.remove('hidden');
             showStatusMessage("Transcription loaded successfully.");
         } else {
             fullTranscriptionText = ''; // Keep empty to prevent downloading placeholder
-            transcriptionTextContent.textContent = "No transcription available for this session yet.";
+            transcriptTurns.textContent = "No transcription available for this session yet.";
             transcriptionDisplayArea.classList.remove('hidden');
             downloadButtonWrapper.classList.add('hidden');
             showStatusMessage("No transcription available.", true);
