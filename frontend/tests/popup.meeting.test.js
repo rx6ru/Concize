@@ -85,6 +85,34 @@ test('a slow meeting load cannot bind the share panel to a meeting that is no lo
         'the share controls stayed bound to a meeting the user had already navigated away from');
 });
 
+test('a transcript longer than one page is fetched whole, not truncated at the cap', async () => {
+    const popup = install();
+
+    // 1,150 utterances: three pages at the server's 500 cap.
+    const total = 1150;
+    const page = (start, n) => Array.from({ length: n }, (_, i) => ({
+        turnId: String(start + i), seq: start + i, t0: 0, t1: 900,
+        text: `line ${start + i}`, speaker: 'S0', speakerName: 'S0',
+    }));
+
+    const asked = [];
+    fetchImpl = async (path) => {
+        if (!path.includes('/utterances')) {
+            return { ok: true, status: 200, json: async () => ({ summary: null, shares: [] }) };
+        }
+        const after = /after=(\d+)/.exec(path);
+        const start = after ? Number(after[1]) + 1 : 0;
+        asked.push(start);
+        const n = Math.min(500, total - start);
+        const nextCursor = start + n < total ? start + n - 1 : null;
+        return { ok: true, status: 200, json: async () => ({ utterances: page(start, n), nextCursor }) };
+    };
+
+    await popup.openMeeting('LONG');
+
+    assert.deepStrictEqual(asked, [0, 500, 1000], 'should have followed the cursor across three pages');
+});
+
 test('a failed delete still needs two clicks the next time', async () => {
     const popup = install();
     fetchImpl = async () => { throw new Error('network down'); };

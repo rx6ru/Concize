@@ -773,18 +773,39 @@ async function renameSpeaker(meetingId, label, current) {
     }
 }
 
+// The server caps a page at 500, which is roughly forty minutes of conversation. Asking once
+// returned the first page and nothing said so, silently truncating both the transcript on screen
+// and the file the download button writes. It has always taken an `after` cursor; now we use it.
+const TRANSCRIPT_PAGE = 500;
+// A meeting longer than this many utterances is being read by the wrong tool. The bound exists so
+// a runaway cursor cannot spin forever, not because a real meeting is expected to reach it.
+const TRANSCRIPT_MAX_PAGES = 40;
+
 /** Fetches the speaker-attributed log and renders it. */
 async function loadTranscript(meetingId, generation) {
-    const res = await ConcizeAuth.authedFetch(`/api/v1/meetings/${meetingId}/utterances?limit=500`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-    });
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP error! status: ${res.status}`);
+    const utterances = [];
+    let after = null;
+
+    for (let page = 0; page < TRANSCRIPT_MAX_PAGES; page += 1) {
+        const url = `/api/v1/meetings/${meetingId}/utterances?limit=${TRANSCRIPT_PAGE}`
+            + (after === null ? "" : `&after=${after}`);
+        const res = await ConcizeAuth.authedFetch(url, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || `HTTP error! status: ${res.status}`);
+        }
+
+        const { utterances: batch = [], nextCursor = null } = await res.json();
+        utterances.push(...batch);
+        // The server sends nextCursor null rather than omitting it, precisely so this can tell
+        // "no more pages" from "field missing" without guessing from the batch length.
+        if (nextCursor === null || nextCursor === undefined) break;
+        after = nextCursor;
     }
 
-    const { utterances = [] } = await res.json();
     if (generation !== undefined && generation !== openGeneration) return false;
     if (!utterances.length) return false;
 
