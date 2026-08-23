@@ -13,7 +13,21 @@ chrome.runtime.onMessage.addListener(async (message) => {
     switch (message.type) {
       case "start-recording":
         currentMeetingId = message.data.meetingId;
-        await startRecording(message.data.streamId);
+        try {
+          await startRecording(message.data.streamId, message.data.token);
+        } catch (error) {
+          // Nothing was catching this. The service worker sets the recording icon as soon as it
+          // sends this message, so a throw in here left the extension looking like it was
+          // recording while no audio was being captured at all, with no way for anyone to tell.
+          console.error("startRecording failed:", error);
+          chrome.runtime.sendMessage({
+            type: "recording-error",
+            target: "popup",
+            error: `Recording failed to start: ${error.message}`,
+          });
+          await stopAllStreams();
+          chrome.runtime.sendMessage({ type: "update-icon", target: "service-worker", recording: false });
+        }
         break;
       case "stop-recording":
         await stopRecording();
@@ -26,7 +40,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
 });
 }
 
-async function startRecording(streamId) {
+async function startRecording(streamId, token) {
   console.log("Starting recording process...");
   if (liveClient) {
     console.warn("startRecording called while a client is already active.");
@@ -38,8 +52,7 @@ async function startRecording(streamId) {
     return; // Error already handled in getMediaStream
   }
 
-  const session = await ConcizeAuth.getSession();
-  if (!session) {
+  if (!token) {
     chrome.runtime.sendMessage({
       type: "recording-error",
       target: "popup",
@@ -52,9 +65,19 @@ async function startRecording(streamId) {
   liveClient = new ConcizeLiveClient.LiveClient({
     backendUrl: CONCIZE_CONFIG.BACKEND_URL,
     meetingId: currentMeetingId,
-    token: session.access_token,
+    token,
     onEvent: handleServerEvent,
-    onStatus: (status) => console.log("LiveClient status:", status.state, status.code ?? ""),
+    onStatus: (status) => {
+      console.log("LiveClient status:", status.state, status.code ?? "");
+      // A recording whose socket is down is producing nothing, and the user is the last to know:
+      // the icon still says Recording. Surface the transport state rather than only logging it.
+      chrome.runtime.sendMessage({
+        type: "live-status",
+        target: "popup",
+        state: status.state,
+        code: status.code ?? null,
+      });
+    },
   });
   liveClient.start();
 

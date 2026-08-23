@@ -266,12 +266,19 @@ startButton.addEventListener("click", async () => {
             targetTabId: tab.id,
         });
 
+        // The token travels with the message because an offscreen document cannot read it itself:
+        // MV3 gives offscreen documents chrome.runtime and nothing else, so chrome.storage is
+        // undefined there and the session lookup it used to do threw before recording ever began.
+        const session = await ConcizeAuth.getSession();
+        if (!session) throw new Error("Not signed in.");
+
         chrome.runtime.sendMessage({
             type: "start-recording",
             target: "offscreen",
             data: {
                 streamId: streamId,
-                meetingId: meetingId
+                meetingId: meetingId,
+                token: session.access_token
             },
         });
 
@@ -550,6 +557,24 @@ function resetLiveTranscript() {
     downloadButtonWrapper.classList.add("hidden");
 }
 
+/**
+ * The audio transport's own state. 'open' is the normal case and says nothing; anything else
+ * means frames are not reaching the backend, which the recording icon alone would not reveal.
+ */
+function showLiveStatus(message) {
+    if (message.state === "open") {
+        hideStatusMessage();
+        return;
+    }
+    if (message.state === "error") {
+        showStatusMessage("Lost the connection to the server. Reconnecting.", true);
+        return;
+    }
+    if (message.state === "closed" && message.code !== 1000) {
+        showStatusMessage(`Connection closed (${message.code}). Reconnecting.`, true);
+    }
+}
+
 /** Surfaces a lane going up or down as a status message; 'down' reads as an error. */
 function showLaneStatus({ lane, status, reason }) {
     showStatusMessage(reason ? `${lane} lane ${status}: ${reason}` : `${lane} lane ${status}`, status === "down");
@@ -737,6 +762,9 @@ chrome.runtime.onMessage.addListener((message) => {
                 break;
             case "lane-status":
                 showLaneStatus(message);
+                break;
+            case "live-status":
+                showLiveStatus(message);
                 break;
         }
     }
