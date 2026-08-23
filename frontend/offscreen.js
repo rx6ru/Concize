@@ -284,5 +284,5 @@ async function stopAllStreams() {
 
 // Exported for tests; the extension loads this file as a plain script and uses neither.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { getMediaStream, stopAllStreams };
+  module.exports = { getMediaStream, stopAllStreams, startRecording };
 }

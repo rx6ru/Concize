@@ -90,3 +90,69 @@ test('reports an error only when neither source is available', async () => {
     assert.strictEqual(out, null);
     assert.match(messages.find((m) => m.type === 'recording-error').error, /neither tab audio nor microphone/);
 });
+
+// startRecording is the function whose auth-token bug meant the extension never recorded in a
+// browser at all: it called ConcizeAuth.getSession(), which reads chrome.storage, and an MV3
+// offscreen document has chrome.runtime and nothing else, so it threw before the socket opened.
+// Nothing smaller than a full browser run covered it.
+function installRecording(opts = {}) {
+    const base = install(opts);
+    const clients = [];
+
+    global.ConcizeLiveClient = {
+        LiveClient: class {
+            constructor(cfg) { this.cfg = cfg; clients.push(this); }
+            start() { this.started = true; }
+            stop() { this.stopped = true; }
+            pushAudio() {}
+        },
+    };
+    global.ConcizeLiveRender = { partialTracker: () => ({}) };
+    global.CONCIZE_CONFIG = { BACKEND_URL: 'http://localhost:3000' };
+    global.AudioWorkletNode = class { constructor() { this.port = { onmessage: null }; } };
+    global.window = { location: { hash: '' } };
+
+    // The worklet and graph nodes the capture path builds after the stream is acquired.
+    const AC = global.AudioContext;
+    global.AudioContext = class extends AC {
+        constructor() { super(); this.audioWorklet = { addModule: async () => {} }; }
+        createGain() { const n = super.createGain(); n.gain = { value: 0 }; return n; }
+    };
+
+    return { ...base, clients };
+}
+
+test('threads the token from the message instead of reading chrome.storage', async () => {
+    const { clients } = installRecording();
+    const { startRecording } = load();
+
+    await startRecording('stream-1', 'token-from-popup');
+
+    assert.strictEqual(clients.length, 1, 'no live client was constructed');
+    assert.strictEqual(clients[0].cfg.token, 'token-from-popup');
+    assert.strictEqual(clients[0].started, true);
+});
+
+test('refuses to record without a token, and says so durably', async () => {
+    const { messages, clients } = installRecording();
+    const { startRecording } = load();
+
+    await startRecording('stream-1', undefined);
+
+    assert.strictEqual(clients.length, 0, 'a session was opened with no token');
+    assert.ok(messages.find((m) => m.type === 'recording-error'));
+    // The popup is usually gone by now, so the reason has to reach something that outlives it.
+    assert.ok(messages.find((m) => m.type === 'recording-failed' && m.target === 'service-worker'),
+        'nothing told the service worker, so the reason dies with the popup');
+});
+
+test('never touches chrome.storage, which does not exist in an offscreen document', async () => {
+    const { clients } = installRecording();
+    // Exactly how it fails in Chrome: the namespace is simply absent.
+    delete global.chrome.storage;
+    const { startRecording } = load();
+
+    await startRecording('stream-1', 'token-from-popup');
+
+    assert.strictEqual(clients.length, 1, 'startRecording reached for an API it cannot have');
+});
