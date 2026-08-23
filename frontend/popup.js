@@ -209,6 +209,16 @@ async function checkRecordingState() {
 
     const isCurrentlyRecording = offscreenDocument && offscreenDocument.documentUrl.endsWith("#recording");
     updateUIForRecording(isCurrentlyRecording);
+
+    // A recording that failed to start did so while this popup was closed, so the message saying
+    // why went nowhere. The service worker kept it; show it once and clear it.
+    if (!isCurrentlyRecording) {
+        const { lastRecordingError } = await chrome.storage.local.get("lastRecordingError");
+        if (lastRecordingError) {
+            showStatusMessage(lastRecordingError, true);
+            await chrome.storage.local.remove("lastRecordingError");
+        }
+    }
 }
 
 // On open, decide between login form and app.

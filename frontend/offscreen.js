@@ -20,11 +20,12 @@ chrome.runtime.onMessage.addListener(async (message) => {
           // sends this message, so a throw in here left the extension looking like it was
           // recording while no audio was being captured at all, with no way for anyone to tell.
           console.error("startRecording failed:", error);
-          chrome.runtime.sendMessage({
-            type: "recording-error",
-            target: "popup",
-            error: `Recording failed to start: ${error.message}`,
-          });
+          const text = `Recording failed to start: ${error.message}`;
+          chrome.runtime.sendMessage({ type: "recording-error", target: "popup", error: text });
+          // The popup is destroyed the moment it loses focus, which is exactly what a user does
+          // after pressing record, so a message aimed at it usually lands nowhere. The service
+          // worker outlives the popup and can hold the reason until someone opens it again.
+          chrome.runtime.sendMessage({ type: "recording-failed", target: "service-worker", error: text });
           await stopAllStreams();
           chrome.runtime.sendMessage({ type: "update-icon", target: "service-worker", recording: false });
         }
@@ -49,15 +50,18 @@ async function startRecording(streamId, token) {
 
   const mediaStream = await getMediaStream(streamId);
   if (!mediaStream) {
-    return; // Error already handled in getMediaStream
+    // getMediaStream has already told the popup; this is the copy that survives it closing.
+    chrome.runtime.sendMessage({
+      type: "recording-failed",
+      target: "service-worker",
+      error: "Recording failed to start: no audio source was available.",
+    });
+    return;
   }
 
   if (!token) {
-    chrome.runtime.sendMessage({
-      type: "recording-error",
-      target: "popup",
-      error: "Not signed in.",
-    });
+    chrome.runtime.sendMessage({ type: "recording-error", target: "popup", error: "Not signed in." });
+    chrome.runtime.sendMessage({ type: "recording-failed", target: "service-worker", error: "Not signed in." });
     await stopAllStreams();
     return;
   }

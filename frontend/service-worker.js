@@ -75,6 +75,13 @@ chrome.runtime.onMessage.addListener(async (message) => {
         }
         break;
 
+      // Held here rather than in the popup because the popup is gone by the time most of these
+      // arrive. Read and cleared the next time one opens.
+      case "recording-failed":
+        chrome.storage.local.set({ lastRecordingError: message.error });
+        chrome.action.setIcon({ path: "icons/not-recording.png" });
+        break;
+
       case "update-icon":
         chrome.action.setIcon({
           path: message.recording
