@@ -229,9 +229,9 @@
         "maxRequestTokens": null
       },
       "models": {
-        "stealth/ox-alpha": {
-          "_note": "Free tier, cost 0 confirmed in a response body. context_length from GET /api/v1/models.",
-          "maxRequestTokens": 1048576
+        "z-ai/glm-5.3-flash": {
+          "_note": "Replaces stealth/ox-alpha, which OpenRouter retired on 2026-08-24 with a 404 naming this as the model it had been. Priced, not free: $0.075/M in, $0.25/M out. context_length from GET /api/v1/models.",
+          "maxRequestTokens": 1310720
         }
       }
     }
