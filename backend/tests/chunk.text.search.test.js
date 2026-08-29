@@ -34,6 +34,16 @@ describeIfPg('lexical chunk search', () => {
     beforeAll(async () => {
         pool = new Pool({ connectionString: URL });
         _setPoolForTesting(pool);
+        try {
+            await query('SELECT 1');
+        } catch (err) {
+            // Otherwise a stopped container reads as 25 identical ECONNREFUSED failures and looks
+            // like the suite broke, rather than like nothing is listening.
+            throw new Error(
+                `cannot reach Postgres at ${URL}: ${err.message}\n`
+                + 'Start it with: docker compose -f docker-compose.dev.yml up -d'
+            );
+        }
         const schema = fs.readFileSync(path.join(__dirname, '../src/infra/schema.sql'), 'utf8')
             .replace(/ALTER TABLE[^;]*ENABLE ROW LEVEL SECURITY;/gi, '');
         await query(schema);
