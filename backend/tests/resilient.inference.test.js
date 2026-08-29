@@ -2,9 +2,16 @@
 // runResilient composes breaker → limiter → jittered retry. We verify the observable behavior:
 // success passes through, transient 429 is retried then succeeds, and a non-retryable error throws.
 
+// One shared instance, so a test can inspect what the module logged at require time and after.
+jest.mock('../src/core/logger', () => {
+    const log = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    return { createLogger: () => log, _log: log };
+});
+
+const { _log } = require('../src/core/logger');
 const { runResilient, _resetForTests } = require('../src/providers/llm/resilient.inference');
 
-beforeEach(() => _resetForTests());
+beforeEach(() => { _log.error.mockClear(); return _resetForTests(); });
 
 describe('runResilient', () => {
     it('returns the result on success', async () => {
@@ -69,5 +76,34 @@ describe('spacing comes from the recorded limits', () => {
             runResilient('gemini', async () => 'ok', { model: 'gemini-embedding-001' }),
         ]);
         expect(Date.now() - t0).toBeLessThan(400);
+    });
+});
+
+// stealth/ox-alpha was retired by OpenRouter mid-sprint and every chat request failed the same way
+// a network blip does, so nothing distinguished "the model is gone" from "try again later".
+describe('a model that no longer exists', () => {
+    it('is logged as a configuration fault, naming the model', async () => {
+        const gone = Object.assign(new Error('No endpoints found for stealth/ox-alpha'), { status: 404 });
+
+        await expect(
+            runResilient('openrouter', async () => { throw gone; }, { model: 'stealth/ox-alpha', maxRetries: 0 })
+        ).rejects.toThrow(/No endpoints/);
+
+        expect(_log.error).toHaveBeenCalledWith(
+            'Model unavailable, check the configured model id',
+            expect.objectContaining({ provider: 'openrouter', model: 'stealth/ox-alpha' })
+        );
+    });
+
+    it('does not retry it, since it will never come back', async () => {
+        let calls = 0;
+        const gone = Object.assign(new Error('gone'), { status: 404 });
+
+        await expect(
+            runResilient('openrouter', async () => { calls += 1; throw gone; },
+                { model: 'dead/model', maxRetries: 3, baseDelayMs: 1 })
+        ).rejects.toThrow('gone');
+
+        expect(calls).toBe(1);
     });
 });

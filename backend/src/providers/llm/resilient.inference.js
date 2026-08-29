@@ -40,6 +40,15 @@ function getLimiter(provider, model) {
  * @param {Object} [retryOpts] forwarded to withRetry (maxRetries, baseDelayMs, …)
  * @param {string} [retryOpts.model] picks the model's limits out of provider.limits.json
  */
+// A 404 from a provider means the model id is wrong or the model is gone, not that the call went
+// badly. It is never retried and it never recovers on its own, so it has to be distinguishable in
+// the logs from a transient failure: `stealth/ox-alpha` was retired mid-sprint and every chat
+// request failed identically to a network blip until a measurement happened to notice.
+function isModelGone(err) {
+    const status = err && (err.status ?? err.code);
+    return status === 404;
+}
+
 function runResilient(provider, fn, retryOpts = {}) {
     return getLimiter(provider, retryOpts.model).schedule(() =>
         withRetry(fn, {
@@ -49,6 +58,15 @@ function runResilient(provider, fn, retryOpts = {}) {
                     status: error && (error.status || error.code),
                 }),
             ...retryOpts,
+        }).catch((err) => {
+            if (isModelGone(err)) {
+                logger.error('Model unavailable, check the configured model id', {
+                    provider,
+                    model: retryOpts.model,
+                    error: err.message,
+                });
+            }
+            throw err;
         })
     );
 }
