@@ -30,8 +30,12 @@ const chat = {
     provider: validateProvider(process.env.CHAT_PROVIDER || 'cerebras', 'chat'),
     model: process.env.CHAT_MODEL || 'llama3.1-8b',
     temperature: 0.4,
-    // ~900 words, generous for an answer about a meeting, and leaves 6800 for the context.
-    maxTokens: Number(process.env.CHAT_MAX_TOKENS) || 1200,
+    // 1200 was set for a non-reasoning model. z-ai/glm-5.3-flash thinks before it writes, and at
+    // 1200 a realistic meeting question spends the whole allowance reasoning and returns an empty
+    // answer (finish_reason "length", 0 characters). Measured usage on the same question is ~1700,
+    // and the eval's whole-transcript arm peaked at 2151, so this is headroom over an observed max
+    // rather than a guess.
+    maxTokens: Number(process.env.CHAT_MAX_TOKENS) || 4000,
     // How much context retrieval may spend, when the model's own ceiling is the wrong answer.
     // A million-token model would otherwise be handed a million-token budget, and how retrieval
     // behaves at that size has never been measured. Null means derive it from the model.
