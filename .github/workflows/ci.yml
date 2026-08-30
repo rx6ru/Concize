@@ -32,6 +32,11 @@ jobs:
       - run: npm ci
         working-directory: backend
 
+      # The real prompts are deliberately not in the repo (backend/.gitignore), and the app
+      # requires them. Placeholders with the same interface let the suite run on a clean checkout.
+      - run: cp -rn prompts.example/. prompts/
+        working-directory: backend
+
       - run: npx jest
         working-directory: backend
 
