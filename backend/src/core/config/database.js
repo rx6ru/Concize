@@ -9,6 +9,8 @@ module.exports = {
     REDIS_URL: process.env.REDIS_URL,
     QDRANT_URL: process.env.QDRANT_URL,
     QDRANT_API_KEY: process.env.QDRANT_API_KEY,
-    TRANSCRIPTION_COLLECTION: process.env.TRANSCRIPTION_COLLECTION,
-    CHAT_COLLECTION: process.env.CHAT_COLLECTION,
+    // Defaulted rather than left undefined: unset, Qdrant was asked to create a collection
+    // literally named "undefined" and nothing complained. These match .env.example.
+    TRANSCRIPTION_COLLECTION: process.env.TRANSCRIPTION_COLLECTION || 'transcriptions',
+    CHAT_COLLECTION: process.env.CHAT_COLLECTION || 'chats',
 };

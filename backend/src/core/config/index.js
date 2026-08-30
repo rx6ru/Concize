@@ -70,6 +70,7 @@ if (!database.POSTGRES_URL) {
     warnings.push('POSTGRES_URL is not set.');
 }
 
+
 if (!queues.CLOUDAMQP_URL) {
     warnings.push('CLOUDAMQP_URL is not set in queues config.');
 }
